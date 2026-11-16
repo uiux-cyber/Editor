@@ -1,0 +1,32 @@
+// Bundled typefaces (SIL OFL). Importing the CSS registers the @font-face rules; the files are
+// only fetched when a face is first used.
+import '@fontsource-variable/inter';
+import '@fontsource-variable/montserrat';
+import '@fontsource-variable/raleway';
+import '@fontsource-variable/rubik';
+import '@fontsource-variable/space-grotesk';
+import '@fontsource-variable/syne';
+import '@fontsource-variable/oswald';
+import '@fontsource-variable/playfair-display';
+import '@fontsource-variable/dancing-script';
+import '@fontsource-variable/caveat';
+import '@fontsource-variable/jetbrains-mono';
+import '@fontsource/poppins/300.css';
+import '@fontsource/poppins/400.css';
+import '@fontsource/poppins/500.css';
+import '@fontsource/poppins/600.css';
+import '@fontsource/poppins/700.css';
+import '@fontsource/poppins/800.css';
+import '@fontsource/poppins/900.css';
+import '@fontsource/bebas-neue';
+import '@fontsource/anton';
+import '@fontsource/archivo-black';
+import '@fontsource/righteous';
+import '@fontsource/bangers';
+import '@fontsource/shrikhand';
+import '@fontsource/press-start-2p';
+import '@fontsource/dm-serif-display';
+import '@fontsource/abril-fatface';
+import '@fontsource/lobster';
+import '@fontsource/pacifico';
+import '@fontsource/permanent-marker';

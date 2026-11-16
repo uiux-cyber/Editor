@@ -1,0 +1,143 @@
+import { linear, solid } from '@/core/factory';
+import type { TextPresetDef } from '../types';
+
+/** Neon signs: a near-white tube colour with a saturated glow of the same hue. Best on dark footage. */
+const presets: TextPresetDef[] = [
+  {
+    id: 'neon-pink-script',
+    name: 'Pink Neon',
+    category: 'neon',
+    sample: 'Open Late',
+    style: { fontFamily: 'Pacifico', fontWeight: 400, fontSize: 140, fill: solid('#ffe3f8'), glow: { color: '#ff2bd1', blur: 42 } },
+    anim: { loop: { id: 'flicker', duration: 2.4 } },
+  },
+  {
+    id: 'neon-cyan-tube',
+    name: 'Cyan Tube',
+    category: 'neon',
+    sample: 'ARCADE',
+    style: {
+      fontFamily: 'Righteous',
+      fontWeight: 400,
+      fontSize: 150,
+      uppercase: true,
+      letterSpacing: 0.04,
+      fill: solid('#e6fdff'),
+      glow: { color: '#00e5ff', blur: 38 },
+    },
+  },
+  {
+    id: 'neon-outline',
+    name: 'Neon Outline',
+    category: 'neon',
+    sample: 'MIDNIGHT',
+    style: {
+      // A static font: the stroke of a hollow letter would expose a variable font's overlapping contours.
+      fontFamily: 'Poppins',
+      fontWeight: 700,
+      fontSize: 150,
+      uppercase: true,
+      letterSpacing: 0.05,
+      fill: solid('#ffffff00'),
+      stroke: { color: '#8fe3ff', width: 5 },
+      glow: { color: '#2aa8ff', blur: 32 },
+    },
+    textAnim: { loop: { id: 'char-flicker', duration: 2.2 } },
+  },
+  {
+    id: 'neon-terminal',
+    name: 'Terminal Glow',
+    category: 'neon',
+    sample: '> hello, world',
+    style: { fontFamily: 'JetBrains Mono', fontWeight: 700, fontSize: 84, fill: solid('#c9ffd9'), glow: { color: '#00ff66', blur: 26 } },
+    textAnim: { in: { id: 'typewriter', duration: 1.2 } },
+  },
+  {
+    id: 'neon-sunset-sign',
+    name: 'Sunset Sign',
+    category: 'neon',
+    sample: 'Good Vibes',
+    style: {
+      fontFamily: 'Lobster',
+      fontWeight: 400,
+      fontSize: 150,
+      fill: linear(90, '#fff3c2', '#ffc2dd'),
+      glow: { color: '#ff5e3a', blur: 44 },
+    },
+  },
+  {
+    id: 'neon-ultraviolet',
+    name: 'Ultraviolet',
+    category: 'neon',
+    sample: 'AFTER DARK',
+    style: {
+      fontFamily: 'Syne',
+      fontWeight: 800,
+      fontSize: 108,
+      uppercase: true,
+      fill: solid('#f3e8ff'),
+      glow: { color: '#a033ff', blur: 46 },
+    },
+    textAnim: { in: { id: 'random-fade-in', duration: 1.2 } },
+  },
+  {
+    id: 'neon-on-air',
+    name: 'On Air',
+    category: 'neon',
+    sample: 'ON AIR',
+    style: {
+      fontFamily: 'Bebas Neue',
+      fontWeight: 400,
+      fontSize: 200,
+      letterSpacing: 0.1,
+      fill: solid('#ffe8e8'),
+      glow: { color: '#ff1f3d', blur: 42 },
+    },
+    anim: { loop: { id: 'fade-pulse', duration: 2.4 } },
+  },
+  {
+    id: 'neon-electric-script',
+    name: 'Electric Script',
+    category: 'neon',
+    sample: 'Cheers',
+    style: { fontFamily: 'Dancing Script', fontWeight: 700, fontSize: 160, fill: solid('#fffbd6'), glow: { color: '#ffd400', blur: 38 } },
+  },
+  {
+    id: 'neon-hot-wire',
+    name: 'Hot Wire',
+    category: 'neon',
+    sample: 'Tonight Only',
+    style: {
+      fontFamily: 'Poppins',
+      fontWeight: 700,
+      fontSize: 130,
+      stroke: { color: '#ff4fd8', width: 6 },
+      glow: { color: '#ff4fd8', blur: 36 },
+    },
+  },
+  {
+    id: 'neon-ice',
+    name: 'Ice Glow',
+    category: 'neon',
+    sample: 'FROZEN',
+    style: {
+      fontFamily: 'Raleway',
+      fontWeight: 200,
+      fontSize: 130,
+      uppercase: true,
+      letterSpacing: 0.3,
+      fill: solid('#f2feff'),
+      glow: { color: '#7de8ff', blur: 30 },
+    },
+    textAnim: { in: { id: 'tracking-in', duration: 1.3 } },
+  },
+  {
+    id: 'neon-lime-sign',
+    name: 'Lime Sign',
+    category: 'neon',
+    sample: 'Fresh Juice',
+    style: { fontFamily: 'Righteous', fontWeight: 400, fontSize: 130, fill: solid('#f4ffd6'), glow: { color: '#a6ff00', blur: 36 } },
+  },
+];
+
+export default presets;

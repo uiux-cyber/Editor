@@ -1,0 +1,116 @@
+{
+  "name": "kinora",
+  "productName": "Kinora",
+  "version": "1.0.0",
+  "description": "Kinora — a GPU-accelerated, template-driven video editor for Windows.",
+  "author": "Kinora",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "e2e": "node scripts/e2e.mjs",
+    "dist": "electron-vite build && electron-builder --win",
+    "dist:dir": "electron-vite build && electron-builder --win --dir",
+    "icons": "python scripts/make-icons.py",
+    "check": "node scripts/check-library.mjs",
+    "sheets": "node scripts/render-templates.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/caveat": "^5.3.0",
+    "@fontsource-variable/dancing-script": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/montserrat": "^5.3.0",
+    "@fontsource-variable/oswald": "^5.3.0",
+    "@fontsource-variable/playfair-display": "^5.3.0",
+    "@fontsource-variable/raleway": "^5.3.0",
+    "@fontsource-variable/rubik": "^5.3.0",
+    "@fontsource-variable/space-grotesk": "^5.3.0",
+    "@fontsource-variable/syne": "^5.3.0",
+    "@fontsource/abril-fatface": "^5.3.0",
+    "@fontsource/anton": "^5.3.0",
+    "@fontsource/archivo-black": "^5.3.0",
+    "@fontsource/bangers": "^5.3.0",
+    "@fontsource/bebas-neue": "^5.3.0",
+    "@fontsource/dm-serif-display": "^5.3.0",
+    "@fontsource/lobster": "^5.3.0",
+    "@fontsource/pacifico": "^5.3.0",
+    "@fontsource/permanent-marker": "^5.3.0",
+    "@fontsource/poppins": "^5.3.0",
+    "@fontsource/press-start-2p": "^5.3.0",
+    "@fontsource/righteous": "^5.3.0",
+    "@fontsource/shrikhand": "^5.3.0",
+    "@mediabunny/mp3-encoder": "^1.65.2",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "gifenc": "^1.0.3",
+    "immer": "^11.2.10",
+    "lucide-react": "^1.72.0",
+    "mediabunny": "^1.65.2",
+    "playwright-core": "^1.65.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "zustand": "^5.1.0"
+  },
+  "build": {
+    "appId": "com.kinora.studio",
+    "productName": "Kinora",
+    "copyright": "Copyright © 2026 Kinora",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**/*",
+      "resources/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "Kinora-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kinora",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "uninstallDisplayName": "Kinora",
+      "deleteAppDataOnUninstall": false
+    },
+    "fileAssociations": [
+      {
+        "ext": "kinora",
+        "name": "Kinora Project",
+        "description": "Kinora video project",
+        "icon": "resources/icon.ico",
+        "role": "Editor"
+      }
+    ]
+  }
+}
