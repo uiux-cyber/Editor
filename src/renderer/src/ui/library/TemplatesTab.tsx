@@ -1,39 +1,48 @@
-import { Infinity as InfinityIcon, Shuffle } from 'lucide-react';
+import { Infinity as InfinityIcon, MoreHorizontal, Shuffle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { designSize } from '@/core/project';
 import { TEMPLATES, getTemplate } from '@/library';
-import { ASPECT_SIZES, sortCategories, aspectIdFor, buildTemplate, looksPerDesign, shuffleVariation, supportsAspect, templateCount, variationPage, type TemplateVariation } from '@/library/templateEngine';
-import type { TemplateCategory } from '@/library/types';
+import { ASPECT_SIZES, sortCategories, aspectIdFor, isUserTemplate, looksPerDesign, shuffleVariation, supportsAspect, templateCount, variationPage, type TemplateVariation } from '@/library/templateEngine';
 import { useProjectStore } from '@/store/project';
 import { applyTemplate } from '../actions';
 import { startDrag } from '../dnd';
+// Templates & branding (my templates, brand kit, music, packs) — see ui/templates/.
+import { GalleryToolbar, MusicBadge, SaveSelectionBanner, openUserTemplateMenu, useGalleryState } from '../templates/gallery';
+import { templateThumbSpec } from '../templates/apply';
 import { Chips, SearchBox, labelOf, unique } from './common';
-import { LiveThumb, templateThumbProject, type ThumbSpec } from './thumbs';
+import { LiveThumb, type ThumbSpec } from './thumbs';
 
-function TemplateTile({ variation, thumbW, thumbH, cw, ch, onShuffle }: { variation: TemplateVariation; thumbW: number; thumbH: number; cw: number; ch: number; onShuffle: () => void }): ReactNode {
+function TemplateTile({ variation, thumbW, thumbH, cw, ch, epoch, onShuffle }: { variation: TemplateVariation; thumbW: number; thumbH: number; cw: number; ch: number; epoch: number; onShuffle: () => void }): ReactNode {
   const def = getTemplate(variation.templateId);
-  const build = useCallback((): ThumbSpec | null => {
-    const built = buildTemplate(variation, cw, ch);
-    if (!built) return null;
-    const project = templateThumbProject(built.clips, thumbW, thumbH, cw, ch);
-    return { project, poster: built.duration * (built.def.poster ?? 0.6), from: 0, to: built.duration };
-  }, [variation, cw, ch, thumbW, thumbH]);
+  const build = useCallback((): ThumbSpec | null => templateThumbSpec(variation, cw, ch, thumbW, thumbH), [variation, cw, ch, thumbW, thumbH]);
   if (!def) return null;
+  const mine = isUserTemplate(def);
   return (
     <div
-      className="tile tile--template"
+      className={`tile tile--template ${mine ? 'tile--mine' : ''}`}
       title={`${def.name}\nClick to add at the playhead, or drag to the timeline`}
+      data-template={def.id}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
         startDrag(e, { kind: 'template', variation, duration: def.duration }, def.name, () => applyTemplate(variation));
       }}
+      onContextMenu={(e) => mine && openUserTemplateMenu(e, def.id)}
     >
       <div className="tile__thumb" style={{ aspectRatio: `${thumbW} / ${thumbH}` }}>
-        <LiveThumb id={`tpl:${variation.key}:${thumbW}x${thumbH}`} width={thumbW} height={thumbH} build={build} />
-        <button type="button" data-no-drag className="tile__action" title="Try another colour & font combination" onClick={onShuffle}>
-          <Shuffle size={12} />
-        </button>
-        <span className="tile__badge mono">{def.duration}s</span>
+        <LiveThumb id={`tpl:${variation.key}:${epoch}:${thumbW}x${thumbH}`} width={thumbW} height={thumbH} build={build} />
+        {mine ? (
+          <button type="button" data-no-drag className="tile__action" title="Rename, duplicate or delete" onClick={(e) => openUserTemplateMenu(e, def.id)}>
+            <MoreHorizontal size={13} />
+          </button>
+        ) : (
+          !def.fixed && (
+            <button type="button" data-no-drag className="tile__action" title="Try another colour & font combination" onClick={onShuffle}>
+              <Shuffle size={12} />
+            </button>
+          )
+        )}
+        <span className="tile__badge mono">{Math.round(def.duration * 10) / 10}s</span>
+        <MusicBadge def={def} />
       </div>
       <div className="tile__label truncate">{def.name}</div>
     </div>
@@ -44,31 +53,34 @@ export function TemplatesTab(): ReactNode {
   const settings = useProjectStore((s) => s.project.settings);
   const { cw, ch } = designSize(settings);
   const aspect = aspectIdFor(cw, ch);
-  const [category, setCategory] = useState<TemplateCategory | 'all'>('all');
+  const g = useGalleryState();
+  const category = g.category;
   const [search, setSearch] = useState('');
   const [pages, setPages] = useState(1);
   const [overrides, setOverrides] = useState<Record<string, TemplateVariation>>({});
   const sentinel = useRef<HTMLDivElement>(null);
 
-  const categories = useMemo(() => sortCategories(unique(TEMPLATES.filter((t) => supportsAspect(t, aspect)).map((t) => t.category))), [aspect]);
-  const query = useMemo(() => ({ aspect, category, search }), [aspect, category, search]);
+  const categories = useMemo(() => sortCategories(unique(TEMPLATES.filter((t) => supportsAspect(t, aspect) && !isUserTemplate(t)).map((t) => t.category))), [aspect, g.libraryVersion]);
+  const query = useMemo(() => ({ aspect, category, search, brand: g.brand }), [aspect, category, search, g.brand]);
   const count = templateCount(query);
 
   useEffect(() => {
     setPages(1);
     setOverrides({});
-  }, [aspect, category, search]);
+  }, [aspect, category, search, g.brand, g.libraryVersion, g.brandRevision]);
 
   const variations = useMemo(() => {
     const out: TemplateVariation[] = [];
     for (let p = 0; p < pages; p++) out.push(...variationPage(query, p));
     return out;
-  }, [query, pages]);
+    // The library version and brand revision change what the pages contain.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, pages, g.libraryVersion, g.brandRevision]);
 
   // Endless feed: every time the end comes into view, generate another page of variations.
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || count === 0) return;
+    if (!el || count === 0 || category === 'mine') return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) setPages((p) => Math.min(p + 1, 400));
@@ -77,13 +89,18 @@ export function TemplatesTab(): ReactNode {
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [count, pages]);
+  }, [count, pages, category]);
 
   // Thumbnails are rendered for the project's own aspect ratio so they show the real layout.
   const size = ASPECT_SIZES[aspect];
   const portrait = size.ch > size.cw;
   const thumbW = portrait ? 216 : 352;
   const thumbH = Math.round((thumbW * size.ch) / size.cw);
+  const chipOptions = [
+    ...(g.mineCount > 0 ? [{ value: 'mine' as const, label: `My templates · ${g.mineCount}` }] : []),
+    { value: 'all' as const, label: 'All' },
+    ...categories.map((c) => ({ value: c, label: labelOf(c) })),
+  ];
 
   return (
     <div className="lib">
@@ -96,12 +113,18 @@ export function TemplatesTab(): ReactNode {
       <div className="lib__search">
         <SearchBox value={search} onChange={setSearch} placeholder="Search templates" />
       </div>
-      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: 'All' }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
+      <GalleryToolbar />
+      <Chips value={category} onChange={g.setCategory} options={chipOptions} />
       <div className="lib__scroll">
-        {count === 0 ? (
+        <SaveSelectionBanner />
+        {!g.thumbsReady ? (
+          <div className="lib__more">
+            <span className="spinner" /> Loading your brand…
+          </div>
+        ) : count === 0 ? (
           <div className="empty">
-            <div className="empty__title">No templates found</div>
-            <p>Try a different search or category.</p>
+            <div className="empty__title">{category === 'mine' ? 'No saved templates yet' : 'No templates found'}</div>
+            <p>{category === 'mine' ? 'Select layers on the timeline and choose “Save as template…” to reuse them.' : 'Try a different search or category.'}</p>
           </div>
         ) : (
           <>
@@ -117,14 +140,17 @@ export function TemplatesTab(): ReactNode {
                     thumbH={thumbH}
                     cw={cw}
                     ch={ch}
+                    epoch={g.epoch}
                     onShuffle={() => setOverrides((o) => ({ ...o, [slot]: shuffleVariation(shown) }))}
                   />
                 );
               })}
             </div>
-            <div ref={sentinel} className="lib__more">
-              <span className="spinner" /> Generating more styles…
-            </div>
+            {category !== 'mine' && (
+              <div ref={sentinel} className="lib__more">
+                <span className="spinner" /> Generating more styles…
+              </div>
+            )}
           </>
         )}
       </div>

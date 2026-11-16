@@ -1,0 +1,592 @@
+{
+  "format": "kinora-pack",
+  "version": 1,
+  "id": "kinora-sample",
+  "name": "Kinora Sample Pack",
+  "packVersion": "1.0.0",
+  "author": "Kinora",
+  "description": "A small tour of what content packs can add: three palettes, a font pairing, two filters, a text style, a transition, an effect, an animated background and a template.",
+  "palettes": [
+    {
+      "id": "kinora-sample-sunset-glow",
+      "name": "Sunset Glow",
+      "dark": true,
+      "bg": "#1a1024",
+      "bg2": "#2d1636",
+      "surface": "#2a1c38",
+      "primary": "#ff7a59",
+      "secondary": "#ffb347",
+      "accent": "#ff4f9a",
+      "text": "#fff4ec",
+      "textMuted": "#d7bfd0",
+      "onPrimary": "#1a1024"
+    },
+    {
+      "id": "kinora-sample-nordic-frost",
+      "name": "Nordic Frost",
+      "dark": false,
+      "bg": "#eef4f8",
+      "bg2": "#dbe7f0",
+      "surface": "#ffffff",
+      "primary": "#1f5f8b",
+      "secondary": "#4fa3c7",
+      "accent": "#e07a5f",
+      "text": "#13202b",
+      "textMuted": "#4a5b69",
+      "onPrimary": "#ffffff"
+    },
+    {
+      "id": "kinora-sample-neon-night",
+      "name": "Neon Night",
+      "dark": true,
+      "bg": "#07070f",
+      "bg2": "#12122a",
+      "surface": "#171733",
+      "primary": "#39ff88",
+      "secondary": "#00d1ff",
+      "accent": "#ff3df0",
+      "text": "#f4f7ff",
+      "textMuted": "#a3a9c7",
+      "onPrimary": "#07070f"
+    }
+  ],
+  "fontPairs": [
+    {
+      "id": "kinora-sample-editorial",
+      "name": "Editorial",
+      "heading": {
+        "family": "Playfair Display",
+        "weight": 700
+      },
+      "body": {
+        "family": "Raleway",
+        "weight": 500,
+        "letterSpacing": 0.01
+      }
+    }
+  ],
+  "filters": [
+    {
+      "id": "kinora-sample-golden-hour",
+      "name": "Golden Hour",
+      "category": "cinematic",
+      "grade": {
+        "temperature": 0.32,
+        "tint": 0.04,
+        "contrast": 0.12,
+        "vibrance": 0.15,
+        "highlights": -0.12,
+        "shadowTint": "#3b1f5c",
+        "shadowTintAmount": 0.16,
+        "highlightTint": "#ffd59e",
+        "highlightTintAmount": 0.14,
+        "vignette": 0.22
+      }
+    },
+    {
+      "id": "kinora-sample-arctic-fade",
+      "name": "Arctic Fade",
+      "category": "mood",
+      "grade": {
+        "temperature": -0.28,
+        "saturation": -0.22,
+        "contrast": -0.06,
+        "fade": 0.16,
+        "highlightTint": "#dff3ff",
+        "highlightTintAmount": 0.16,
+        "shadowTint": "#16324a",
+        "shadowTintAmount": 0.12
+      }
+    }
+  ],
+  "textPresets": [
+    {
+      "id": "kinora-sample-ribbon-title",
+      "name": "Ribbon Title",
+      "category": "title",
+      "sample": "Summer Sale",
+      "style": {
+        "fontFamily": "Anton",
+        "fontWeight": 400,
+        "fontSize": 140,
+        "uppercase": true,
+        "letterSpacing": 0.04,
+        "fill": {
+          "type": "linear",
+          "angle": 90,
+          "stops": [
+            {
+              "offset": 0,
+              "color": "#fff4d6"
+            },
+            {
+              "offset": 1,
+              "color": "#ffc46b"
+            }
+          ]
+        },
+        "background": {
+          "color": "#9a2a12",
+          "opacity": 0.94,
+          "padX": 44,
+          "padY": 12,
+          "radius": 6
+        },
+        "shadow": {
+          "color": "#00000066",
+          "blur": 18,
+          "x": 0,
+          "y": 8
+        }
+      },
+      "anim": {
+        "in": {
+          "id": "pop-in",
+          "duration": 0.5
+        },
+        "out": {
+          "id": "fade-out",
+          "duration": 0.4
+        }
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "kinora-sample-diagonal-blinds",
+      "name": "Diagonal Blinds",
+      "category": "wipe",
+      "duration": 0.8,
+      "params": [
+        {
+          "key": "count",
+          "label": "Blinds",
+          "type": "float",
+          "default": 9,
+          "min": 2,
+          "max": 24,
+          "step": 1
+        },
+        {
+          "key": "softness",
+          "label": "Softness",
+          "type": "float",
+          "default": 0.12,
+          "min": 0.01,
+          "max": 0.5,
+          "step": 0.01
+        }
+      ],
+      "glsl": "// Diagonal blinds: bands sweep in along the diagonal, each opening from its own edge.\nvec4 transition(vec2 uv) {\n  float d = (uv.x + (1.0 - uv.y)) * 0.5;\n  float band = fract(d * count);\n  // Threshold runs from -softness to 1 so progress 0 / 1 show exactly the from / to picture.\n  float t = progress * (1.0 + softness) - softness;\n  float m = 1.0 - smoothstep(t, t + softness, band);\n  return mix(getFromColor(uv), getToColor(uv), m);\n}\n"
+    }
+  ],
+  "effects": [
+    {
+      "id": "kinora-sample-duotone",
+      "name": "Duotone",
+      "category": "color",
+      "params": [
+        {
+          "key": "shadowColor",
+          "label": "Shadows",
+          "type": "color",
+          "default": "#1d1a6b"
+        },
+        {
+          "key": "highlightColor",
+          "label": "Highlights",
+          "type": "color",
+          "default": "#ffb38a"
+        },
+        {
+          "key": "amount",
+          "label": "Amount",
+          "type": "float",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01
+        }
+      ],
+      "glsl": "// Duotone: maps the picture's brightness onto a two-colour ramp. Identity at amount 0.\nvec4 effect(vec2 uv) {\n  vec4 c = tex(uv);\n  if (c.a <= 0.0001) return c;\n  vec3 rgb = c.rgb / c.a;\n  float l = smoothstep(0.02, 0.98, luma(rgb));\n  vec3 tone = mix(shadowColor, highlightColor, l);\n  return vec4(mix(rgb, tone, amount) * c.a, c.a);\n}\n"
+    }
+  ],
+  "generators": [
+    {
+      "id": "kinora-sample-soft-rays",
+      "name": "Soft Rays",
+      "category": "light",
+      "params": [
+        {
+          "key": "colorA",
+          "label": "Light",
+          "type": "color",
+          "default": "#ffb347"
+        },
+        {
+          "key": "colorBg",
+          "label": "Background",
+          "type": "color",
+          "default": "#1a1024"
+        },
+        {
+          "key": "rays",
+          "label": "Rays",
+          "type": "float",
+          "default": 9,
+          "min": 3,
+          "max": 24,
+          "step": 1
+        },
+        {
+          "key": "speed",
+          "label": "Speed",
+          "type": "float",
+          "default": 0.35,
+          "min": 0,
+          "max": 2,
+          "step": 0.05
+        }
+      ],
+      "glsl": "// Soft light rays fanning down from above the frame, slowly turning.\nvec4 generate(vec2 uv) {\n  vec2 p = (uv - vec2(0.5, -0.35)) * vec2(u_aspect, 1.0);\n  float a = atan(p.x, p.y);\n  float r = length(p);\n  float wave = 0.5 + 0.5 * sin(a * rays + u_time * speed);\n  // Widen the rays with distance so they stay soft (no aliasing near the source).\n  float beam = smoothstep(0.35, 1.0, wave) * exp(-r * 0.9);\n  float glow = exp(-r * 1.6) * 0.35;\n  vec3 col = colorBg + colorA * (beam * 0.6 + glow);\n  col += (vnoise(uv * u_res / 3.0) - 0.5) / 255.0;\n  return vec4(clamp(col, 0.0, 1.0), 1.0);\n}\n"
+    }
+  ],
+  "templates": [
+    {
+      "id": "kinora-sample-spotlight-card",
+      "name": "Spotlight Card",
+      "category": "promo",
+      "tags": [
+        "promo",
+        "product",
+        "card",
+        "sale",
+        "shop",
+        "sample"
+      ],
+      "duration": 6,
+      "poster": 0.55,
+      "music": {
+        "soundId": "music-upbeat-pop",
+        "volume": 0.75
+      },
+      "design": {
+        "width": 1920,
+        "height": 1080
+      },
+      "clips": [
+        {
+          "type": "generator",
+          "name": "Background",
+          "start": 0,
+          "duration": 6,
+          "generatorId": "kinora-sample-soft-rays",
+          "params": {
+            "colorA": "$primary",
+            "colorBg": "$bg",
+            "rays": 9,
+            "speed": 0.3
+          },
+          "anim": {
+            "in": {
+              "id": "fade-in",
+              "duration": 0.5
+            },
+            "out": {
+              "id": "fade-out",
+              "duration": 0.5
+            }
+          }
+        },
+        {
+          "type": "shape",
+          "name": "Card",
+          "start": 0.2,
+          "duration": 5.8,
+          "transform": {
+            "x": 0,
+            "y": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "shape": {
+            "kind": "rect",
+            "width": 1560,
+            "height": 760,
+            "radius": 44,
+            "fill": "$surface/88",
+            "shadow": {
+              "color": "#00000059",
+              "blur": 50,
+              "x": 0,
+              "y": 24
+            }
+          },
+          "anim": {
+            "in": {
+              "id": "zoom-soft-in",
+              "duration": 0.7
+            },
+            "out": {
+              "id": "zoom-soft-out",
+              "duration": 0.45
+            }
+          }
+        },
+        {
+          "type": "shape",
+          "name": "Product photo",
+          "start": 0.45,
+          "duration": 5.55,
+          "transform": {
+            "x": -390,
+            "y": 0,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": -2,
+            "opacity": 1
+          },
+          "shape": {
+            "kind": "rect",
+            "width": 620,
+            "height": 620,
+            "radius": 32,
+            "slot": true,
+            "fill": {
+              "type": "linear",
+              "angle": 135,
+              "stops": [
+                {
+                  "offset": 0,
+                  "color": "#3a3f4b"
+                },
+                {
+                  "offset": 1,
+                  "color": "#23262e"
+                }
+              ]
+            }
+          },
+          "anim": {
+            "in": {
+              "id": "zoom-soft-in",
+              "duration": 0.8
+            },
+            "out": {
+              "id": "fade-out",
+              "duration": 0.4
+            }
+          }
+        },
+        {
+          "type": "text",
+          "name": "Kicker",
+          "start": 0.8,
+          "duration": 5.2,
+          "transform": {
+            "x": 360,
+            "y": -190,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "text": {
+            "content": "NEW ARRIVAL",
+            "fontFamily": "$body",
+            "fontSize": 34,
+            "fontWeight": 600,
+            "letterSpacing": 0.22,
+            "fill": "$accent"
+          },
+          "anim": {
+            "in": {
+              "id": "fade-in",
+              "duration": 0.6
+            },
+            "out": {
+              "id": "fade-out",
+              "duration": 0.35
+            }
+          }
+        },
+        {
+          "type": "text",
+          "name": "Headline",
+          "start": 0.95,
+          "duration": 5.05,
+          "transform": {
+            "x": 360,
+            "y": -60,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "text": {
+            "content": "Make it yours",
+            "fontFamily": "$heading",
+            "fontSize": 116,
+            "fontWeight": 800,
+            "lineHeight": 1.05,
+            "fill": "$text",
+            "boxWidth": 760
+          },
+          "textAnim": {
+            "in": {
+              "id": "char-rise-in",
+              "duration": 0.9
+            }
+          },
+          "anim": {
+            "out": {
+              "id": "fade-out",
+              "duration": 0.4
+            }
+          }
+        },
+        {
+          "type": "text",
+          "name": "Body",
+          "start": 1.4,
+          "duration": 4.6,
+          "transform": {
+            "x": 360,
+            "y": 66,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "text": {
+            "content": "Swap the photo, keep the style.",
+            "fontFamily": "$body",
+            "fontSize": 40,
+            "fontWeight": 500,
+            "fill": "$textMuted",
+            "boxWidth": 760
+          },
+          "anim": {
+            "in": {
+              "id": "slide-up-in",
+              "duration": 0.6
+            },
+            "out": {
+              "id": "fade-out",
+              "duration": 0.35
+            }
+          }
+        },
+        {
+          "type": "shape",
+          "name": "Button",
+          "start": 1.7,
+          "duration": 4.3,
+          "transform": {
+            "x": 360,
+            "y": 200,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "shape": {
+            "kind": "pill",
+            "width": 340,
+            "height": 92,
+            "radius": 46,
+            "fill": "$primary"
+          },
+          "anim": {
+            "in": {
+              "id": "pop-in",
+              "duration": 0.5
+            },
+            "out": {
+              "id": "pop-out",
+              "duration": 0.35
+            }
+          }
+        },
+        {
+          "type": "text",
+          "name": "Button label",
+          "start": 1.8,
+          "duration": 4.2,
+          "transform": {
+            "x": 360,
+            "y": 200,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "text": {
+            "content": "Shop now",
+            "fontFamily": "$body",
+            "fontSize": 38,
+            "fontWeight": 700,
+            "fill": "$onPrimary"
+          },
+          "anim": {
+            "in": {
+              "id": "fade-in",
+              "duration": 0.4
+            },
+            "out": {
+              "id": "fade-out",
+              "duration": 0.3
+            }
+          }
+        },
+        {
+          "type": "shape",
+          "name": "Logo",
+          "start": 0.6,
+          "duration": 5.4,
+          "transform": {
+            "x": 690,
+            "y": -300,
+            "scaleX": 1,
+            "scaleY": 1,
+            "rotation": 0,
+            "opacity": 1
+          },
+          "shape": {
+            "kind": "rect",
+            "width": 120,
+            "height": 120,
+            "radius": 24,
+            "slot": true,
+            "fill": {
+              "type": "linear",
+              "angle": 135,
+              "stops": [
+                {
+                  "offset": 0,
+                  "color": "#3a3f4b"
+                },
+                {
+                  "offset": 1,
+                  "color": "#23262e"
+                }
+              ]
+            }
+          },
+          "anim": {
+            "in": {
+              "id": "pop-in",
+              "duration": 0.5
+            },
+            "out": {
+              "id": "pop-out",
+              "duration": 0.35
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

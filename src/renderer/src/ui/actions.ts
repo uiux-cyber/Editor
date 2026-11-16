@@ -16,7 +16,6 @@ import {
   fillSlot,
   getIndex,
   insertClipsAt,
-  insertTemplateLayers,
   isFree,
   maxDurationFromSource,
   nearestFreeStart,
@@ -34,9 +33,10 @@ import { engine } from '@/engine/engine';
 import { addSoundAsset } from '@/engine/media/assets';
 import { stickerAspect } from '@/engine/sources/sticker';
 import { getEffect, getFilter, getGenerator, getSticker, getTextPreset, getTransition } from '@/library';
-import { buildTemplate, type TemplateVariation } from '@/library/templateEngine';
+import type { TemplateVariation } from '@/library/templateEngine';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { applyTemplateVariation } from './templates/apply';
 
 const DEFAULT_STILL_DURATION = 5;
 
@@ -241,20 +241,13 @@ export async function addSound(soundId: string, where: Placement = {}): Promise<
   }
 }
 
+/**
+ * Insert a template at the playhead (or `time`). Layers, the media they use (brand logo,
+ * embedded media) and the template's music bed form a single undo step — see
+ * ui/templates/apply.ts. Returns the ids of the inserted layers.
+ */
 export function applyTemplate(v: TemplateVariation, time?: number): ID[] {
-  const project = getProject();
-  const { cw, ch } = designSize(project.settings);
-  const built = buildTemplate(v, cw, ch);
-  if (!built || built.clips.length === 0) {
-    toast('error', 'This template could not be built for the current project.');
-    return [];
-  }
-  let ids: ID[] = [];
-  updateProject((p) => {
-    ids = insertTemplateLayers(p, built.clips, snapToFrame(time ?? engine.time, p.settings.fps), p.settings.fps);
-  });
-  useUI.getState().select(ids);
-  return ids;
+  return applyTemplateVariation(v, { time }).ids;
 }
 
 /** Drop media on a template placeholder. */

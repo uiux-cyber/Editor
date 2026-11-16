@@ -1,0 +1,8 @@
+[
+  {
+    "id": "kinora-sample-editorial",
+    "name": "Editorial",
+    "heading": { "family": "Playfair Display", "weight": 700 },
+    "body": { "family": "Raleway", "weight": 500, "letterSpacing": 0.01 }
+  }
+]

@@ -5,7 +5,9 @@
  */
 
 import { hashString, seededRandom } from '@/core/easing';
-import type { Clip } from '@/core/types';
+import { fitContain } from '@/core/project';
+import type { Clip, ImageClip, Keyframe, MediaAsset, ShapeClip } from '@/core/types';
+import { BRAND_FONTS_ID, BRAND_PALETTE_ID } from './brand';
 import { FONT_PAIRS, PALETTES, TEMPLATES, getFontPair, getPalette, getTemplate } from './index';
 import type { AspectId, FontPair, Palette, TemplateCategory, TemplateDef } from './types';
 
@@ -58,28 +60,114 @@ const FALLBACK_FONTS: FontPair = { id: '_fallback', name: 'Default', heading: { 
 
 export const supportsAspect = (def: TemplateDef, aspect: AspectId): boolean => !def.aspects || def.aspects.includes(aspect);
 
+// ---------------------------------------------------------------------------------------------
+// Brand kit ("Use my brand")
+// ---------------------------------------------------------------------------------------------
+
+/** What the template engine needs from the user's brand kit (installed by the UI). */
+export interface TemplateBrand {
+  /** Changes whenever the kit changes (part of variation keys, so thumbnails refresh). */
+  revision: number;
+  palette: Palette;
+  fonts: FontPair;
+  /** Picture placed into `Logo` placeholders, if the kit has a logo. */
+  logo: MediaAsset | null;
+}
+
+let brand: TemplateBrand | null = null;
+
+/** Install (or clear) the brand used by brand variations. */
+export function setTemplateBrand(b: TemplateBrand | null): void {
+  brand = b;
+}
+export const templateBrand = (): TemplateBrand | null => brand;
+
+/** True when a variation renders with the brand kit. */
+export const isBrandVariation = (v: TemplateVariation): boolean => v.paletteId === BRAND_PALETTE_ID;
+
+/** Placeholders named `Logo` receive the brand logo. */
+export const isLogoSlot = (c: Clip): c is ShapeClip => c.type === 'shape' && !!c.shape.slot && c.name.trim().toLowerCase() === 'logo';
+
+/**
+ * Replace `Logo` placeholders with the logo picture, fitted inside the placeholder (never
+ * cropped) and keeping its timing, placement and animation. Round placeholders get more margin.
+ */
+export function fillLogoSlots(clips: Clip[], logo: MediaAsset, cw: number, ch: number): Clip[] {
+  return clips.map((c) => {
+    if (!isLogoSlot(c)) return c;
+    const base = fitContain(logo.width || 512, logo.height || 512, cw, ch);
+    const round = c.shape.kind === 'ellipse' || c.shape.radius >= Math.min(c.shape.width, c.shape.height) * 0.45;
+    const inset = round ? 0.7 : 0.88;
+    const k = Math.min((c.shape.width * inset) / base.w, (c.shape.height * inset) / base.h);
+    const scaled = (frames: Keyframe[] | undefined): Keyframe[] | undefined => frames?.map((f) => ({ ...f, v: f.v * k }));
+    let keyframes: ImageClip['keyframes'];
+    if (c.keyframes) {
+      keyframes = { ...c.keyframes };
+      if (c.keyframes.scaleX) keyframes.scaleX = scaled(c.keyframes.scaleX);
+      if (c.keyframes.scaleY) keyframes.scaleY = scaled(c.keyframes.scaleY);
+    }
+    const img: ImageClip = {
+      id: c.id,
+      trackId: c.trackId,
+      name: 'Logo',
+      start: c.start,
+      duration: c.duration,
+      ...(keyframes ? { keyframes } : {}),
+      transform: { ...c.transform, scaleX: c.transform.scaleX * k, scaleY: c.transform.scaleY * k },
+      blendMode: c.blendMode,
+      effects: [],
+      ...(c.anim ? { anim: c.anim } : {}),
+      type: 'image',
+      assetId: logo.id,
+    };
+    return img;
+  });
+}
+
+export interface BuiltTemplate {
+  clips: Clip[];
+  duration: number;
+  def: TemplateDef;
+  /** Media the clips reference (embedded media, the brand logo): add them to the project. */
+  assets: MediaAsset[];
+}
+
 /** Build the clips of a variation for a composition of `cw × ch` design px. */
-export function buildTemplate(v: TemplateVariation, cw: number, ch: number, duration?: number): { clips: Clip[]; duration: number; def: TemplateDef } | null {
+export function buildTemplate(v: TemplateVariation, cw: number, ch: number, duration?: number): BuiltTemplate | null {
   const def = getTemplate(v.templateId);
   if (!def) return null;
   const total = duration ?? def.duration;
+  const branded = isBrandVariation(v) ? brand : null;
   try {
-    const clips = def.build({
+    let clips = def.build({
       cw,
       ch,
       aspect: aspectIdFor(cw, ch),
       portrait: ch > cw * 1.05,
       square: Math.abs(cw - ch) < cw * 0.05,
-      palette: getPalette(v.paletteId) ?? PALETTES[0] ?? FALLBACK_PALETTE,
-      fonts: getFontPair(v.fontPairId) ?? FONT_PAIRS[0] ?? FALLBACK_FONTS,
+      palette: branded?.palette ?? getPalette(v.paletteId) ?? PALETTES[0] ?? FALLBACK_PALETTE,
+      fonts: branded?.fonts ?? getFontPair(v.fontPairId) ?? FONT_PAIRS[0] ?? FALLBACK_FONTS,
       rng: seededRandom(v.seed),
       duration: total,
     });
-    return { clips: clips.filter((c) => c.duration > 0 && c.start >= 0), duration: total, def };
+    clips = clips.filter((c) => c.duration > 0 && c.start >= 0);
+    const assets: MediaAsset[] = [...(def.assets ?? [])];
+    if (branded?.logo && clips.some(isLogoSlot)) {
+      clips = fillLogoSlots(clips, branded.logo, cw, ch);
+      assets.push(branded.logo);
+    }
+    return { clips, duration: total, def, assets };
   } catch (err) {
     console.warn(`[templates] "${v.templateId}" failed to build`, err);
     return null;
   }
+}
+
+/** The brand-kit treatment of a design: brand palette and fonts, a seeded layout. */
+function brandVariation(def: TemplateDef, n: number): TemplateVariation {
+  const h = hashString(def.id);
+  const seed = (h ^ Math.imul(n + 1, 0x9e3779b1)) >>> 0;
+  return { key: `${def.id}:brand${brand?.revision ?? 0}:${seed}`, templateId: def.id, paletteId: BRAND_PALETTE_ID, fontPairId: BRAND_FONTS_ID, seed };
 }
 
 function variation(def: TemplateDef, n: number): TemplateVariation {
@@ -95,8 +183,21 @@ function variation(def: TemplateDef, n: number): TemplateVariation {
 
 export interface VariationQuery {
   aspect: AspectId;
-  category?: TemplateCategory | 'all';
+  /** `mine` = the user's own saved templates. */
+  category?: TemplateCategory | 'all' | 'mine';
   search?: string;
+  /** Render with the brand kit (when one is installed with `setTemplateBrand`). */
+  brand?: boolean;
+}
+
+/** True for the user's own saved templates. */
+export const isUserTemplate = (def: TemplateDef): boolean => def.origin?.kind === 'user';
+
+/** A variation of a design: the brand treatment when asked for, else palette × font pairing. */
+export function variationFor(def: TemplateDef, n: number, useBrand = false): TemplateVariation {
+  if (useBrand && brand) return brandVariation(def, n);
+  if (def.fixed) return { key: `${def.id}:fixed`, templateId: def.id, paletteId: PALETTES[0]?.id ?? '_fallback', fontPairId: FONT_PAIRS[0]?.id ?? '_fallback', seed: hashString(def.id) };
+  return variation(def, n);
 }
 
 /** Display order of template categories (most used first). */
@@ -127,11 +228,15 @@ function matching(q: VariationQuery): TemplateDef[] {
   const term = q.search?.trim().toLowerCase();
   const list = TEMPLATES.filter((def) => {
     if (!supportsAspect(def, q.aspect)) return false;
-    if (q.category && q.category !== 'all' && def.category !== q.category) return false;
+    if (q.category === 'mine') {
+      if (!isUserTemplate(def)) return false;
+    } else if (q.category && q.category !== 'all' && def.category !== q.category) return false;
     if (term && !(def.name.toLowerCase().includes(term) || def.category.includes(term) || def.tags.some((t) => t.toLowerCase().includes(term)))) return false;
     return true;
   });
-  return interleave(list);
+  // The user's own templates come first (newest first), then the library, interleaved.
+  const mine = list.filter(isUserTemplate).reverse();
+  return [...mine, ...interleave(list.filter((d) => !isUserTemplate(d)))];
 }
 
 /**
@@ -140,9 +245,10 @@ function matching(q: VariationQuery): TemplateDef[] {
  * feed keeps feeling fresh.
  */
 export function variationPage(q: VariationQuery, page: number): TemplateVariation[] {
-  const defs = matching(q);
+  // Fixed designs (saved user templates…) have a single look: they only appear on the first page.
+  const defs = matching(q).filter((def) => page === 0 || !def.fixed);
   if (defs.length === 0) return [];
-  const list = defs.map((def) => variation(def, page));
+  const list = defs.map((def) => variationFor(def, page, !!q.brand));
   if (page === 0) return list;
   const rnd = seededRandom(0x51ed + page * 977);
   for (let i = list.length - 1; i > 0; i--) {
@@ -161,5 +267,9 @@ export const looksPerDesign = (): number => Math.max(1, PALETTES.length) * Math.
 export function shuffleVariation(v: TemplateVariation): TemplateVariation {
   const def = getTemplate(v.templateId);
   if (!def) return v;
-  return variation(def, (v.seed % 9973) + 1 + Math.floor(Math.random() * 5000));
+  const n = (v.seed % 9973) + 1 + Math.floor(Math.random() * 5000);
+  // Brand mode keeps the brand and tries another layout; fixed designs have a single look.
+  if (isBrandVariation(v) && brand) return brandVariation(def, n);
+  if (def.fixed) return v;
+  return variation(def, n);
 }

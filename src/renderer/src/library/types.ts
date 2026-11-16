@@ -17,7 +17,7 @@
  *     mat2 rot2(float radians), const float PI, const float TAU
  */
 
-import type { ClipAnimations, Clip, Grade, ParamValue, TextStyle } from '@/core/types';
+import type { ClipAnimations, Clip, Grade, MediaAsset, ParamValue, TextStyle } from '@/core/types';
 import type { BundledFontFamily } from './fonts';
 
 // ---------------------------------------------------------------------------------------------
@@ -416,10 +416,35 @@ export interface TemplateEnv {
 }
 
 /**
+ * Music bed added under a template's layers when it is applied (if the user keeps "Include
+ * music" on). The synthesised sound is trimmed to the template length and faded.
+ */
+export interface TemplateMusic {
+  /** Id of a sound in the `music` category. */
+  soundId: string;
+  /** 0..2, default 0.8. */
+  volume?: number;
+  /** Seconds, default 0.4. */
+  fadeIn?: number;
+  /** Seconds, default 1.2 (capped to a third of the template). */
+  fadeOut?: number;
+}
+
+/** Where a runtime-registered design comes from (built-in designs omit it). */
+export interface TemplateOrigin {
+  kind: 'user' | 'pack';
+  /** The user template id, or the content pack id. */
+  id: string;
+}
+
+/**
  * A parametric design. `build` returns the clips of one instance, ordered bottom → top, with
  * `start` relative to the template start and an empty `trackId` (the app assigns tracks).
  * Build clips with the helpers from `@/core/factory` only. Designs must adapt to every aspect
  * ratio they claim to support by laying out from `env.cw` / `env.ch`.
+ *
+ * A media placeholder named `Logo` (`makeSlot({ name: 'Logo', … })`) is filled with the brand
+ * logo when the user renders templates with their brand kit.
  */
 export interface TemplateDef {
   id: string;
@@ -432,5 +457,14 @@ export interface TemplateDef {
   aspects?: AspectId[];
   /** 0..1 position of the frame used as the poster (default 0.6). */
   poster?: number;
+  /** Optional music bed (a `music` sound) added when the template is applied. */
+  music?: TemplateMusic;
   build: (env: TemplateEnv) => Clip[];
+  // --- Runtime-registered designs (user templates, content packs) ---------------------------
+  /** Set for designs registered at runtime. */
+  origin?: TemplateOrigin;
+  /** The design ignores palette / font pair (e.g. a saved user template): shown once, not as variations. */
+  fixed?: boolean;
+  /** Media the design references (embedded in a user template); added to the project on apply. */
+  assets?: MediaAsset[];
 }

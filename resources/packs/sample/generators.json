@@ -1,0 +1,14 @@
+[
+  {
+    "id": "kinora-sample-soft-rays",
+    "name": "Soft Rays",
+    "category": "light",
+    "glslFile": "soft-rays.glsl",
+    "params": [
+      { "key": "colorA", "label": "Light", "type": "color", "default": "#ffb347" },
+      { "key": "colorBg", "label": "Background", "type": "color", "default": "#1a1024" },
+      { "key": "rays", "label": "Rays", "type": "float", "default": 9, "min": 3, "max": 24, "step": 1 },
+      { "key": "speed", "label": "Speed", "type": "float", "default": 0.35, "min": 0, "max": 2, "step": 0.05 }
+    ]
+  }
+]

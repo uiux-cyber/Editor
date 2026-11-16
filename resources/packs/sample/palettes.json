@@ -1,0 +1,44 @@
+[
+  {
+    "id": "kinora-sample-sunset-glow",
+    "name": "Sunset Glow",
+    "dark": true,
+    "bg": "#1a1024",
+    "bg2": "#2d1636",
+    "surface": "#2a1c38",
+    "primary": "#ff7a59",
+    "secondary": "#ffb347",
+    "accent": "#ff4f9a",
+    "text": "#fff4ec",
+    "textMuted": "#d7bfd0",
+    "onPrimary": "#1a1024"
+  },
+  {
+    "id": "kinora-sample-nordic-frost",
+    "name": "Nordic Frost",
+    "dark": false,
+    "bg": "#eef4f8",
+    "bg2": "#dbe7f0",
+    "surface": "#ffffff",
+    "primary": "#1f5f8b",
+    "secondary": "#4fa3c7",
+    "accent": "#e07a5f",
+    "text": "#13202b",
+    "textMuted": "#4a5b69",
+    "onPrimary": "#ffffff"
+  },
+  {
+    "id": "kinora-sample-neon-night",
+    "name": "Neon Night",
+    "dark": true,
+    "bg": "#07070f",
+    "bg2": "#12122a",
+    "surface": "#171733",
+    "primary": "#39ff88",
+    "secondary": "#00d1ff",
+    "accent": "#ff3df0",
+    "text": "#f4f7ff",
+    "textMuted": "#a3a9c7",
+    "onPrimary": "#07070f"
+  }
+]
