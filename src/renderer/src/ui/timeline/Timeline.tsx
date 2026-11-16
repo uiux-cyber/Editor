@@ -34,6 +34,7 @@ import {
   removeTrack,
 } from '@/core/project';
 import { clipEnd, formatTimecode, snapToFrame } from '@/core/time';
+import { maxStartExtension, retimeClip } from '@/core/timemap';
 import type { Clip, ID, Project, TrackKind } from '@/core/types';
 import { engine, usePlayback } from '@/engine/engine';
 import { useAssetRuntime } from '@/engine/media/assets';
@@ -71,6 +72,7 @@ import {
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
+import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
 import { ClipView } from './ClipView';
 import { HEADER_W, LEFT_PAD, MAX_PPS, MIN_PPS, RIGHT_PAD, RULER_H, TOP_ZONE, TRACK_HEIGHT, layoutTracks, rowAt, rulerStep, timeToX, xToTime, type Layout, type TrackRow } from './geometry';
 
@@ -646,8 +648,7 @@ export function Timeline(): ReactNode {
     const min = 1 / f;
     const { prev, next } = neighbours(base, orig);
     const origEnd = clipEnd(orig);
-    const media = orig.type === 'video' || orig.type === 'audio' ? orig : null;
-    const minStart = Math.max(prev ? clipEnd(prev) : 0, media ? orig.start - media.trimIn / media.speed : 0);
+    const minStart = Math.max(prev ? clipEnd(prev) : 0, orig.start - maxStartExtension(orig, base.assets));
     const maxEnd = Math.min(next ? next.start : Infinity, orig.start + maxDurationFromSource(orig, base.assets));
     const points = snapPoints(base, new Set([clipId]));
     let started = false;
@@ -679,8 +680,8 @@ export function Timeline(): ReactNode {
             const c = p.clips[clipId];
             if (!c) return;
             c.start = start;
-            c.duration = origEnd - start;
-            if ((c.type === 'video' || c.type === 'audio') && media) c.trimIn = Math.max(0, media.trimIn + cut * media.speed);
+            // In-point through the time mapping (speed ramps, reverse, freeze, compound clips).
+            retimeClip(c, orig, cut, origEnd - start);
             if (orig.keyframes) {
               // Keyframes stay glued to the picture, not to the clip edge.
               c.keyframes = {};
@@ -695,7 +696,8 @@ export function Timeline(): ReactNode {
           const end = Math.max(orig.start + min, Math.min(t, maxEnd));
           updateProject((p) => {
             const c = p.clips[clipId];
-            if (c) c.duration = end - orig.start;
+            // Reversed clips keep their first frame: retiming re-anchors their in-point.
+            if (c) retimeClip(c, orig, 0, end - orig.start);
           });
           setSnapLine(line !== null && Math.abs(line - end) < 1e-6 ? line : null);
           engine.seek(Math.max(orig.start, end - min));
@@ -823,6 +825,7 @@ export function Timeline(): ReactNode {
         { label: 'Copy', shortcut: 'Ctrl+C', run: () => void copySelection() },
         { label: 'Paste at playhead', shortcut: 'Ctrl+V', disabled: !ui.clipboard, run: paste },
         ...(clip?.type === 'video' ? [{ type: 'separator' as const }, { label: 'Detach audio', run: detachAudioFromSelection }] : []),
+        ...timeMenuItems(clip),
         { type: 'separator' },
         { label: 'Delete', icon: <Trash2 size={14} />, shortcut: 'Del', danger: true, run: () => deleteSelection(false) },
         { label: 'Delete and close gap', shortcut: 'Shift+Del', danger: true, run: () => deleteSelection(true) },
@@ -1000,6 +1003,7 @@ export function Timeline(): ReactNode {
   return (
     <section className={`timeline ${tool === 'blade' ? 'is-blade' : ''}`} data-timeline>
       <Toolbar onZoom={(v) => setZoom(v)} onFit={fitZoom} />
+      <CompoundBar />
       <div className="tl-body" ref={bodyRef}>
         <div className="tl-headers" style={{ width: HEADER_W }}>
           <div className="tl-headers__corner" style={{ height: RULER_H }}>
@@ -1066,7 +1070,7 @@ export function Timeline(): ReactNode {
         </div>
 
         <div className="tl-scroll" ref={scrollRef} onScroll={syncView}>
-          <div className="tl-content" style={{ width: contentW, height: contentH }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => bladeRef.current && (bladeRef.current.style.display = 'none')} onContextMenu={onContextMenu}>
+          <div className="tl-content" style={{ width: contentW, height: contentH }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => bladeRef.current && (bladeRef.current.style.display = 'none')} onContextMenu={onContextMenu} onDoubleClick={onTimelineDoubleClick}>
             <canvas ref={rulerRef} className="tl-ruler" style={{ width: view.width, height: RULER_H }} />
 
             {newTrackZone && <div className={`tl-zone tl-zone--${newTrackZone}`} style={newTrackZone === 'above' ? { top: RULER_H + 2, height: TOP_ZONE - 4 } : { top: RULER_H + layout.height - 36, height: 30 }}>New track</div>}

@@ -7,10 +7,10 @@
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder';
 import { GIFEncoder, applyPalette, quantize } from 'gifenc';
 import {
-  AudioBufferSink,
   AudioBufferSource,
   CanvasSink,
   CanvasSource,
+  EncodedPacketSink,
   MovOutputFormat,
   Mp3OutputFormat,
   Mp4OutputFormat,
@@ -23,17 +23,18 @@ import {
   canEncodeVideo,
   type AudioCodec,
   type Input,
-  type InputAudioTrack,
   type StreamTargetChunk,
   type VideoCodec,
   type WrappedCanvas,
 } from 'mediabunny';
+import { deepClips } from '@/core/compound';
+import { mediaInstances, parentGainAt, pictureRefsAt, type MediaInstance } from '@/core/nested';
 import { getIndex, projectDuration, sourceTimeAt } from '@/core/project';
-import { clipGainAt, getAudioClips, getSceneItems } from '@/core/scene';
-import { clipEnd } from '@/core/time';
-import type { AudioClip, ID, MediaAsset, Project, VideoClip } from '@/core/types';
+import { clipGainAt } from '@/core/scene';
+import type { ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { api } from '@/platform/api';
 import { buildChain } from '../audio/chain';
+import { ClipAudioRenderer, openAudioSource, type AudioSource } from '../audio/render';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
@@ -132,8 +133,15 @@ export function getCapabilities(): Promise<Capabilities> {
 // Video decoding
 // ---------------------------------------------------------------------------------------------
 
+/** Hands out the frame shown at a source time for one video clip instance. */
+interface FrameDecoder {
+  seek(time: number): Promise<void>;
+  frame(): FrameImage | null;
+  dispose(): Promise<void>;
+}
+
 /** Sequential decoder for one video clip: hands out the frame shown at increasing source times. */
-class ClipDecoder {
+class ClipDecoder implements FrameDecoder {
   private iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null = null;
   private current: WrappedCanvas | null = null;
   private next: WrappedCanvas | null = null;
@@ -211,41 +219,99 @@ class ClipDecoder {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Reverse decoding
+// ---------------------------------------------------------------------------------------------
+
+/** Memory budget for the frames of one reversed clip (full resolution canvases). */
+const REVERSE_BUDGET_BYTES = 256 * 1024 * 1024;
+
+/**
+ * Decoder for reversed clips, whose source time decreases from frame to frame: decodes one GOP
+ * (or a bounded slice of a long one, re-decoding from its key frame) at a time and hands its
+ * frames out backwards, so every packet is decoded about once instead of once per frame.
+ */
+class ReverseClipDecoder implements FrameDecoder {
+  private frames: WrappedCanvas[] = [];
+  private from = Infinity;
+  private to = -Infinity;
+  private current: WrappedCanvas | null = null;
+  version = 0;
+
+  constructor(
+    private sink: CanvasSink,
+    private packets: EncodedPacketSink,
+    private firstTimestamp: number,
+    private maxSpan: number,
+  ) {}
+
+  async seek(time: number): Promise<void> {
+    const t = Math.max(this.firstTimestamp, time);
+    if (!(t >= this.from - 1e-6 && t < this.to)) await this.load(t);
+    let pick: WrappedCanvas | null = null;
+    for (const f of this.frames) {
+      if (f.timestamp <= t + 1e-4) pick = f;
+      else break;
+    }
+    pick ??= this.frames[0] ?? null;
+    if (pick && pick !== this.current) {
+      this.current = pick;
+      this.version++;
+    }
+  }
+
+  private async load(time: number): Promise<void> {
+    const key = await this.packets.getKeyPacket(time, { metadataOnly: true });
+    let from = key ? key.timestamp : this.firstTimestamp;
+    if (time - from > this.maxSpan) from = time - this.maxSpan;
+    const end = time + 1e-3;
+    const frames: WrappedCanvas[] = [];
+    for await (const wc of this.sink.canvases(from, end)) frames.push(wc);
+    this.frames = frames;
+    this.from = frames.length ? Math.min(from, frames[0].timestamp) : from;
+    this.to = end;
+  }
+
+  frame(): FrameImage | null {
+    if (!this.current) return null;
+    return { source: this.current.canvas as TexImageSource, width: this.current.canvas.width, height: this.current.canvas.height, version: this.version };
+  }
+
+  async dispose(): Promise<void> {
+    this.frames = [];
+    this.current = null;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Audio mixing
 // ---------------------------------------------------------------------------------------------
 
-interface AudioSourceEntry {
-  input: Input;
-  track: InputAudioTrack;
-  sink: AudioBufferSink;
-  sampleRate: number;
-  channels: number;
-}
-
+/**
+ * Offline mix. Every media clip — including clips inside compound clips — is rendered through
+ * its time mapping (speed, ramps, reverse, freeze, preserve pitch: see engine/audio/render.ts)
+ * at the output rate, then gained (clip × enclosing compounds) and processed by its chain.
+ */
 class AudioMixer {
-  private sources = new Map<ID, AudioSourceEntry | null>();
-  private clips: (VideoClip | AudioClip)[];
+  private sources = new Map<ID, AudioSource | null>();
+  private renderers = new Map<ID, ClipAudioRenderer>();
+  private instances: MediaInstance[];
 
   constructor(
     private project: Project,
     private inputFor: (asset: MediaAsset) => Input,
   ) {
-    this.clips = getAudioClips(project);
+    this.instances = mediaInstances(project).filter((i) => i.audible && !!project.assets[i.clip.assetId]?.hasAudio);
   }
 
   get hasAudio(): boolean {
-    return this.clips.length > 0;
+    return this.instances.length > 0;
   }
 
-  private async source(asset: MediaAsset): Promise<AudioSourceEntry | null> {
+  private async source(asset: MediaAsset): Promise<AudioSource | null> {
     if (this.sources.has(asset.id)) return this.sources.get(asset.id)!;
-    let entry: AudioSourceEntry | null = null;
+    let entry: AudioSource | null = null;
     try {
-      const input = this.inputFor(asset);
-      const track = await input.getPrimaryAudioTrack();
-      if (track && (await track.canDecode())) {
-        entry = { input, track, sink: new AudioBufferSink(track), sampleRate: await track.getSampleRate(), channels: Math.min(2, await track.getNumberOfChannels()) };
-      }
+      entry = await openAudioSource(this.inputFor(asset));
     } catch (err) {
       console.warn('[export] audio source unavailable', asset.name, err);
     }
@@ -253,52 +319,46 @@ class AudioMixer {
     return entry;
   }
 
-  /** Decode `[s0, s1)` seconds of a source into one contiguous AudioBuffer. */
-  private async decode(ctx: BaseAudioContext, src: AudioSourceEntry, s0: number, s1: number): Promise<AudioBuffer | null> {
-    const length = Math.max(1, Math.ceil((s1 - s0) * src.sampleRate));
-    const out = ctx.createBuffer(src.channels, length, src.sampleRate);
-    let wrote = false;
-    for await (const { buffer, timestamp } of src.sink.buffers(Math.max(0, s0), s1)) {
-      const offset = Math.round((timestamp - s0) * src.sampleRate);
-      for (let ch = 0; ch < src.channels; ch++) {
-        const data = buffer.getChannelData(Math.min(ch, buffer.numberOfChannels - 1));
-        const from = Math.max(0, -offset);
-        const to = Math.min(data.length, length - offset);
-        if (to > from) {
-          out.getChannelData(ch).set(data.subarray(from, to), offset + from);
-          wrote = true;
-        }
-      }
-    }
-    return wrote ? out : null;
-  }
-
   /** Mix every audible clip for the timeline window `[t0, t1)`. */
   async render(t0: number, t1: number): Promise<AudioBuffer> {
-    const frames = Math.max(1, Math.round((t1 - t0) * AUDIO_SAMPLE_RATE));
-    const ctx = new OfflineAudioContext(2, frames, AUDIO_SAMPLE_RATE);
-    for (const clip of this.clips) {
-      const a = Math.max(t0, clip.start);
-      const b = Math.min(t1, clipEnd(clip));
-      if (b - a <= 1e-6) continue;
+    const SR = AUDIO_SAMPLE_RATE;
+    const s0 = Math.round(t0 * SR);
+    const frames = Math.max(1, Math.round(t1 * SR) - s0);
+    const ctx = new OfflineAudioContext(2, frames, SR);
+    for (const inst of this.instances) {
+      const clip = inst.clip;
+      const a = Math.max(t0, inst.from);
+      const b = Math.min(t1, inst.to);
+      if (b - a <= 1e-6) {
+        if (inst.to <= t0) this.renderers.delete(clip.id);
+        continue;
+      }
       const asset = this.project.assets[clip.assetId];
       if (!asset) continue;
       const src = await this.source(asset);
       if (!src) continue;
-      const s0 = sourceTimeAt(clip, a - clip.start);
-      const s1 = sourceTimeAt(clip, b - clip.start);
-      const buffer = await this.decode(ctx, src, s0, s1);
-      if (!buffer) continue;
+      // Sample-exact placement: contiguous windows continue each clip seamlessly.
+      const sa = Math.round(a * SR);
+      const n = Math.round(b * SR) - sa;
+      if (n <= 0) continue;
+      let renderer = this.renderers.get(clip.id);
+      if (!renderer) this.renderers.set(clip.id, (renderer = new ClipAudioRenderer(clip, src, SR)));
+      const data = await renderer.render(sa - Math.round(inst.origin * SR), n);
+      const buffer = ctx.createBuffer(2, n, SR);
+      buffer.copyToChannel(data[0], 0);
+      buffer.copyToChannel(data[1], 1);
       const node = ctx.createBufferSource();
       node.buffer = buffer;
-      node.playbackRate.value = clip.speed;
       const gain = ctx.createGain();
-      // Sample the clip's gain envelope (volume, keyframes, fades) at 200 Hz.
+      // Sample the gain envelope (volume, keyframes, fades, enclosing compounds) at 200 Hz.
       const span = b - a;
       const steps = Math.max(2, Math.ceil(span * 200) + 1);
       const curve = new Float32Array(steps);
-      for (let i = 0; i < steps; i++) curve[i] = clipGainAt(clip, a - clip.start + (i / (steps - 1)) * span);
-      const when = a - t0;
+      for (let i = 0; i < steps; i++) {
+        const t = a + (i / (steps - 1)) * span;
+        curve[i] = clipGainAt(clip, t - inst.origin) * parentGainAt(inst, t);
+      }
+      const when = (sa - s0) / SR;
       gain.gain.value = curve[0];
       try {
         gain.gain.setValueCurveAtTime(curve, when, Math.max(1e-3, Math.min(span, (frames - 1) / AUDIO_SAMPLE_RATE - when)));
@@ -356,7 +416,8 @@ const yieldToUI = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 async function prepareResources(project: Project): Promise<void> {
   const fonts: Promise<void>[] = [];
   const images = new Set<ID>();
-  for (const clip of Object.values(project.clips)) {
+  // Including the clips inside compound clips.
+  for (const clip of deepClips(project)) {
     if (clip.type === 'text') fonts.push(ensureFont(clip.text));
     if (clip.type === 'image') images.add(clip.assetId);
   }
@@ -415,20 +476,30 @@ export async function exportProject(
   canvas.width = settings.width;
   canvas.height = settings.height;
   let compositor: Compositor | null = null;
-  const decoders = new Map<ID, ClipDecoder | null>();
+  const decoders = new Map<ID, FrameDecoder | null>();
+  // Clip instances (top level and inside compound clips) by id, for decoder lifetimes.
+  const instancesById = new Map(mediaInstances(project).map((i) => [i.clip.id, i]));
   const mixer = new AudioMixer(project, inputFor);
   let writer: DiskWriter | null = null;
   let output: Output | null = null;
 
-  const decoderFor = async (clip: VideoClip): Promise<ClipDecoder | null> => {
+  const decoderFor = async (clip: VideoClip): Promise<FrameDecoder | null> => {
     if (decoders.has(clip.id)) return decoders.get(clip.id)!;
-    let decoder: ClipDecoder | null = null;
+    let decoder: FrameDecoder | null = null;
     const asset = project.assets[clip.assetId];
     try {
       if (asset) {
         const track = await inputFor(asset).getPrimaryVideoTrack();
         if (track && (await track.canDecode())) {
-          decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3 }), await track.getFirstTimestamp());
+          if (clip.reverse && !clip.freeze) {
+            const w = Math.max(1, asset.width || 1920);
+            const h = Math.max(1, asset.height || 1080);
+            const fps = asset.fps > 0 ? asset.fps : 30;
+            const maxFrames = Math.min(90, Math.max(8, Math.floor(REVERSE_BUDGET_BYTES / (w * h * 4))));
+            decoder = new ReverseClipDecoder(new CanvasSink(track), new EncodedPacketSink(track), await track.getFirstTimestamp(), maxFrames / fps);
+          } else {
+            decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3 }), await track.getFirstTimestamp());
+          }
         }
       }
     } catch (err) {
@@ -449,24 +520,21 @@ export async function exportProject(
   /** Decode every video frame needed at timeline time `t`, and free decoders of finished clips. */
   const prepareFrame = async (t: number): Promise<void> => {
     const active = new Set<ID>();
-    for (const item of getSceneItems(project, t)) {
-      const refs = item.kind === 'layer' ? [item.layer] : [item.from, item.to];
-      for (const ref of refs) {
-        if (ref.clip.type !== 'video') continue;
-        const asset = project.assets[ref.clip.assetId];
-        if (!asset) continue;
-        active.add(ref.clip.id);
-        const decoder = await decoderFor(ref.clip);
-        if (!decoder) continue;
-        const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
-        await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
-      }
+    // Every picture on screen, including clips inside compound clips (instance ids).
+    for (const ref of pictureRefsAt(project, t)) {
+      const asset = project.assets[ref.clip.assetId];
+      if (!asset) continue;
+      active.add(ref.clip.id);
+      const decoder = await decoderFor(ref.clip);
+      if (!decoder) continue;
+      const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
+      await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
     }
     for (const [id, decoder] of decoders) {
       if (decoder && !active.has(id)) {
-        const clip = project.clips[id];
+        const inst = instancesById.get(id);
         // Keep decoders for clips that will be needed again shortly (transition handles).
-        if (!clip || clipEnd(clip) + 3 < t) {
+        if (!inst || inst.to + 3 < t) {
           await decoder.dispose();
           decoders.delete(id);
         }

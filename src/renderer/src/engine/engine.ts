@@ -45,7 +45,7 @@ class Engine {
   private lastLayoutSig = '';
 
   private provider: MediaProvider = {
-    videoFrame: (clip) => this.pool?.videoFrame(clip) ?? null,
+    videoFrame: (clip, sourceTime) => this.pool?.videoFrame(clip, sourceTime) ?? null,
     image: (assetId) => {
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;

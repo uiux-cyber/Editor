@@ -12,6 +12,7 @@ import { isNeutralGrade, resolveFilterGrade, setGradeUniforms } from './gl/grade
 import { LAYER_EXTENSIONS } from './gl/layerExt';
 import { BLEND_FRAG, BLEND_MODE_INDEX, COPY_FRAG, LAYER_VERT, MASK_SHAPE_INDEX, PRESENT_FRAG, layerFrag } from './gl/shaders';
 import { FULLSCREEN_VERT, hexToRgba, setParamUniforms, wrapEffect, wrapGenerator, wrapTransition, type Program } from './gl/shaderlib';
+import { MAX_NESTING, instanceIds, instanceView } from '@/core/compound';
 import { propAt } from '@/core/keyframes';
 import { designSize, fitContain, sourceTimeAt } from '@/core/project';
 import { getSceneItems, resolveLayer, type LayerRef, type ResolvedLayer } from '@/core/scene';
@@ -88,6 +89,8 @@ interface FrameEnv {
   ch: number;
   /** Render pixels per design pixel. */
   px: number;
+  /** Compound nesting depth of `project` (0 = the timeline being rendered). */
+  depth: number;
 }
 
 export interface CompositorOptions {
@@ -139,7 +142,7 @@ export class Compositor {
     const W = this.canvas.width;
     const H = this.canvas.height;
     const { cw, ch } = designSize(project.settings);
-    const env: FrameEnv = { project, provider, W, H, cw, ch, px: W / cw };
+    const env: FrameEnv = { project, provider, W, H, cw, ch, px: W / cw, depth: 0 };
     this.frame++;
     this.layout.clear();
 
@@ -148,7 +151,37 @@ export class Compositor {
     const [br, bg, bb] = hexToRgba(project.settings.background);
     gl.clearColor(br, bg, bb, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    comp = this.composeItems(comp, project, time, env);
 
+    // Present
+    ctx.bind(null);
+    gl.disable(gl.BLEND);
+    const present = ctx.program('present', FULLSCREEN_VERT, PRESENT_FRAG);
+    if (present) {
+      gl.useProgram(present.program);
+      ctx.useTexture(present, 'u_tex', 0, comp.tex);
+      ctx.drawQuad();
+    }
+    ctx.release(this.last);
+    this.last = comp;
+
+    this.evict();
+    if (this.lastPrune !== project) {
+      this.lastPrune = project;
+      // Clips inside compound clips render under their instance ids.
+      const alive = instanceIds(project);
+      this.text.prune(alive);
+      this.shapes.prune(alive);
+      this.stickers.prune(alive);
+    }
+  }
+
+  /**
+   * Draw the scene of `project` at `time` over `comp`. Consumes `comp` and returns the result.
+   * Also used for the nested sequences of compound clips (into a transparent target).
+   */
+  private composeItems(comp: Target, project: Project, time: number, env: FrameEnv): Target {
+    const { ctx } = this;
     for (const item of getSceneItems(project, time)) {
       if (item.kind === 'layer') {
         if (item.layer.clip.type === 'adjustment') {
@@ -178,27 +211,7 @@ export class Compositor {
         ctx.release(out);
       }
     }
-
-    // Present
-    ctx.bind(null);
-    gl.disable(gl.BLEND);
-    const present = ctx.program('present', FULLSCREEN_VERT, PRESENT_FRAG);
-    if (present) {
-      gl.useProgram(present.program);
-      ctx.useTexture(present, 'u_tex', 0, comp.tex);
-      ctx.drawQuad();
-    }
-    ctx.release(this.last);
-    this.last = comp;
-
-    this.evict();
-    if (this.lastPrune !== project) {
-      this.lastPrune = project;
-      const alive = new Set(Object.keys(project.clips));
-      this.text.prune(alive);
-      this.shapes.prune(alive);
-      this.stickers.prune(alive);
-    }
+    return comp;
   }
 
   /** RGBA pixels of the last rendered frame, top row first. */
@@ -333,6 +346,28 @@ export class Compositor {
         baseH = raster.height;
         contentW = raster.contentW;
         contentH = raster.contentH;
+        break;
+      }
+      case 'compound': {
+        // The nested sequence, rendered with the same scene evaluation (transitions, adjustment
+        // layers, nested compounds) into a transparent full-frame target that then behaves like
+        // any other layer: transform, crop, mask, grade, effects, blend modes, animations.
+        if (env.depth >= MAX_NESTING) return null;
+        const view = instanceView(env.project, clip);
+        const nested: FrameEnv = { ...env, project: view, depth: env.depth + 1 };
+        temp = this.composeItems(this.ctx.acquire(env.W, env.H, true), view, clip.trimIn + localTime, nested);
+        tex = temp.tex;
+        texW = env.W;
+        texH = env.H;
+        const crop = clip.crop ?? { l: 0, t: 0, r: 0, b: 0 };
+        const keepW = Math.max(0.01, 1 - crop.l - crop.r);
+        const keepH = Math.max(0.01, 1 - crop.t - crop.b);
+        uv = [crop.l, crop.t, crop.l + keepW, crop.t + keepH];
+        // Like media: the kept part is fitted to the frame.
+        const fit = fitContain(cw * keepW, ch * keepH, cw, ch);
+        baseW = contentW = fit.w;
+        baseH = contentH = fit.h;
+        quadShaping = true;
         break;
       }
       case 'generator': {

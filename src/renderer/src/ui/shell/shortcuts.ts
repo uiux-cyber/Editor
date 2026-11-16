@@ -15,6 +15,7 @@ import {
   trimToPlayhead,
   undo,
 } from '../actions';
+import { runCommand } from '../commands';
 import { useMenu } from '../common/overlays';
 import { importViaDialog } from '../library/MediaTab';
 import { closeProject, newProjectPrompt, openProject, saveProject } from './commands';
@@ -42,6 +43,9 @@ export const SHORTCUTS: ShortcutInfo[] = [
   { group: 'Editing', keys: ['Ctrl', 'D'], label: 'Duplicate' },
   { group: 'Editing', keys: ['Ctrl', 'A'], label: 'Select everything' },
   { group: 'Editing', keys: ['Alt', '←/→'], label: 'Nudge selection by one frame' },
+  { group: 'Editing', keys: ['Shift', 'F'], label: 'Freeze frame at the playhead' },
+  { group: 'Editing', keys: ['Alt', 'G'], label: 'Create compound clip' },
+  { group: 'Editing', keys: ['Alt', 'Shift', 'G'], label: 'Break apart compound clip' },
   { group: 'Editing', keys: ['Ctrl', 'Z'], label: 'Undo' },
   { group: 'Editing', keys: ['Ctrl', 'Shift', 'Z'], label: 'Redo' },
   { group: 'Timeline', keys: ['V'], label: 'Select tool' },
@@ -164,6 +168,18 @@ export function handleEditorKey(e: KeyboardEvent): void {
       default:
         return;
     }
+  }
+
+  // Time remapping & compound clips (ui/commands/defs/time.ts).
+  if (lower === 'g' && e.altKey) {
+    e.preventDefault();
+    runCommand(e.shiftKey ? 'compound.breakApart' : 'compound.create');
+    return;
+  }
+  if (lower === 'f' && e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    runCommand('clip.freezeFrame');
+    return;
   }
 
   switch (lower) {

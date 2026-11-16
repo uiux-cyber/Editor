@@ -596,6 +596,8 @@ export interface Sequence {
   tracks: Track[];
   clips: Record<ID, Clip>;
   transitions: Record<ID, Transition>;
+  /** Markers placed while editing the nested sequence (nested time). */
+  markers?: Marker[];
 }
 
 export interface CompoundClip extends ClipCore, VisualProps, AudioProps {

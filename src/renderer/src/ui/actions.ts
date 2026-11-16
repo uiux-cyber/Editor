@@ -29,6 +29,7 @@ import {
   trackWithRoom,
 } from '@/core/project';
 import { clipEnd, snapToFrame } from '@/core/time';
+import { retimeClip } from '@/core/timemap';
 import type { Clip, ID, MediaAsset, Project, ShapeKind, Track, VisualClip } from '@/core/types';
 import { engine } from '@/engine/engine';
 import { addSoundAsset } from '@/engine/media/assets';
@@ -506,14 +507,14 @@ export function trimToPlayhead(edge: 'start' | 'end'): void {
       const clip = p.clips[t.id];
       if (edge === 'start') {
         const cut = time - clip.start;
-        if (clip.type === 'video' || clip.type === 'audio') clip.trimIn += cut * clip.speed;
+        // In-point through the time mapping (speed ramps, reverse, freeze, compound clips).
+        retimeClip(clip, t, cut, clip.duration - cut);
         if (clip.keyframes) {
           for (const frames of Object.values(clip.keyframes)) frames?.forEach((k) => (k.t = Math.max(0, k.t - cut)));
         }
-        clip.duration -= cut;
         clip.start = time;
       } else {
-        clip.duration = time - clip.start;
+        retimeClip(clip, t, 0, time - clip.start);
       }
     }
     cleanupTransitions(p);

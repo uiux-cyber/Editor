@@ -127,7 +127,8 @@ export async function saveProject(saveAs = false): Promise<boolean> {
     if ((!store.filePath || saveAs) && /^Untitled project$/i.test(store.project.name)) {
       store.update((p) => void (p.name = baseName(path!)), { history: false });
     }
-    const project = useProjectStore.getState().project;
+    // The document itself, even while a compound clip is open for editing.
+    const project = useProjectStore.getState().root;
     await api.fs.writeProject(path, serializeProject(project));
     useProjectStore.getState().markSaved(path);
     await api.autosave.remove(project.id).catch(() => undefined);
@@ -182,7 +183,7 @@ export function startDocumentSync(): () => void {
   sync();
 
   const timer = window.setInterval(() => {
-    const { project, filePath, txnBase } = useProjectStore.getState();
+    const { root: project, filePath, txnBase } = useProjectStore.getState();
     if (useUI.getState().screen !== 'editor' || txnBase || !isDirty() || project === lastAutosaved) return;
     lastAutosaved = project;
     void api.autosave.write(project.id, project.name, filePath, serializeProject(project)).catch((err) => console.warn('[autosave] failed', err));
