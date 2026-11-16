@@ -16,6 +16,7 @@ import {
   undo,
 } from '../actions';
 import { useMenu } from '../common/overlays';
+import { clearMarks, goToIn, goToOut, markIn, markOut } from '../export/actions';
 import { importViaDialog } from '../library/MediaTab';
 import { closeProject, newProjectPrompt, openProject, saveProject } from './commands';
 
@@ -48,6 +49,9 @@ export const SHORTCUTS: ShortcutInfo[] = [
   { group: 'Timeline', keys: ['C'], label: 'Blade tool' },
   { group: 'Timeline', keys: ['N'], label: 'Toggle snapping' },
   { group: 'Timeline', keys: ['M'], label: 'Add marker' },
+  { group: 'Timeline', keys: ['I', 'O'], label: 'Mark In / Out at the playhead' },
+  { group: 'Timeline', keys: ['Alt', 'X'], label: 'Clear In / Out' },
+  { group: 'Timeline', keys: ['Shift', 'I / O'], label: 'Go to In / Out' },
   { group: 'Timeline', keys: ['+', '−'], label: 'Zoom in / out' },
   { group: 'Timeline', keys: ['Shift', 'Z'], label: 'Fit the project in view' },
   { group: 'Timeline', keys: ['Ctrl', 'Scroll'], label: 'Zoom around the cursor' },
@@ -234,6 +238,23 @@ export function handleEditorKey(e: KeyboardEvent): void {
       return;
     case 'm':
       addMarker();
+      return;
+    // Export range marks (ui/export/actions).
+    case 'i':
+      if (e.altKey) return;
+      if (e.shiftKey) goToIn();
+      else markIn();
+      return;
+    case 'o':
+      if (e.altKey) return;
+      if (e.shiftKey) goToOut();
+      else markOut();
+      return;
+    case 'x':
+      if (e.altKey) {
+        e.preventDefault();
+        clearMarks();
+      }
       return;
     case '=':
     case '+':

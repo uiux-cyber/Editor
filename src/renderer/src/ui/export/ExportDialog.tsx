@@ -1,229 +1,201 @@
-import { AlertTriangle, CircleCheck, Download, FolderOpen, Play } from 'lucide-react';
+import { AlertTriangle, Captions, Check, CircleCheck, FolderOpen, Info, ListPlus, Music, Play, Scissors, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { captionTracks } from '@/core/captions';
 import { projectDuration } from '@/core/project';
 import { getAudioClips } from '@/core/scene';
-import { formatBytes, formatDuration } from '@/core/time';
+import { formatBytes, formatDuration, formatSeconds, formatTimecode } from '@/core/time';
 import { engine } from '@/engine/engine';
-import { ExportCancelled, estimateSize, exportProject, exportWarnings, getCapabilities, type Capabilities, type ExportContainer, type ExportProgress, type ExportSettings, type QualityLevel } from '@/engine/export/exporter';
+import { canEncodeSize, estimateSize, exportCaptionCues, exportWarnings, getCapabilities, supportsEmbeddedSubtitles, supportsSidecars, withoutBurnedCaptions, type Capabilities, type SubtitleFormat } from '@/engine/export/exporter';
+import { FramingPreview } from '@/engine/export/framingPreview';
+import { ASPECTS, PLATFORM_PRESETS, PRESET_GROUPS, frameFor, presetFrame, presetSpec, type AspectId, type PlatformPreset } from '@/engine/export/presets';
+import { cancelJob, enqueue, jobCanvas, setPreviewMode, unwatch, useExportQueue } from '@/engine/export/queue';
+import { isFinished } from '@/engine/export/queueState';
+import { defaultRangeMode, resolveRange, type RangeMode } from '@/engine/export/range';
+import { ALPHA_FORMATS, FORMATS, customFormat, defaultCustom, outputName, planTarget, type CustomSettings, type PlannedTarget } from '@/engine/export/targets';
 import { useAssetRuntime } from '@/engine/media/assets';
 import { api } from '@/platform/api';
 import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
-import type { VideoCodec } from 'mediabunny';
 import { Field, Segmented, Select, Toggle } from '../common/controls';
 import { Modal } from '../common/overlays';
+import { JobRow, baseName } from './JobRow';
+import { getExportPrefs, saveExportPrefs } from './prefs';
+import './export.css';
 
-interface FormatOption {
-  id: string;
-  label: string;
-  hint: string;
-  container: ExportContainer;
-  codec: VideoCodec;
-  ext: string;
-  kind: 'video' | 'gif' | 'audio' | 'image';
+const LABEL_W = 110;
+
+// ---------------------------------------------------------------------------------------------
+// Preset gallery
+// ---------------------------------------------------------------------------------------------
+
+function Tile({ selected, onToggle, w, h, tint, name, spec, title, id }: { selected: boolean; onToggle: () => void; w: number; h: number; tint?: string; name: string; spec: ReactNode; title?: string; id: string }): ReactNode {
+  const k = 30 / Math.max(w, h);
+  return (
+    <button type="button" className={`xd-tile ${selected ? 'is-selected' : ''}`} aria-pressed={selected} title={title} data-target={id} onClick={onToggle}>
+      <span className="xd-tile__frame">
+        <span className="xd-tile__shape" style={{ width: Math.max(8, w * k), height: Math.max(8, h * k), ['--tint' as string]: tint }} />
+      </span>
+      <span className="xd-tile__text">
+        <span className="xd-tile__name">{name}</span>
+        <span className="xd-tile__spec">{spec}</span>
+      </span>
+      <span className="xd-tile__check">
+        <Check size={10} strokeWidth={3.5} />
+      </span>
+    </button>
+  );
 }
 
-const FORMATS: FormatOption[] = [
-  { id: 'mp4-avc', label: 'MP4 · H.264', hint: 'Plays everywhere. Best choice for YouTube, TikTok, Instagram and sharing.', container: 'mp4', codec: 'avc', ext: 'mp4', kind: 'video' },
-  { id: 'mp4-hevc', label: 'MP4 · HEVC (H.265)', hint: 'About 30% smaller files at the same quality. Great for 4K.', container: 'mp4', codec: 'hevc', ext: 'mp4', kind: 'video' },
-  { id: 'mp4-av1', label: 'MP4 · AV1', hint: 'Smallest files; slower to encode and not supported by every player yet.', container: 'mp4', codec: 'av1', ext: 'mp4', kind: 'video' },
-  { id: 'webm-vp9', label: 'WebM · VP9', hint: 'Open format for the web.', container: 'webm', codec: 'vp9', ext: 'webm', kind: 'video' },
-  { id: 'mov-avc', label: 'MOV · H.264', hint: 'QuickTime container for Apple workflows.', container: 'mov', codec: 'avc', ext: 'mov', kind: 'video' },
-  { id: 'gif', label: 'Animated GIF', hint: 'Short silent loops for chat and docs. Keep it small and brief.', container: 'gif', codec: 'avc', ext: 'gif', kind: 'gif' },
-  { id: 'mp3', label: 'MP3 audio', hint: 'Sound only.', container: 'mp3', codec: 'avc', ext: 'mp3', kind: 'audio' },
-  { id: 'wav', label: 'WAV audio', hint: 'Uncompressed sound only.', container: 'wav', codec: 'avc', ext: 'wav', kind: 'audio' },
-  { id: 'png', label: 'PNG — current frame', hint: 'A full-resolution still of the frame under the playhead.', container: 'png', codec: 'avc', ext: 'png', kind: 'image' },
-];
+function presetSpecLines(p: PlatformPreset, settings: { width: number; height: number; fps: number }): ReactNode {
+  const [size, fps, ...rest] = presetSpec(p, settings).split(' · ');
+  return (
+    <>
+      {size} · {fps}
+      <br />
+      {rest.join(' · ')}
+    </>
+  );
+}
 
-const even = (n: number): number => Math.max(2, Math.round(n / 2) * 2);
+// ---------------------------------------------------------------------------------------------
+// Framing previews
+// ---------------------------------------------------------------------------------------------
 
-type Stage = { name: 'setup' } | { name: 'running'; progress: ExportProgress } | { name: 'done'; path: string; seconds: number; bytes: number } | { name: 'error'; message: string };
-
-export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
-  const project = useProjectStore((s) => s.project);
-  const runtime = useAssetRuntime((s) => s.items);
-  const duration = projectDuration(project);
-  const { width: pw, height: ph, fps: pfps } = project.settings;
-
-  const [formatId, setFormatId] = useState('mp4-avc');
-  const [shortSide, setShortSide] = useState<number>(Math.min(pw, ph));
-  const [fps, setFps] = useState<number>(pfps);
-  const [quality, setQuality] = useState<QualityLevel>('high');
-  const [audio, setAudio] = useState(true);
-  const [hardware, setHardware] = useState<ExportSettings['hardware']>('no-preference');
-  const [fastStart, setFastStart] = useState(false);
-  const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [stage, setStage] = useState<Stage>({ name: 'setup' });
-  const abort = useRef<AbortController | null>(null);
-  const mirror = useRef<HTMLCanvasElement>(null);
-  const source = useRef<HTMLCanvasElement | null>(null);
+function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; time: number; renderer: FramingPreview; box: { w: number; h: number } }): ReactNode {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const { width, height } = plan.settings;
+  const k = Math.min(box.w / width, box.h / height);
+  const cssW = Math.max(40, Math.round(width * k));
+  const cssH = Math.max(40, Math.round(height * k));
+  const audioOnly = plan.settings.container === 'mp3' || plan.settings.container === 'wav';
+  const transparent = !!plan.settings.transparent;
+  // Show exactly what the export renders: captions disappear when they are not burned in.
+  const scene = useMemo(() => (plan.settings.burnInCaptions === false ? withoutBurnedCaptions(plan.project) : plan.project), [plan.project, plan.settings.burnInCaptions]);
 
   useEffect(() => {
-    void getCapabilities().then(setCaps);
-  }, []);
+    if (audioOnly) return;
+    const el = canvas.current;
+    if (!el) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    el.width = Math.round(cssW * dpr);
+    el.height = Math.round(cssH * dpr);
+    const timer = window.setTimeout(() => void renderer.draw(scene, time, el, { transparent }), 90);
+    return () => window.clearTimeout(timer);
+  }, [scene, time, renderer, cssW, cssH, transparent, audioOnly]);
 
-  const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
-  const isVideo = format.kind === 'video';
-  const isGif = format.kind === 'gif';
-  const hasPicture = format.kind !== 'audio';
-  const hasAudio = useMemo(() => getAudioClips(project).length > 0, [project]);
-  const missing = useMemo(() => new Set(Object.keys(runtime).filter((id) => runtime[id].status === 'missing')), [runtime]);
-  const warnings = useMemo(() => exportWarnings(project, missing), [project, missing]);
+  return (
+    <div className="xd-preview" style={{ width: box.w }} data-preview-target={plan.key}>
+      <div className="xd-preview__stage" style={{ height: audioOnly ? 54 : box.h }}>
+        {audioOnly ? (
+          <div className="xd-preview__frame xd-preview__frame--audio">
+            <Music size={18} color="var(--text-2)" />
+          </div>
+        ) : (
+          <div className="xd-preview__frame" style={{ width: cssW, height: cssH }}>
+            <canvas ref={canvas} />
+            <span className="xd-preview__badge">{plan.aspect}</span>
+          </div>
+        )}
+      </div>
+      <span className="xd-preview__label" title={plan.label}>
+        {plan.label}
+      </span>
+      <span className="xd-preview__sub">{plan.reframed ? 'Reframed to fit' : audioOnly ? 'Sound only' : transparent ? 'Transparent background' : 'Original framing'}</span>
+    </div>
+  );
+}
 
-  // GIFs get sensible small defaults when selected.
+// ---------------------------------------------------------------------------------------------
+// Running / finished view
+// ---------------------------------------------------------------------------------------------
+
+function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => void; onBack: () => void }): ReactNode {
+  const all = useExportQueue((s) => s.jobs);
+  const previewMode = useExportQueue((s) => s.previewMode);
+  const jobs = useMemo(() => all.filter((j) => ids.includes(j.id)), [all, ids]);
+  const stage = useRef<HTMLCanvasElement>(null);
+  const running = jobs.find((j) => j.status === 'running' || j.status === 'cancelling');
+  const finished = jobs.length > 0 && jobs.every((j) => isFinished(j.status));
+  const ahead = all.filter((j) => !ids.includes(j.id) && (j.status === 'running' || j.status === 'queued')).length;
+
+  // Leaving the dialog: further completions are announced with toasts again.
+  useEffect(() => () => unwatch(ids), [ids]);
+
   useEffect(() => {
-    if (isGif) {
-      setShortSide((s) => Math.min(s, 480));
-      setFps((f) => Math.min(f, 15));
-    }
-  }, [isGif]);
+    if (jobs.length === 0) onClose();
+  }, [jobs.length, onClose]);
 
-  const projShort = Math.min(pw, ph);
-  const scale = shortSide / projShort;
-  const width = even(pw * scale);
-  const height = even(ph * scale);
-
-  const settings: ExportSettings = {
-    container: format.container,
-    videoCodec: format.codec,
-    width,
-    height,
-    fps,
-    quality,
-    audio,
-    start: format.kind === 'image' ? engine.time : 0,
-    end: format.kind === 'image' ? engine.time : duration,
-    hardware,
-    fastStart,
-  };
-
-  const resolutions = useMemo(() => {
-    const list = [2160, 1440, 1080, 720, 480, 360].filter((r) => r <= Math.max(projShort, 1080) * 2 && r !== projShort);
-    const opts = [{ value: projShort, label: `Project — ${pw} × ${ph}` }, ...list.map((r) => ({ value: r, label: `${r === 2160 ? '4K' : `${r}p`} — ${even((pw * r) / projShort)} × ${even((ph * r) / projShort)}` }))];
-    return opts.sort((a, b) => b.value - a.value);
-  }, [pw, ph, projShort]);
-
-  const fpsOptions = useMemo(() => {
-    const base = isGif ? [8, 10, 12, 15, 20, 24, 30] : [24, 25, 30, 50, 60];
-    const all = [...new Set([...base, ...(isGif ? [] : [pfps])])].sort((a, b) => a - b);
-    return all.map((f) => ({ value: f, label: `${f} fps${f === pfps ? ' (project)' : ''}` }));
-  }, [isGif, pfps]);
-
-  const unsupported = isVideo && caps ? !caps.video[format.codec] : false;
-  const empty = duration <= 0;
-  const noAudio = format.kind === 'audio' && !hasAudio;
-  const canStart = !empty && !unsupported && !noAudio && stage.name === 'setup';
-
-  // Mirror the frame being rendered into the dialog.
+  // Mirror the frame being rendered.
   useEffect(() => {
-    if (stage.name !== 'running') return;
+    if (!running) return;
     const timer = window.setInterval(() => {
-      const src = source.current;
-      const dst = mirror.current;
+      const src = jobCanvas(running.id);
+      const dst = stage.current;
       if (!src || !dst) return;
-      const ctx = dst.getContext('2d');
-      if (!ctx) return;
-      const k = Math.min(dst.width / src.width, dst.height / src.height);
-      const w = src.width * k;
-      const h = src.height * k;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, dst.width, dst.height);
-      ctx.drawImage(src, (dst.width - w) / 2, (dst.height - h) / 2, w, h);
-    }, 400);
-    return () => window.clearInterval(timer);
-  }, [stage.name]);
-
-  const start = async (): Promise<void> => {
-    const path = await api.dialog.saveFile(`${project.name}.${format.ext}`, [{ name: format.label, extensions: [format.ext] }]);
-    if (!path) return;
-    const controller = new AbortController();
-    abort.current = controller;
-    source.current = null;
-    setStage({ name: 'running', progress: { phase: 'preparing', ratio: 0, frame: 0, totalFrames: 1, speed: 0, eta: 0 } });
-    engine.setSuspended(true);
-    void api.app.keepAwake(true);
-    try {
-      const result = await exportProject(
-        project,
-        settings,
-        path,
-        (progress) => {
-          setStage({ name: 'running', progress });
-          void api.app.setProgress(progress.ratio);
-        },
-        controller.signal,
-        (handle) => {
-          source.current = handle.canvas;
-        },
-      );
-      const [info] = await api.fs.stat([path]);
-      setStage({ name: 'done', path: result.path, seconds: result.seconds, bytes: info?.size ?? 0 });
-    } catch (err) {
-      if (err instanceof ExportCancelled) {
-        setStage({ name: 'setup' });
-        useUI.getState().toast({ kind: 'info', message: 'Export cancelled' });
-      } else {
-        console.error('[export]', err);
-        setStage({ name: 'error', message: (err as Error).message || 'The export failed.' });
+      const k = Math.min(560 / src.width, 280 / src.height);
+      const w = Math.max(2, Math.round(src.width * k));
+      const h = Math.max(2, Math.round(src.height * k));
+      if (dst.width !== w || dst.height !== h) {
+        dst.width = w;
+        dst.height = h;
       }
-    } finally {
-      abort.current = null;
-      engine.setSuspended(false);
-      void api.app.keepAwake(false);
-      void api.app.setProgress(-1);
-    }
-  };
+      dst.getContext('2d')?.drawImage(src, 0, 0, w, h);
+    }, 350);
+    return () => window.clearInterval(timer);
+  }, [running?.id]);
 
-  const running = stage.name === 'running';
-
-  if (stage.name === 'running') {
-    const p = stage.progress;
-    const pct = Math.round(p.ratio * 100);
+  if (finished) {
+    const done = jobs.filter((j) => j.status === 'done');
+    const failed = jobs.filter((j) => j.status === 'failed');
+    const single = jobs.length === 1 ? jobs[0] : null;
+    const ok = failed.length === 0 && done.length > 0;
     return (
-      <Modal title="Exporting…" subtitle={project.name} onClose={() => undefined} dismissable={false} width={520}>
-        <div className="export-run">
-          {hasPicture && <canvas ref={mirror} className="export-run__preview" width={480} height={270} />}
-          <div className="progress">
-            <div className="progress__bar" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="export-run__stats">
-            <strong className="mono">{pct}%</strong>
-            <span>{p.phase === 'preparing' ? 'Preparing media…' : p.phase === 'finalizing' ? 'Finishing the file…' : hasPicture ? `Frame ${p.frame.toLocaleString()} of ${p.totalFrames.toLocaleString()}` : 'Mixing audio…'}</span>
-            {p.speed > 0 && hasPicture && <span className="mono">{p.speed.toFixed(1)} fps</span>}
-            {p.eta > 1 && <span>{formatDuration(p.eta)} left</span>}
-          </div>
-          <p className="hint">You can keep this window in the background. The preview is paused while exporting.</p>
-        </div>
-        <div className="modal__foot modal__foot--inline">
-          <button type="button" className="btn btn--outline" onClick={() => abort.current?.abort()}>
-            Cancel export
-          </button>
-        </div>
-      </Modal>
-    );
-  }
-
-  if (stage.name === 'done') {
-    return (
-      <Modal title="Export complete" onClose={onClose} width={460}>
+      <Modal title={ok ? 'Export complete' : done.length ? 'Some exports failed' : 'Export failed'} onClose={onClose} width={520}>
         <div className="export-done">
-          <span className="export-done__icon">
-            <CircleCheck size={30} />
-          </span>
-          <strong className="truncate" title={stage.path}>
-            {stage.path.replace(/^.*[\\/]/, '')}
-          </strong>
-          <span>
-            {formatBytes(stage.bytes)} · exported in {formatDuration(Math.max(1, stage.seconds))}
-          </span>
+          <span className={`export-done__icon ${ok ? '' : 'export-done__icon--error'}`}>{ok ? <CircleCheck size={30} /> : <AlertTriangle size={28} />}</span>
+          {single ? (
+            <>
+              <strong className="truncate" title={single.output.path}>
+                {baseName(single.output.path)}
+              </strong>
+              {single.status === 'done' ? (
+                <span>
+                  {formatBytes(single.result?.bytes ?? 0)} · exported in {formatDuration(Math.max(1, single.result?.seconds ?? 0))}
+                  {single.result?.extraFiles.length ? ` · with ${single.result.extraFiles.map((f) => baseName(f)).join(', ')}` : ''}
+                </span>
+              ) : (
+                <span style={{ userSelect: 'text' }}>{single.error ?? 'The export was cancelled.'}</span>
+              )}
+            </>
+          ) : (
+            <strong>
+              {done.length} of {jobs.length} exports finished
+            </strong>
+          )}
         </div>
+        {!single && (
+          <div className="xq-list" style={{ marginTop: 6 }}>
+            {jobs.map((j) => (
+              <JobRow key={j.id} job={j} />
+            ))}
+          </div>
+        )}
         <div className="modal__foot modal__foot--inline">
-          <button type="button" className="btn btn--outline" onClick={() => void api.app.showItemInFolder(stage.path)}>
-            <FolderOpen size={14} /> Show in folder
-          </button>
-          <button type="button" className="btn btn--outline" onClick={() => void api.app.openPath(stage.path)}>
-            <Play size={14} /> Open
-          </button>
+          {single && single.status !== 'done' && (
+            <button type="button" className="btn btn--outline" onClick={onBack}>
+              Back to settings
+            </button>
+          )}
+          {done[0] && (
+            <button type="button" className="btn btn--outline" onClick={() => void api.app.showItemInFolder(done[0].output.path)}>
+              <FolderOpen size={14} /> Show in folder
+            </button>
+          )}
+          {single?.status === 'done' && (
+            <button type="button" className="btn btn--outline" onClick={() => void api.app.openPath(single.output.path)}>
+              <Play size={14} /> Open
+            </button>
+          )}
           <button type="button" className="btn btn--primary" onClick={onClose}>
             Done
           </button>
@@ -232,52 +204,284 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
     );
   }
 
-  if (stage.name === 'error') {
-    return (
-      <Modal title="Export failed" onClose={onClose} width={480}>
-        <div className="export-done">
-          <span className="export-done__icon export-done__icon--error">
-            <AlertTriangle size={28} />
+  const ratio = jobs.reduce((sum, j) => sum + (j.status === 'done' || j.status === 'failed' ? 1 : j.status === 'running' ? (j.progress?.ratio ?? 0) : 0), 0) / Math.max(1, jobs.filter((j) => j.status !== 'cancelled').length);
+  const pct = Math.round(ratio * 100);
+  const p = running?.progress;
+  const audioOnly = running && (running.settings.container === 'mp3' || running.settings.container === 'wav');
+  return (
+    <Modal title={jobs.length > 1 ? `Exporting ${jobs.length} files…` : 'Exporting…'} subtitle={running ? `${running.label} · ${running.detail}` : 'Waiting in the export queue'} onClose={onClose} width={600}>
+      <div className="xd-watch">
+        <div className="xd-watch__stage">{audioOnly ? <Music size={28} color="var(--text-3)" /> : <canvas ref={stage} />}</div>
+        <div className="progress">
+          <div className="progress__bar" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="xd-watch__stats">
+          <strong className="mono">{pct}%</strong>
+          {running ? (
+            <span>{!p || p.phase === 'preparing' ? 'Preparing media…' : p.phase === 'finalizing' ? 'Finishing the file…' : audioOnly ? 'Mixing audio…' : `Frame ${p.frame.toLocaleString()} of ${p.totalFrames.toLocaleString()}`}</span>
+          ) : (
+            <span>{ahead > 0 ? `Waiting for ${ahead} export${ahead === 1 ? '' : 's'} ahead in the queue…` : 'Starting…'}</span>
+          )}
+          {p && p.speed > 0 && !audioOnly && <span className="mono">{p.speed.toFixed(1)} fps</span>}
+          {p && p.eta > 1 && <span>{formatDuration(p.eta)} left</span>}
+        </div>
+        {jobs.length > 1 && (
+          <div className="xq-list">
+            {jobs.map((j) => (
+              <JobRow key={j.id} job={j} />
+            ))}
+          </div>
+        )}
+        <div className="xd-note">
+          <Info size={13} />
+          <span>
+            Exports run in the background — choose <b>Continue editing</b> to keep working; progress stays in the title bar. {previewMode === 'paused' ? 'The preview is paused while exporting so exports finish sooner.' : 'The preview stays live while exporting; pause it for faster exports.'}
           </span>
-          <span style={{ userSelect: 'text' }}>{stage.message}</span>
         </div>
-        <div className="modal__foot modal__foot--inline">
-          <button type="button" className="btn btn--outline" onClick={() => setStage({ name: 'setup' })}>
-            Back to settings
-          </button>
-          <button type="button" className="btn btn--primary" onClick={onClose}>
-            Close
-          </button>
+      </div>
+      <div className="modal__foot modal__foot--inline">
+        <div className="xd-watch__mode">
+          <span>Preview</span>
+          <Segmented
+            value={previewMode}
+            options={[
+              { value: 'live', label: 'Live', title: 'Keep the preview playable while exporting' },
+              { value: 'paused', label: 'Paused (faster)', title: 'Pause the preview so exports finish sooner' },
+            ]}
+            onChange={setPreviewMode}
+          />
         </div>
-      </Modal>
-    );
+        <button
+          type="button"
+          className="btn btn--outline"
+          onClick={() => {
+            for (const j of jobs) if (j.status === 'queued' || j.status === 'running') cancelJob(j.id);
+          }}
+        >
+          {jobs.length > 1 ? 'Cancel all' : 'Cancel export'}
+        </button>
+        <button type="button" className="btn btn--outline" data-continue onClick={onClose}>
+          Continue editing
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dialog
+// ---------------------------------------------------------------------------------------------
+
+const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
+  { value: 'all', label: 'Whole project' },
+  { value: 'inout', label: 'In–Out' },
+  { value: 'selection', label: 'Selected clips' },
+];
+
+export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
+  const project = useProjectStore((s) => s.project);
+  const runtime = useAssetRuntime((s) => s.items);
+  const selection = useUI((s) => s.selection);
+  const duration = projectDuration(project);
+  const { width: pw, height: ph, fps: pfps } = project.settings;
+  const prefs = useMemo(() => getExportPrefs(), []);
+
+  const [selected, setSelected] = useState<string[]>(() => (prefs.selected?.length ? prefs.selected.filter((k) => k === 'custom' || PLATFORM_PRESETS.some((p) => p.id === k)) : ['custom']));
+  const [custom, setCustom] = useState<CustomSettings>(() => ({ ...defaultCustom(project), ...prefs.custom, fps: pfps }));
+  const [rangeMode, setRangeMode] = useState<RangeMode>(() => defaultRangeMode(project));
+  const [audio, setAudio] = useState(prefs.audio ?? true);
+  const [burnIn, setBurnIn] = useState(prefs.burnInCaptions ?? true);
+  const [sidecars, setSidecars] = useState<SubtitleFormat[]>(prefs.sidecars ?? []);
+  const [embed, setEmbed] = useState(prefs.embedSubtitles ?? false);
+  const [caps, setCaps] = useState<Capabilities | null>(null);
+  const [sizeOk, setSizeOk] = useState<Record<string, boolean>>({});
+  const [view, setView] = useState<{ name: 'setup' } | { name: 'watch'; ids: string[] }>({ name: 'setup' });
+  const [previewAt, setPreviewAt] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const previewRef = useRef<FramingPreview | null>(null);
+  previewRef.current ??= new FramingPreview();
+
+  useEffect(() => {
+    void getCapabilities().then(setCaps);
+    const preview = previewRef.current;
+    return () => void preview?.dispose();
+  }, []);
+
+  const hasAudio = useMemo(() => getAudioClips(project).length > 0, [project]);
+  const missing = useMemo(() => new Set(Object.keys(runtime).filter((id) => runtime[id].status === 'missing')), [runtime]);
+  const warnings = useMemo(() => exportWarnings(project, missing), [project, missing]);
+  const range = resolveRange(project, rangeMode, selection);
+  const capTracks = captionTracks(project);
+  const cueCount = useMemo(() => exportCaptionCues(project, range).length, [project, range.start, range.end]);
+  const hasCaptions = capTracks.length > 0;
+  const fmt = customFormat(custom);
+
+  // GIFs get sensible small defaults when selected.
+  useEffect(() => {
+    if (fmt.kind === 'gif') setCustom((c) => ({ ...c, shortSide: c.shortSide === 0 || c.shortSide > 480 ? Math.min(480, Math.min(pw, ph)) : c.shortSide, fps: Math.min(c.fps, 15) }));
+  }, [fmt.kind, pw, ph]);
+
+  const plans = useMemo(() => {
+    const opts = { range: { start: range.start, end: range.end }, time: engine.time, audio: audio && hasAudio, burnInCaptions: burnIn || !hasCaptions, sidecars: hasCaptions ? sidecars : [], embedSubtitles: hasCaptions && embed };
+    const order = ['custom', ...PLATFORM_PRESETS.map((p) => p.id)];
+    return [...selected]
+      .sort((a, b) => order.indexOf(a) - order.indexOf(b))
+      .map((key) => planTarget(project, key, custom, opts))
+      .filter((p): p is PlannedTarget => !!p);
+  }, [project, selected, custom, range.start, range.end, audio, hasAudio, burnIn, sidecars, embed, hasCaptions]);
+
+  // Can this PC encode each output at its size (e.g. H.264 at 4K)?
+  useEffect(() => {
+    let alive = true;
+    for (const t of plans) {
+      const s = t.settings;
+      if (!['mp4', 'webm', 'mov'].includes(s.container)) continue;
+      const key = `${s.videoCodec}:${s.width}x${s.height}`;
+      if (key in sizeOk) continue;
+      void canEncodeSize(s.videoCodec, s.width, s.height).then((ok) => alive && setSizeOk((m) => ({ ...m, [key]: ok })));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [plans]);
+
+  const problems = (t: PlannedTarget): string[] => {
+    const s = t.settings;
+    const out: string[] = [];
+    const video = ['mp4', 'webm', 'mov'].includes(s.container);
+    if (video && caps && !caps.video[s.videoCodec]) out.push(`${t.label}: this PC has no ${s.videoCodec.toUpperCase()} encoder — choose MP4 · H.264 instead.`);
+    else if (video && sizeOk[`${s.videoCodec}:${s.width}x${s.height}`] === false) out.push(`${t.label}: this PC cannot encode ${s.videoCodec.toUpperCase()} at ${s.width} × ${s.height}.`);
+    if ((s.container === 'mp3' || s.container === 'wav') && !hasAudio) out.push(`${t.label}: this project has no audio to export.`);
+    return out;
+  };
+  const blocking = plans.flatMap(problems);
+  const notes: string[] = [];
+  for (const t of plans) {
+    if (t.maxDuration && range.end - range.start > t.maxDuration + 0.01) notes.push(`${t.label} accepts videos up to ${formatDuration(t.maxDuration)} — this export is ${formatDuration(range.end - range.start)}.`);
   }
+  const stillOnly = plans.length > 0 && plans.every((t) => t.settings.container === 'png');
+  const rangeOk = stillOnly || range.valid;
+  const canExport = !busy && duration > 0 && plans.length > 0 && rangeOk && blocking.length === 0;
+
+  const previewTime = (() => {
+    if (previewAt !== null && previewAt >= range.start && previewAt <= range.end) return previewAt;
+    const t = engine.time;
+    const last = Math.max(range.start, range.end - 1 / pfps);
+    return Math.min(Math.max(t, range.start), last);
+  })();
+
+  const toggle = (key: string): void => setSelected((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]));
+  const setC = (patch: Partial<CustomSettings>): void => setCustom((c) => ({ ...c, ...patch }));
+
+  const submit = async (watch: boolean): Promise<void> => {
+    if (!canExport) return;
+    setBusy(true);
+    try {
+      const batch = plans.length > 1;
+      const outputs: { path: string; kind: 'file' | 'folder' }[] = [];
+      if (!batch) {
+        const t = plans[0];
+        if (t.kind === 'folder') {
+          const dir = await api.call<string | null>('x:export:pickFolder', 'Choose where to save the PNG sequence');
+          if (!dir) return;
+          outputs.push({ path: await api.call<string>('x:export:subfolder', dir, outputName(project.name, t, true)), kind: 'folder' });
+        } else {
+          const path = await api.dialog.saveFile(outputName(project.name, t, false), [{ name: t.label === 'Custom' ? fmt.label : t.label, extensions: [t.ext] }]);
+          if (!path) return;
+          outputs.push({ path, kind: 'file' });
+        }
+      } else {
+        const dir = await api.call<string | null>('x:export:pickFolder', `Choose a folder for the ${plans.length} exports`);
+        if (!dir) return;
+        for (const t of plans) {
+          const name = outputName(project.name, t, true);
+          outputs.push(t.kind === 'folder' ? { path: await api.call<string>('x:export:subfolder', dir, name), kind: 'folder' } : { path: await api.call<string>('x:export:fileInFolder', dir, name), kind: 'file' });
+        }
+      }
+      const { fps: _fps, ...rememberCustom } = custom;
+      saveExportPrefs({ selected, custom: rememberCustom, audio, burnInCaptions: burnIn, sidecars, embedSubtitles: embed });
+      const ids = enqueue(
+        plans.map((t, i) => ({
+          label: t.label,
+          detail: t.detail,
+          aspect: t.aspect,
+          output: outputs[i],
+          project: t.project,
+          settings: t.kind === 'folder' ? { ...t.settings, sequenceName: baseName(outputs[i].path) } : t.settings,
+          weight: t.weight,
+        })),
+        { watch },
+      );
+      if (watch) setView({ name: 'watch', ids });
+      else {
+        onClose();
+        useUI.getState().toast({ kind: 'info', message: plans.length === 1 ? 'Added to the export queue' : `Added ${plans.length} exports to the queue`, detail: 'Follow the progress from the title bar.' });
+      }
+    } catch (err) {
+      useUI.getState().toast({ kind: 'error', message: 'Could not start the export', detail: (err as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (view.name === 'watch') return <WatchView ids={view.ids} onClose={onClose} onBack={() => setView({ name: 'setup' })} />;
+
+  // ---- Setup view ------------------------------------------------------------------------------
+  const projShort = Math.min(pw, ph);
+  const customFrame = frameFor(custom.aspect, project.settings, custom.shortSide || undefined);
+  const resolutions = (() => {
+    const list = [2160, 1440, 1080, 720, 480, 360].filter((r) => r <= Math.max(projShort, 1080) * 2 && r !== projShort);
+    const opts = [{ value: 0, label: `Project — ${frameFor(custom.aspect, project.settings).width} × ${frameFor(custom.aspect, project.settings).height}` }, ...list.map((r) => {
+      const f = frameFor(custom.aspect, project.settings, r);
+      return { value: r, label: `${r === 2160 ? '4K' : `${r}p`} — ${f.width} × ${f.height}` };
+    })];
+    return opts;
+  })();
+  const isGif = fmt.kind === 'gif';
+  const fpsOptions = (() => {
+    const base = isGif ? [8, 10, 12, 15, 20, 24, 30] : [24, 25, 30, 50, 60];
+    const all = [...new Set([...base, ...(isGif ? [] : [pfps])])].sort((a, b) => a - b);
+    return all.map((f) => ({ value: f, label: `${f} fps${f === pfps ? ' (project)' : ''}` }));
+  })();
+  const formatOptions = (custom.transparent ? ALPHA_FORMATS : FORMATS).map((f) => ({ value: f.id, label: f.label + (f.kind === 'video' && caps && !caps.video[f.codec] ? ' — not available on this PC' : '') }));
+  const totalSize = plans.reduce((sum, t) => sum + estimateSize(t.settings, hasAudio), 0);
+  const visualPlans = plans.filter((t) => !(t.settings.container === 'mp3' || t.settings.container === 'wav'));
+  const box = plans.length <= 1 ? { w: 274, h: 230 } : { w: 129, h: 132 };
+  const anyVideoContainer = plans.some((t) => supportsEmbeddedSubtitles(t.settings.container));
+  const anySidecarTarget = plans.some((t) => supportsSidecars(t.settings.container));
+  const customSelected = selected.includes('custom');
+  const inOutAvailable = project.inPoint !== undefined || project.outPoint !== undefined;
 
   return (
     <Modal
       title="Export"
-      subtitle={`${project.name} · ${formatDuration(duration)} · ${pw} × ${ph}`}
+      subtitle={`${project.name} · ${formatDuration(duration)} · ${pw} × ${ph} · ${pfps} fps`}
       onClose={onClose}
-      width={560}
+      width={980}
       footer={
         <>
-          <div className="export-estimate">
-            {format.kind !== 'image' && !empty && (
+          <div className="xd-estimate">
+            {plans.length > 0 && duration > 0 && !stillOnly && (
               <>
-                Estimated size <strong>{formatBytes(estimateSize(settings, hasAudio))}</strong>
+                {plans.length > 1 ? `${plans.length} exports · about ` : 'Estimated size '}
+                <strong>{formatBytes(totalSize)}</strong>
+                {rangeMode !== 'all' && range.valid && <> · {formatSeconds(range.end - range.start)} section</>}
               </>
             )}
           </div>
           <button type="button" className="btn btn--outline" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn--primary" disabled={!canStart || running} onClick={() => void start()}>
-            <Download size={14} /> Export
+          <button type="button" className="btn btn--outline" disabled={!canExport} title="Render in the background and keep editing" data-add-to-queue onClick={() => void submit(false)}>
+            <ListPlus size={14} /> Add to queue
+          </button>
+          <button type="button" className="btn btn--primary" disabled={!canExport} data-export onClick={() => void submit(true)}>
+            <Sparkles size={14} /> {plans.length > 1 ? `Export ${plans.length} files` : 'Export'}
           </button>
         </>
       }
     >
-      {empty && (
+      {duration <= 0 && (
         <div className="callout callout--warn">
           <AlertTriangle size={15} /> The timeline is empty. Add something to the timeline before exporting.
         </div>
@@ -291,76 +495,268 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           </span>
         </div>
       )}
-      <Field label="Format" labelWidth={110}>
-        <Select value={formatId} options={FORMATS.map((f) => ({ value: f.id, label: f.label + (f.kind === 'video' && caps && !caps.video[f.codec] ? ' — not available on this PC' : '') }))} onChange={setFormatId} />
-      </Field>
-      <p className="hint" style={{ marginLeft: 118 }}>
-        {format.hint}
-      </p>
-      {unsupported && (
-        <div className="callout callout--warn">
-          <AlertTriangle size={15} /> This PC has no encoder for {format.label}. Choose MP4 · H.264 instead.
-        </div>
-      )}
-      {noAudio && (
-        <div className="callout callout--warn">
-          <AlertTriangle size={15} /> This project has no audio to export.
-        </div>
-      )}
-      {hasPicture && (
-        <Field label="Resolution" labelWidth={110}>
-          <Select value={shortSide} options={resolutions} onChange={setShortSide} />
-        </Field>
-      )}
-      {(isVideo || isGif) && (
-        <Field label="Frame rate" labelWidth={110}>
-          <Select value={fpsOptions.some((o) => o.value === fps) ? fps : fpsOptions[fpsOptions.length - 1].value} options={fpsOptions} onChange={setFps} />
-        </Field>
-      )}
-      {(isVideo || format.container === 'mp3') && (
-        <Field label="Quality" labelWidth={110}>
-          <Segmented
-            value={quality}
-            style={{ flex: 1 }}
-            options={[
-              { value: 'low', label: 'Smaller file' },
-              { value: 'medium', label: 'Balanced' },
-              { value: 'high', label: 'High' },
-              { value: 'best', label: 'Best' },
-            ]}
-            onChange={setQuality}
-          />
-        </Field>
-      )}
-      {isVideo && (
-        <>
-          <Field label="Include audio" labelWidth={110}>
-            <Toggle value={audio && hasAudio} disabled={!hasAudio} onChange={setAudio} />
-            {!hasAudio && <span style={{ color: 'var(--text-3)' }}>No audio in this project</span>}
-          </Field>
-          <details className="advanced">
-            <summary>Advanced</summary>
-            <Field label="Encoder" labelWidth={110}>
-              <Select
-                value={hardware}
-                options={[
-                  { value: 'no-preference', label: 'Automatic' },
-                  { value: 'prefer-hardware', label: 'Prefer GPU (faster)' },
-                  { value: 'prefer-software', label: 'Prefer CPU (most compatible)' },
-                ]}
-                onChange={setHardware}
-              />
-            </Field>
-            {format.container !== 'webm' && (
-              <Field label="Web optimised" labelWidth={110} title="Places the index at the start of the file so it starts playing sooner when streamed. Uses more memory while exporting.">
-                <Toggle value={fastStart} onChange={setFastStart} />
-                <span style={{ color: 'var(--text-3)' }}>Fast start for streaming</span>
-              </Field>
+      <div className="xd">
+        <div className="xd-main">
+          {/* ---- Formats ---- */}
+          <section className="xd-sec">
+            <div className="xd-sec__head">
+              <span className="xd-sec__title">Formats</span>
+              <span className="xd-sec__meta">{selected.length === 0 ? 'Pick one or more — each becomes its own file' : `${selected.length} selected${selected.length > 1 ? ' · exported one after another' : ''}`}</span>
+              <span className="xd-sec__actions">
+                {selected.length > 0 && (
+                  <button type="button" className="btn btn--sm btn--ghost" onClick={() => setSelected([])}>
+                    Clear
+                  </button>
+                )}
+              </span>
+            </div>
+            {PRESET_GROUPS.map((g) => (
+              <div key={g.id} className="xd-sec" style={{ gap: 6 }}>
+                <div className="xd-group">{g.label}</div>
+                <div className="xd-grid">
+                  {PLATFORM_PRESETS.filter((p) => p.group === g.id).map((p) => {
+                    const f = presetFrame(p, project.settings);
+                    return <Tile key={p.id} id={p.id} selected={selected.includes(p.id)} onToggle={() => toggle(p.id)} w={f.width} h={f.height} tint={p.tint} name={p.name} spec={presetSpecLines(p, project.settings)} title={p.hint} />;
+                  })}
+                  {g.id === 'general' && (
+                    <Tile
+                      id="custom"
+                      selected={customSelected}
+                      onToggle={() => toggle('custom')}
+                      w={fmt.kind === 'audio' ? 1 : customFrame.width}
+                      h={fmt.kind === 'audio' ? 1 : customFrame.height}
+                      name="Custom"
+                      spec={
+                        <>
+                          {fmt.kind === 'audio' ? 'Sound only' : `${customFrame.width} × ${customFrame.height}`}
+                          <br />
+                          {fmt.label.replace(' with transparency', ' + alpha')}
+                        </>
+                      }
+                      title="Choose the format, size and quality yourself"
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+
+          {/* ---- Custom settings ---- */}
+          {customSelected && (
+            <section className="xd-sec">
+              <div className="xd-sec__head">
+                <span className="xd-sec__title">Custom</span>
+                <span className="xd-sec__meta">{fmt.hint}</span>
+              </div>
+              <div className="xd-card">
+                <Field label="Transparent" labelWidth={LABEL_W} title="Export without a background — only the layers are kept (WebM VP9 with alpha or PNG).">
+                  <Toggle value={custom.transparent} onChange={(v) => setC({ transparent: v, formatId: v ? (getFormatAlpha(custom.formatId) ? custom.formatId : 'webm-alpha') : custom.formatId === 'webm-alpha' ? 'webm-vp9' : custom.formatId })} />
+                  <span className="xd-row__hint">{custom.transparent ? 'Areas no layer covers stay see-through. Full-frame videos and backgrounds remain opaque.' : 'Transparent background (WebM · VP9 alpha or PNG)'}</span>
+                </Field>
+                <Field label="Format" labelWidth={LABEL_W}>
+                  <Select value={fmt.id} options={formatOptions} onChange={(id) => setC({ formatId: id })} />
+                </Field>
+                {fmt.kind !== 'audio' && (
+                  <>
+                    <Field label="Frame" labelWidth={LABEL_W}>
+                      <Select
+                        value={custom.aspect}
+                        options={[{ value: 'source' as AspectId, label: `Project — ${pw} × ${ph}` }, ...ASPECTS.map((a) => ({ value: a.id as AspectId, label: a.label + (Math.abs(a.w / a.h - pw / ph) < 0.01 ? ' (project)' : ' — reframed') }))]}
+                        onChange={(v) => setC({ aspect: v })}
+                      />
+                    </Field>
+                    <Field label="Resolution" labelWidth={LABEL_W}>
+                      <Select value={resolutions.some((r) => r.value === custom.shortSide) ? custom.shortSide : 0} options={resolutions} onChange={(v) => setC({ shortSide: v })} />
+                    </Field>
+                  </>
+                )}
+                {(fmt.kind === 'video' || fmt.kind === 'gif' || fmt.kind === 'sequence') && (
+                  <Field label="Frame rate" labelWidth={LABEL_W}>
+                    <Select value={fpsOptions.some((o) => o.value === custom.fps) ? custom.fps : fpsOptions[fpsOptions.length - 1].value} options={fpsOptions} onChange={(v) => setC({ fps: v })} />
+                  </Field>
+                )}
+                {(fmt.kind === 'video' || fmt.container === 'mp3') && (
+                  <Field label="Quality" labelWidth={LABEL_W}>
+                    <Segmented
+                      value={custom.quality}
+                      style={{ flex: 1 }}
+                      options={[
+                        { value: 'low', label: 'Smaller file' },
+                        { value: 'medium', label: 'Balanced' },
+                        { value: 'high', label: 'High' },
+                        { value: 'best', label: 'Best' },
+                      ]}
+                      onChange={(v) => setC({ quality: v })}
+                    />
+                  </Field>
+                )}
+                {fmt.kind === 'video' && (
+                  <details className="advanced">
+                    <summary>Advanced</summary>
+                    <Field label="Encoder" labelWidth={LABEL_W}>
+                      <Select
+                        value={custom.hardware}
+                        options={[
+                          { value: 'no-preference', label: 'Automatic' },
+                          { value: 'prefer-hardware', label: 'Prefer GPU (faster)' },
+                          { value: 'prefer-software', label: 'Prefer CPU (most compatible)' },
+                        ]}
+                        onChange={(v) => setC({ hardware: v })}
+                      />
+                    </Field>
+                    {fmt.container !== 'webm' && (
+                      <Field label="Web optimised" labelWidth={LABEL_W} title="Places the index at the start of the file so it starts playing sooner when streamed. Uses more memory while exporting.">
+                        <Toggle value={custom.fastStart} onChange={(v) => setC({ fastStart: v })} />
+                        <span className="xd-row__hint">Fast start for streaming</span>
+                      </Field>
+                    )}
+                  </details>
+                )}
+                {isGif && <p className="hint">GIFs are limited to 256 colours per frame and get large quickly — keep them short, small and at a low frame rate.</p>}
+                {fmt.kind === 'sequence' && <p className="hint">Frames are saved as numbered PNG files in a new folder inside the folder you choose.</p>}
+              </div>
+            </section>
+          )}
+
+          {/* ---- Range ---- */}
+          <section className="xd-sec">
+            <div className="xd-sec__head">
+              <span className="xd-sec__title">Range</span>
+              <span className="xd-sec__meta">Mark a section on the timeline with I and O</span>
+            </div>
+            <div className="xd-row">
+              <div className="segmented" style={{ flex: 'none' }} data-range-modes>
+                {RANGE_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    className={rangeMode === o.value ? 'is-active' : ''}
+                    data-range={o.value}
+                    disabled={(o.value === 'inout' && !inOutAvailable) || (o.value === 'selection' && selection.length === 0)}
+                    title={o.value === 'inout' && !inOutAvailable ? 'Mark In / Out on the timeline first (I / O)' : o.value === 'selection' && selection.length === 0 ? 'Select clips on the timeline first' : undefined}
+                    onClick={() => setRangeMode(o.value)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              {range.valid ? (
+                <span className="xd-range" data-range-summary>
+                  <Scissors size={12} />
+                  <strong>{formatTimecode(range.start, pfps)}</strong>→<strong>{formatTimecode(range.end, pfps)}</strong>
+                  <span>· {formatSeconds(range.end - range.start)}</span>
+                </span>
+              ) : (
+                <span className="xd-note xd-note--warn">
+                  <AlertTriangle size={13} />
+                  {range.reason}
+                </span>
+              )}
+            </div>
+          </section>
+
+          {/* ---- Captions ---- */}
+          <section className="xd-sec">
+            <div className="xd-sec__head">
+              <span className="xd-sec__title">Captions</span>
+              <span className="xd-sec__meta">{hasCaptions ? `${cueCount} caption${cueCount === 1 ? '' : 's'} in this range` : 'No caption track in this project'}</span>
+            </div>
+            {hasCaptions ? (
+              <div className="xd-card">
+                <div className="xd-row">
+                  <span className="xd-row__label">Burn into the video</span>
+                  <Toggle value={burnIn} onChange={setBurnIn} />
+                  <span className="xd-row__hint">{burnIn ? 'Captions are drawn into the picture' : 'Caption tracks are hidden in this export'}</span>
+                </div>
+                <div className="xd-row">
+                  <span className="xd-row__label">Subtitle files</span>
+                  <div className="xd-chips">
+                    {(['srt', 'vtt'] as SubtitleFormat[]).map((f) => (
+                      <button key={f} type="button" className={`xd-chip ${sidecars.includes(f) ? 'is-on' : ''}`} data-sidecar={f} disabled={!anySidecarTarget} onClick={() => setSidecars((s) => (s.includes(f) ? s.filter((x) => x !== f) : [...s, f]))}>
+                        <Captions size={12} /> {f.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="xd-row__hint">Saved next to each file, timed to the range</span>
+                </div>
+                <div className="xd-row">
+                  <span className="xd-row__label">Embedded subtitles</span>
+                  <Toggle value={embed && anyVideoContainer} disabled={!anyVideoContainer} onChange={setEmbed} />
+                  <span className="xd-row__hint">{anyVideoContainer ? 'A WebVTT track inside MP4 / WebM files — viewers can switch it on' : 'Only MP4 and WebM files can carry a subtitle track'}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="xd-note">
+                <Info size={13} />
+                <span>Captions are text clips on a captions track. Once the project has one you can burn them in, save SRT / VTT files and embed a subtitle track.</span>
+              </div>
             )}
-          </details>
-        </>
-      )}
-      {isGif && <p className="hint">GIFs are limited to 256 colours per frame and get large quickly — keep them short, small and at a low frame rate.</p>}
+          </section>
+
+          {/* ---- Audio ---- */}
+          <section className="xd-sec">
+            <div className="xd-row">
+              <span className="xd-row__label xd-sec__title">Include audio</span>
+              <Toggle value={audio && hasAudio} disabled={!hasAudio} onChange={setAudio} />
+              <span className="xd-row__hint">{hasAudio ? 'Mixed sound of every audible clip' : 'No audio in this project'}</span>
+            </div>
+          </section>
+        </div>
+
+        {/* ---- Preview column ---- */}
+        <aside className="xd-side">
+          <div className="xd-sec__head">
+            <span className="xd-sec__title">Preview</span>
+            <span className="xd-sec__meta">{visualPlans.some((t) => t.reframed) ? 'Adapted framing for each aspect' : 'Frame of the export'}</span>
+          </div>
+          {plans.length === 0 ? (
+            <div className="xd-empty">Pick a format to see how the export will look.</div>
+          ) : (
+            <div className="xd-previews">
+              {plans.map((t) => (
+                <TargetPreview key={t.key} plan={t} time={t.settings.container === 'png' ? engine.time : previewTime} renderer={previewRef.current!} box={box} />
+              ))}
+            </div>
+          )}
+          {visualPlans.length > 0 && range.valid && range.end - range.start > 1 / pfps && (
+            <div className="xd-scrub">
+              <span className="mono">{formatTimecode(previewTime, pfps)}</span>
+              <input
+                type="range"
+                className="slider"
+                min={range.start}
+                max={Math.max(range.start, range.end - 1 / pfps)}
+                step={1 / pfps}
+                value={previewTime}
+                style={{ ['--pct' as string]: `${((previewTime - range.start) / Math.max(1e-6, range.end - range.start)) * 100}%` }}
+                title="Preview another frame"
+                onChange={(e) => setPreviewAt(parseFloat(e.target.value))}
+              />
+            </div>
+          )}
+          {blocking.map((m) => (
+            <div key={m} className="xd-note xd-note--warn">
+              <AlertTriangle size={13} />
+              <span>{m}</span>
+            </div>
+          ))}
+          {notes.map((m) => (
+            <div key={m} className="xd-note xd-note--warn">
+              <Info size={13} />
+              <span>{m}</span>
+            </div>
+          ))}
+          {plans.length > 1 && (
+            <div className="xd-note">
+              <Info size={13} />
+              <span>You will pick one folder; each export gets its own file name.</span>
+            </div>
+          )}
+        </aside>
+      </div>
     </Modal>
   );
 }
+
+const getFormatAlpha = (id: string): boolean => !!FORMATS.find((f) => f.id === id)?.alpha;
+
