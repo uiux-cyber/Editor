@@ -1,4 +1,4 @@
-import { AlertTriangle, FileAudio, FolderOpen, Image as ImageIcon, Music, Plus, Trash2, Upload, Video } from 'lucide-react';
+import { AlertTriangle, FileAudio, FolderOpen, Image as ImageIcon, ImagePlay, Music, Plus, Trash2, Upload, Video } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { formatDuration } from '@/core/time';
 import type { MediaAsset } from '@/core/types';
@@ -10,6 +10,7 @@ import { addAsset } from '../actions';
 import { openContextMenu } from '../common/overlays';
 import { startDrag } from '../dnd';
 import type { FileInfo } from '@shared/ipc';
+import { AnimatedThumb, AnimationBadge } from './animatedThumb';
 
 /** Import files into the media bin and report the outcome. */
 export async function importFiles(files: FileInfo[]): Promise<MediaAsset[]> {
@@ -37,7 +38,8 @@ export function MediaTab(): ReactNode {
   const list = useMemo(
     () =>
       Object.values(assets)
-        .filter((a) => a.source.type === 'file' && (filter === 'all' || a.kind === filter))
+        // Animated GIFs / Lottie files are listed with the images.
+        .filter((a) => a.source.type === 'file' && (filter === 'all' || a.kind === filter || (filter === 'image' && a.kind === 'animation')))
         .sort((a, b) => b.addedAt - a.addedAt),
     [assets, filter],
   );
@@ -128,12 +130,14 @@ export function MediaTab(): ReactNode {
                     ) : (
                       <span className="media-tile__icon">{asset.kind === 'audio' ? <Music size={22} /> : asset.kind === 'image' ? <ImageIcon size={22} /> : <Video size={22} />}</span>
                     )}
+                    {asset.kind === 'animation' && !missing && <AnimatedThumb asset={asset} />}
+                    <AnimationBadge asset={asset} />
                     {missing && (
                       <span className="media-tile__warn">
                         <AlertTriangle size={14} /> Missing
                       </span>
                     )}
-                    <span className="media-tile__kind">{asset.kind === 'audio' ? <FileAudio size={11} /> : asset.kind === 'image' ? <ImageIcon size={11} /> : <Video size={11} />}</span>
+                    <span className="media-tile__kind">{asset.kind === 'audio' ? <FileAudio size={11} /> : asset.kind === 'image' ? <ImageIcon size={11} /> : asset.kind === 'animation' ? <ImagePlay size={11} /> : <Video size={11} />}</span>
                     {asset.duration > 0 && <span className="media-tile__dur mono">{formatDuration(asset.duration)}</span>}
                     <span className="media-tile__add">
                       <Plus size={14} />

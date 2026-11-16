@@ -33,8 +33,12 @@ export interface FrameImage {
 /** Supplies decoded pictures. The preview reads live <video> elements, the exporter decoded frames. */
 export interface MediaProvider {
   videoFrame(clip: VideoClip, sourceTime: number): FrameImage | null;
-  /** Still or animated image. `time` is seconds since the clip start (for animated assets). */
-  image(assetId: ID, time?: number): FrameImage | null;
+  /**
+   * Still or animated image. `time` is seconds since the clip start (for animated assets);
+   * `hint` is the size in real pixels the picture is drawn at (vector sources such as Lottie
+   * render at that size so they stay sharp).
+   */
+  image(assetId: ID, time?: number, hint?: { width: number; height: number }): FrameImage | null;
   /**
    * Optional matte for background removal: white = keep. Same orientation as the frame returned
    * by videoFrame / image for that clip. Consumed by the cutout layer extension.
@@ -295,7 +299,17 @@ export class Compositor {
             if (entry) entry.lastUsed = this.frame;
           }
         } else {
-          const img = env.provider.image(clip.assetId, t);
+          // Animated assets: ask for the frame at the size the layer covers on screen.
+          let hint: { width: number; height: number } | undefined;
+          if (asset.kind === 'animation') {
+            const c = clip.crop ?? { l: 0, t: 0, r: 0, b: 0 };
+            const kw = Math.max(0.01, 1 - c.l - c.r);
+            const kh = Math.max(0.01, 1 - c.t - c.b);
+            const fit = fitContain(asset.width * kw, asset.height * kh, cw, ch);
+            const k = px * quantizeScale(ownScale);
+            hint = { width: Math.ceil((fit.w / kw) * k), height: Math.ceil((fit.h / kh) * k) };
+          }
+          const img = env.provider.image(clip.assetId, t, hint);
           const key = img?.animated ? `i:${clip.id}` : `i:${clip.assetId}`;
           if (img) entry = this.texture(key, img.version, () => ({ source: img.source, width: img.width, height: img.height, mipmaps: !img.animated }));
           else {

@@ -12,6 +12,7 @@ import type { ID, MediaAsset, Project } from '@/core/types';
 import { getSound } from '@/library';
 import { api } from '@/platform/api';
 import { getProject, updateProject } from '@/store/project';
+import { ANIMATION_CANDIDATE_EXTS, AnimationError, adoptAnimation, animationPoster, discardProbe, forgetAnimation, probeAnimation, resetAnimations, type ProbedAnimation } from './animated';
 import { soundAssetDuration, soundBlob } from './sounds';
 
 export type AssetStatus = 'loading' | 'ready' | 'missing' | 'unsupported';
@@ -123,11 +124,31 @@ async function videoPoster(input: Input, duration: number): Promise<string | nul
 interface Probed {
   asset: MediaAsset;
   thumb: string | null;
+  /** Animated assets: the opened source, adopted once the asset is added (animated.ts). */
+  animation?: ProbedAnimation;
 }
 
 async function probe(info: FileInfo): Promise<Probed> {
   const url = api.media.toUrl(info.path);
   const base = { id: uid('as_'), name: info.name, source: { type: 'file' as const, path: info.path }, size: info.size, addedAt: Date.now() };
+
+  // Animated GIF / WebP / APNG (more than one frame) and Lottie documents become 'animation'
+  // assets (animated.ts); still images fall through to the image importer below.
+  if (ANIMATION_CANDIDATE_EXTS.includes(info.ext)) {
+    let anim: ProbedAnimation | null;
+    try {
+      anim = await probeAnimation(info.path, info.ext);
+    } catch (err) {
+      throw err instanceof AnimationError ? new ImportError(err.message) : err;
+    }
+    if (anim) {
+      return {
+        asset: { ...base, kind: 'animation', format: anim.format, duration: anim.duration, width: anim.width, height: anim.height, fps: anim.fps, hasVideo: false, hasAudio: false },
+        thumb: anim.poster ? canvasToThumb(anim.poster, anim.posterW, anim.posterH) : null,
+        animation: anim,
+      };
+    }
+  }
 
   if (IMAGE_EXTS.includes(info.ext)) {
     const img = await loadImage(url);
@@ -219,7 +240,8 @@ export async function importMediaFiles(files: FileInfo[]): Promise<ImportResult>
       continue;
     }
     try {
-      const { asset, thumb } = await probe(file);
+      const { asset, thumb, animation } = await probe(file);
+      if (animation) adoptAnimation(asset.id, animation);
       useAssetRuntime.getState().patch(asset.id, { status: 'ready', url: api.media.toUrl(file.path), thumb });
       updateProject((p) => {
         p.assets[asset.id] = asset;
@@ -302,6 +324,9 @@ async function prepareAsset(asset: MediaAsset): Promise<void> {
       } else if (asset.kind === 'video') {
         const thumb = await videoPoster(sharedInput(asset), asset.duration);
         if (thumb) rt.patch(asset.id, { thumb });
+      } else if (asset.kind === 'animation') {
+        const poster = await animationPoster(asset);
+        if (poster) rt.patch(asset.id, { thumb: canvasToThumb(poster.source, poster.width, poster.height) });
       }
     } catch {
       /* poster is optional */
@@ -312,6 +337,7 @@ async function prepareAsset(asset: MediaAsset): Promise<void> {
 /** Rebuild runtime state for every asset of a freshly loaded project. */
 export async function prepareProjectAssets(project: Project): Promise<{ missing: MediaAsset[] }> {
   for (const id of [...sharedInputs.keys()]) disposeInput(id);
+  resetAnimations();
   useAssetRuntime.getState().reset();
   const assets = Object.values(project.assets);
   await Promise.all(assets.map((a) => prepareAsset(a).catch(() => useAssetRuntime.getState().patch(a.id, { status: 'missing', url: null }))));
@@ -323,9 +349,13 @@ export async function prepareProjectAssets(project: Project): Promise<{ missing:
 export async function relinkAsset(assetId: ID, file: FileInfo): Promise<void> {
   const asset = getProject().assets[assetId];
   if (!asset) return;
-  const { asset: probed, thumb } = await probe(file);
-  if (probed.kind !== asset.kind) throw new ImportError(`Expected ${asset.kind === 'image' ? 'an image' : asset.kind === 'audio' ? 'an audio file' : 'a video'}.`);
+  const { asset: probed, thumb, animation } = await probe(file);
+  if (probed.kind !== asset.kind) {
+    if (animation) discardProbe(animation);
+    throw new ImportError(`Expected ${asset.kind === 'image' ? 'an image' : asset.kind === 'audio' ? 'an audio file' : asset.kind === 'animation' ? 'an animated GIF or Lottie file' : 'a video'}.`);
+  }
   disposeInput(assetId);
+  if (animation) adoptAnimation(assetId, animation);
   updateProject((p) => {
     p.assets[assetId] = { ...probed, id: assetId, name: probed.name, addedAt: asset.addedAt };
   });
@@ -335,6 +365,7 @@ export async function relinkAsset(assetId: ID, file: FileInfo): Promise<void> {
 /** Remove an asset and every clip that uses it. */
 export function removeAsset(assetId: ID): void {
   disposeInput(assetId);
+  forgetAnimation(assetId);
   updateProject((p) => {
     for (const clip of Object.values(p.clips)) {
       if ((clip.type === 'video' || clip.type === 'image' || clip.type === 'audio') && clip.assetId === assetId) delete p.clips[clip.id];

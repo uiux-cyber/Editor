@@ -4,10 +4,12 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import type { MainContext } from './context';
+import { isLottieFile } from './lottieGuard';
 import {
   APP_NAME,
   AUDIO_EXTS,
   IMAGE_EXTS,
+  LOTTIE_EXTS,
   MEDIA_EXTS,
   MEDIA_SCHEME,
   PROJECT_EXT,
@@ -155,6 +157,8 @@ const MIME: Record<string, string> = {
   bmp: 'image/bmp',
   avif: 'image/avif',
   svg: 'image/svg+xml',
+  apng: 'image/apng',
+  lottie: 'application/zip',
   mp4: 'video/mp4',
   m4v: 'video/mp4',
   mov: 'video/mp4',
@@ -269,6 +273,8 @@ function registerProtocol(): void {
         const filePath = url.searchParams.get('path');
         if (!filePath || !path.isAbsolute(filePath)) return new Response('Bad request', { status: 400 });
         if (!MEDIA_EXTS.includes(extOf(filePath))) return new Response('Forbidden', { status: 403 });
+        // JSON / .lottie are only readable when the file is a Lottie animation (lottieGuard.ts).
+        if (LOTTIE_EXTS.includes(extOf(filePath)) && !(await isLottieFile(path.normalize(filePath)))) return new Response('Forbidden', { status: 403 });
         return await serveFile(request, path.normalize(filePath));
       }
       if (url.hostname === 'models') {
@@ -509,6 +515,7 @@ function registerIpc(): void {
         { name: 'Video', extensions: VIDEO_EXTS },
         { name: 'Audio', extensions: AUDIO_EXTS },
         { name: 'Images', extensions: IMAGE_EXTS },
+        { name: 'Animations (GIF, WebP, APNG, Lottie)', extensions: ['gif', 'webp', 'png', 'apng', ...LOTTIE_EXTS] },
       ],
     });
     if (res.canceled) return [];

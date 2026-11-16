@@ -28,6 +28,7 @@ import {
   splitClipAt,
   trackWithRoom,
 } from '@/core/project';
+import { defaultAnimationClipDuration } from '@/core/animTiming';
 import { clipEnd, snapToFrame } from '@/core/time';
 import type { Clip, ID, MediaAsset, Project, ShapeKind, Track, VisualClip } from '@/core/types';
 import { engine } from '@/engine/engine';
@@ -157,6 +158,8 @@ export function addAsset(asset: MediaAsset, where: Placement = {}): ID[] {
   return commitNew((p) => {
     if (asset.kind === 'audio') return place(p, makeAudio(asset), where, 'audio');
     if (asset.kind === 'image') return place(p, makeImage(asset, { duration: DEFAULT_STILL_DURATION }), where, 'media');
+    // Animated GIF / WebP / APNG / Lottie: an image clip one loop long (at least 3 s).
+    if (asset.kind === 'animation') return place(p, makeImage(asset, { duration: defaultAnimationClipDuration(asset.duration) }), where, 'media');
     return place(p, makeVideo(asset), where, 'media');
   });
 }
@@ -171,6 +174,8 @@ export function addText(presetId: string | null, where: Placement = {}): ID[] {
       anim: preset?.anim,
       textAnim: preset?.textAnim,
     });
+    // Count-up presets (library/textPresets/counters.ts) carry their counter settings.
+    if (preset?.counter) clip.counter = { ...preset.counter };
     // Keep presets designed for landscape from overflowing narrow frames.
     const maxSize = cw < 1300 ? 0.72 : 1;
     if (maxSize < 1) clip.text.fontSize = Math.round(clip.text.fontSize * maxSize);
