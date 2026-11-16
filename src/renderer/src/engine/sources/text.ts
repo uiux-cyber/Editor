@@ -11,6 +11,7 @@ import type { ID, TextClip, TextStyle } from '@/core/types';
 import { getTextAnimation } from '@/library';
 import { BUNDLED_FONTS } from '@/library/fonts';
 import type { GlyphMod, TextAnimDef } from '@/library/types';
+import { counterFrame, fitCounterLayout, tabularOffset, tabularRuns } from './counterText';
 import { MAX_RASTER, ctx2d, hashKey, makeCanvas, nextVersion, paintStyle, roundRectPath, type AnyCanvas, type Ctx2D, type Raster } from './raster';
 import { applyFont, fontString, getMeasureCtx, layoutText, type Layout } from './textLayout';
 
@@ -100,7 +101,8 @@ function splitUnits(layout: Layout, style: TextStyle, byChar: boolean): { units:
   let wordIndex = 0;
   layout.lines.forEach((line, li) => {
     const text = line.text;
-    const prefix = (end: number): number => (end <= 0 ? 0 : ctx.measureText(text.slice(0, end)).width);
+    // Count-up numbers place their digits in fixed cells (counterText.ts).
+    const prefix = (end: number): number => tabularOffset(line, end) ?? (end <= 0 ? 0 : ctx.measureText(text.slice(0, end)).width);
     const wordRe = /\S+/g;
     let match: RegExpExecArray | null;
     while ((match = wordRe.exec(text))) {
@@ -199,9 +201,11 @@ export class TextRenderer {
 
   /** Rasterise `clip` as it looks at `localTime`. `rasterScale` = real pixels per design pixel. */
   render(clip: TextClip, localTime: number, rasterScale: number): Raster {
-    const style = clip.text;
-    requestFont(style);
     const t = Math.min(Math.max(localTime, 0), clip.duration);
+    // Count-up numbers (counterText.ts): the content is the counter's value at this time.
+    const counter = counterFrame(clip, t);
+    const style = counter ? counter.style : clip.text;
+    requestFont(style);
 
     // Which per-unit animations are running right now?
     const active: ActiveAnim[] = [];
@@ -235,13 +239,13 @@ export class TextRenderer {
 
     // Keep the canvas within limits by lowering the raster scale for huge text.
     let rs = Math.max(0.05, rasterScale);
-    let layout = layoutText(style, rs);
+    let layout = fitCounterLayout(layoutText(style, rs), style, counter);
     const fullW = layout.blockW + padXd * 2 * rs;
     const fullH = layout.blockH + padYd * 2 * rs;
     const over = Math.max(fullW, fullH) / MAX_RASTER;
     if (over > 1) {
       rs /= over;
-      layout = layoutText(style, rs);
+      layout = fitCounterLayout(layoutText(style, rs), style, counter);
     }
 
     const key = hashKey(`${JSON.stringify(style)}|${JSON.stringify(ta ?? null)}|${rs.toFixed(4)}|${fontsEpoch}|${animating ? `t${Math.round(t * 240)}` : 's'}`);
@@ -272,7 +276,7 @@ export class TextRenderer {
       contentW: Math.max(layout.blockW, bgW) / rs,
       contentH: (layout.blockH + (bg ? bg.padY * 2 * rs : 0)) / rs,
       version: nextVersion(),
-      static: !animating,
+      static: !animating && !counter?.moving,
     };
     entry = { key, raster, scratch: entry?.scratch };
     this.cache.set(clip.id, entry);
@@ -309,7 +313,12 @@ export class TextRenderer {
     /** Run `draw` once per drawable unit with that unit's animated transform applied. */
     const forEachUnit = (target: Ctx2D, draw: (text: string, x: number, y: number) => void): void => {
       if (!animating) {
-        for (const line of layout.lines) if (line.text) draw(line.text, padX + line.x, padY + line.y);
+        for (const line of layout.lines) {
+          if (!line.text) continue;
+          const runs = tabularRuns(line);
+          if (runs) for (const r of runs) draw(r.text, padX + line.x + r.x, padY + line.y);
+          else draw(line.text, padX + line.x, padY + line.y);
+        }
         return;
       }
       const drawOne = (text: string, x: number, y: number, w: number, lineIdx: number, charIdx: number, wordIdx: number, wordCenterX: number): void => {
