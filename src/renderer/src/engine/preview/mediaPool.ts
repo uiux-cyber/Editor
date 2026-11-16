@@ -8,6 +8,7 @@ import { getIndex, sourceTimeAt } from '@/core/project';
 import { getAudibleClips, getSceneItems } from '@/core/scene';
 import { clipEnd } from '@/core/time';
 import type { AudioClip, ID, Project, VideoClip } from '@/core/types';
+import { buildChain, chainKey, type BuiltChain } from '../audio/chain';
 import type { FrameImage } from '../compositor';
 import { assetUrl } from '../media/assets';
 
@@ -25,6 +26,8 @@ interface Slot {
   pendingSeek: number | null;
   lastUsed: number;
   cleanup: () => void;
+  /** Per-clip processing chain between the element source and its gain (engine/audio). */
+  chain: BuiltChain | null;
 }
 
 const PRELOAD_AHEAD = 2.0;
@@ -92,14 +95,15 @@ export class MediaPool {
     el.src = url;
     this.host.appendChild(el);
 
-    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined };
+    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined, chain: null };
 
     try {
       const ctx = this.ensureAudio();
       slot.node = ctx.createMediaElementSource(el);
       slot.gain = ctx.createGain();
       slot.gain.gain.value = 0;
-      slot.node.connect(slot.gain).connect(this.master!);
+      slot.gain.connect(this.master!);
+      this.wireChain(slot, clip);
     } catch (err) {
       console.warn('[preview] audio routing unavailable', err);
       el.muted = true;
@@ -131,11 +135,31 @@ export class MediaPool {
     return slot;
   }
 
+  /** (Re)connect source → processing chain → gain for a clip's current settings. */
+  private wireChain(slot: Slot, clip: MediaClip): void {
+    if (!slot.node || !slot.gain || !this.audioCtx) return;
+    try {
+      slot.node.disconnect();
+    } catch {
+      /* not connected yet */
+    }
+    slot.chain?.dispose();
+    const chain = buildChain(this.audioCtx, clip, 'preview');
+    slot.chain = chain;
+    if (chain.input && chain.output) {
+      slot.node.connect(chain.input);
+      chain.output.connect(slot.gain);
+    } else {
+      slot.node.connect(slot.gain);
+    }
+  }
+
   private destroySlot(slot: Slot): void {
     slot.cleanup();
     try {
       slot.el.pause();
       slot.node?.disconnect();
+      slot.chain?.dispose();
       slot.gain?.disconnect();
       slot.el.removeAttribute('src');
       slot.el.load();
@@ -219,6 +243,7 @@ export class MediaPool {
       if (!asset) continue;
       const slot = this.slotFor(w.clip);
       if (!slot) continue;
+      if (slot.node && slot.gain && slot.chain && slot.chain.key !== chainKey(w.clip)) this.wireChain(slot, w.clip);
       const el = slot.el;
       const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.02) : Infinity;
       const desired = Math.min(Math.max(sourceTimeAt(w.clip, w.localTime), 0), maxT);

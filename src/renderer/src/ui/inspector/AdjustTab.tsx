@@ -8,7 +8,7 @@ import { editVisual } from '../actions';
 import { ColorInput, Field, Section, Select, SliderField, Toggle } from '../common/controls';
 import { ParamControls } from './shared';
 
-type ScalarKey = Exclude<keyof Grade, 'shadowTint' | 'highlightTint' | 'monoTint'>;
+type ScalarKey = Exclude<keyof Grade, 'shadowTint' | 'highlightTint' | 'monoTint' | 'curves' | 'wheels'>;
 
 interface SliderSpec {
   key: ScalarKey;

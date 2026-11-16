@@ -4,8 +4,13 @@
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ],
     "strict": true,
     "noUnusedLocals": false,
     "noImplicitOverride": true,
@@ -14,7 +19,16 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "paths": { "@shared/*": ["./src/shared/*"] }
+    "paths": {
+      "@shared/*": [
+        "./src/shared/*"
+      ]
+    }
   },
-  "include": ["electron.vite.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+  "include": [
+    "electron.vite.config.ts",
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*"
+  ]
 }

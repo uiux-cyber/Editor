@@ -112,6 +112,15 @@ export interface KinoraBridge {
     /** Build a streamable URL for a local media file. */
     toUrl(path: string): string;
   };
+  /** Call a feature handler registered in src/main/handlers (channel must start with `x:`). */
+  call<T = unknown>(channel: string, ...args: unknown[]): Promise<T>;
+  /** Listen to a feature event sent by the main process (channel must start with `x:`). */
+  on(channel: string, cb: (...args: any[]) => void): () => void;
+}
+
+/** URL of a bundled model / runtime file, e.g. modelUrl('mediapipe/selfie_segmenter.tflite'). */
+export function modelUrl(rel: string): string {
+  return `${MEDIA_SCHEME}://models/${rel.replace(/^\/+/, '')}`;
 }
 
 export function mediaUrl(path: string): string {

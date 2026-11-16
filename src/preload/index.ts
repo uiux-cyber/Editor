@@ -61,6 +61,14 @@ const bridge: KinoraBridge = {
     pathForFile: (file) => webUtils.getPathForFile(file),
     toUrl: (path) => mediaUrl(path),
   },
+  call: <T>(channel: string, ...args: unknown[]): Promise<T> => {
+    if (!channel.startsWith('x:')) return Promise.reject(new Error('Extension calls must use the x: namespace'));
+    return invoke<T>(channel, ...args);
+  },
+  on: (channel, cb) => {
+    if (!channel.startsWith('x:')) throw new Error('Extension events must use the x: namespace');
+    return subscribe(channel, cb);
+  },
 };
 
 contextBridge.exposeInMainWorld('kinora', bridge);

@@ -1,5 +1,6 @@
 import type { BlendMode } from '@/core/types';
 import { GRADE_GLSL } from './grade';
+import { extDeclsGlsl, extStageGlsl } from './layerExt';
 import { GLSL_COMMON, GLSL_HEADER } from './shaderlib';
 
 /** Layer quad: `u_matrix` maps the unit quad to clip space; `v_uv` is 0..1 with (0,0) top-left. */
@@ -20,7 +21,8 @@ export const MASK_SHAPE_INDEX: Record<string, number> = { rect: 1, ellipse: 2, d
  * Draws one layer: samples the source, applies chroma key, colour grade, vignette / grain /
  * sharpen, rounded corners, reveal insets and the shape mask, and outputs premultiplied colour.
  */
-export const LAYER_FRAG = `${GLSL_HEADER}
+/** Built lazily so every layer extension (engine/gl/ext) is compiled in. */
+export const layerFrag = (): string => `${GLSL_HEADER}
 in vec2 v_uv;
 out vec4 outColor;
 
@@ -46,6 +48,7 @@ ${GLSL_COMMON}
 ${GRADE_GLSL}
 uniform Grade u_adjust;
 uniform Grade u_filter;
+${extDeclsGlsl()}
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
   vec2 q = abs(p) - b + r;
@@ -114,6 +117,9 @@ void main() {
   float alpha = c.a;
   vec3 rgb = alpha > 0.0 ? c.rgb / alpha : vec3(0.0);
 
+  // Extensions: source stage
+${extStageGlsl('source')}
+
   if (u_chroma.x > 0.5) {
     float d = distance(chromaCoords(rgb), chromaCoords(u_chromaKey));
     float sim = u_chroma.y * 0.5;
@@ -125,6 +131,9 @@ void main() {
 
   if (u_adjustOn > 0.5) rgb = gradeColor(rgb, u_adjust);
   if (u_filterOn > 0.5) rgb = gradeColor(rgb, u_filter);
+
+  // Extensions: grade stage
+${extStageGlsl('grade')}
 
   if (u_spatial.y > 0.0) {
     float d = length(uv - 0.5) * 1.41421356;
@@ -157,6 +166,9 @@ void main() {
     float m = 1.0 - smoothstep(-e, e, d);
     alpha *= u_maskOpts.w > 0.5 ? 1.0 - m : m;
   }
+
+  // Extensions: alpha stage
+${extStageGlsl('alpha')}
 
   alpha *= u_opacity;
   outColor = vec4(rgb * alpha, alpha);

@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
+import type { MainContext } from './context';
 import {
   APP_NAME,
   AUDIO_EXTS,
@@ -173,6 +174,11 @@ const MIME: Record<string, string> = {
   opus: 'audio/ogg',
   flac: 'audio/flac',
   weba: 'audio/webm',
+  onnx: 'application/octet-stream',
+  tflite: 'application/octet-stream',
+  bin: 'application/octet-stream',
+  txt: 'text/plain; charset=utf-8',
+  cube: 'text/plain; charset=utf-8',
 };
 
 const CSP = [
@@ -203,6 +209,7 @@ async function serveFile(request: Request, filePath: string, extraHeaders: Recor
     'Content-Type': MIME[extOf(filePath)] ?? 'application/octet-stream',
     'Accept-Ranges': 'bytes',
     'Access-Control-Allow-Origin': '*',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
     'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
     'Cache-Control': 'no-cache',
     'Last-Modified': stat.mtime.toUTCString(),
@@ -244,6 +251,15 @@ async function serveFile(request: Request, filePath: string, extraHeaders: Recor
   });
 }
 
+/** Bundled AI models: KINORA_MODELS_DIR, else <resources>/models when installed, else ./resources/models. */
+function modelsDir(): string {
+  if (process.env.KINORA_MODELS_DIR) return path.resolve(process.env.KINORA_MODELS_DIR);
+  return app.isPackaged ? path.join(process.resourcesPath, 'models') : path.join(app.getAppPath(), 'resources', 'models');
+}
+
+// Cross-origin isolation enables SharedArrayBuffer (multi-threaded WebAssembly for on-device AI).
+const ISOLATION = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
+
 function registerProtocol(): void {
   const rendererRoot = path.join(__dirname, '../renderer');
   protocol.handle(MEDIA_SCHEME, async (request) => {
@@ -255,13 +271,19 @@ function registerProtocol(): void {
         if (!MEDIA_EXTS.includes(extOf(filePath))) return new Response('Forbidden', { status: 403 });
         return await serveFile(request, path.normalize(filePath));
       }
+      if (url.hostname === 'models') {
+        const root = modelsDir();
+        const filePath = path.normalize(path.join(root, decodeURIComponent(url.pathname)));
+        if (!filePath.startsWith(root)) return new Response('Forbidden', { status: 403 });
+        return await serveFile(request, filePath, { 'Cache-Control': 'max-age=31536000' });
+      }
       if (url.hostname === 'app') {
         let rel = decodeURIComponent(url.pathname);
         if (rel === '/' || rel === '') rel = '/index.html';
         const filePath = path.normalize(path.join(rendererRoot, rel));
         if (!filePath.startsWith(rendererRoot)) return new Response('Forbidden', { status: 403 });
         const isHtml = extOf(filePath) === 'html';
-        return await serveFile(request, filePath, isHtml ? { 'Content-Security-Policy': CSP } : { 'Cache-Control': 'max-age=31536000' });
+        return await serveFile(request, filePath, isHtml ? { 'Content-Security-Policy': CSP, ...ISOLATION } : { 'Cache-Control': 'max-age=31536000' });
       }
       return new Response('Not found', { status: 404 });
     } catch (err) {
@@ -653,6 +675,34 @@ function registerIpc(): void {
   handle('autosave:remove', async (id: string) => {
     await fsp.unlink(path.join(autosaveDir(), `${safeId(id)}.json`)).catch(() => undefined);
   });
+
+  // Feature modules: every src/main/handlers/*.ts default-exports register(ctx).
+  const ctx: MainContext = {
+    handle,
+    send: (channel, ...args) => {
+      if (!channel.startsWith('x:')) throw new Error('Extension events must use the x: namespace');
+      mainWindow?.webContents.send(channel, ...args);
+    },
+    window: () => mainWindow,
+    approveRead,
+    approveWrite,
+    assertRead,
+    assertWrite,
+    settings: { get: (key, fallback) => store.get(key, fallback), set: (key, value) => store.set(key, value) },
+    statFile,
+    sanitizeName,
+    userData: () => app.getPath('userData'),
+    modelsDir,
+    e2eDir,
+  };
+  const modules = import.meta.glob<{ default: (ctx: MainContext) => void }>('./handlers/*.ts', { eager: true });
+  for (const [file, mod] of Object.entries(modules)) {
+    try {
+      mod.default(ctx);
+    } catch (err) {
+      console.error(`[main] handler module ${file} failed to register`, err);
+    }
+  }
 }
 
 function sanitizeName(name: string): string {

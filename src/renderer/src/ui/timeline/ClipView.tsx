@@ -15,6 +15,7 @@ const ICONS: Record<Clip['type'], ReactNode> = {
   shape: <Shapes size={11} />,
   generator: <Sparkles size={11} />,
   adjustment: <Layers size={11} />,
+  compound: <Layers size={11} />,
 };
 
 const BUFFER = 300;

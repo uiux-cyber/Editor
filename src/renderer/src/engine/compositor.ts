@@ -9,7 +9,8 @@ import { StickerRenderer } from './sources/sticker';
 import { TextRenderer } from './sources/text';
 import { GLContext, type Target } from './gl/context';
 import { isNeutralGrade, resolveFilterGrade, setGradeUniforms } from './gl/grade';
-import { BLEND_FRAG, BLEND_MODE_INDEX, COPY_FRAG, LAYER_FRAG, LAYER_VERT, MASK_SHAPE_INDEX, PRESENT_FRAG } from './gl/shaders';
+import { LAYER_EXTENSIONS } from './gl/layerExt';
+import { BLEND_FRAG, BLEND_MODE_INDEX, COPY_FRAG, LAYER_VERT, MASK_SHAPE_INDEX, PRESENT_FRAG, layerFrag } from './gl/shaders';
 import { FULLSCREEN_VERT, hexToRgba, setParamUniforms, wrapEffect, wrapGenerator, wrapTransition, type Program } from './gl/shaderlib';
 import { propAt } from '@/core/keyframes';
 import { designSize, fitContain, sourceTimeAt } from '@/core/project';
@@ -25,12 +26,20 @@ export interface FrameImage {
   height: number;
   /** Changes whenever the pixels change; identical versions skip the texture upload. */
   version: number;
+  /** True for pictures that change over time (animated images): skips mipmap generation. */
+  animated?: boolean;
 }
 
 /** Supplies decoded pictures. The preview reads live <video> elements, the exporter decoded frames. */
 export interface MediaProvider {
   videoFrame(clip: VideoClip, sourceTime: number): FrameImage | null;
-  image(assetId: ID): FrameImage | null;
+  /** Still or animated image. `time` is seconds since the clip start (for animated assets). */
+  image(assetId: ID, time?: number): FrameImage | null;
+  /**
+   * Optional matte for background removal: white = keep. Same orientation as the frame returned
+   * by videoFrame / image for that clip. Consumed by the cutout layer extension.
+   */
+  matte?(clip: VisualClip, time: number): FrameImage | null;
 }
 
 /** Where a layer ended up, in design px relative to the composition centre. */
@@ -286,9 +295,9 @@ export class Compositor {
             if (entry) entry.lastUsed = this.frame;
           }
         } else {
-          const img = env.provider.image(clip.assetId);
-          const key = `i:${clip.assetId}`;
-          if (img) entry = this.texture(key, img.version, () => ({ source: img.source, width: img.width, height: img.height, mipmaps: true }));
+          const img = env.provider.image(clip.assetId, t);
+          const key = img?.animated ? `i:${clip.id}` : `i:${clip.assetId}`;
+          if (img) entry = this.texture(key, img.version, () => ({ source: img.source, width: img.width, height: img.height, mipmaps: !img.animated }));
           else {
             entry = this.textures.get(key) ?? null;
             if (entry) entry.lastUsed = this.frame;
@@ -376,7 +385,7 @@ export class Compositor {
   // -------------------------------------------------------------------------------------------
 
   private layerProgram(): Program | null {
-    return this.ctx.program('layer', LAYER_VERT, LAYER_FRAG);
+    return this.ctx.program('layer', LAYER_VERT, layerFrag);
   }
 
   /** Draw a prepared layer into `target` with normal alpha blending. */
@@ -465,6 +474,21 @@ export class Compositor {
       Math.min(1, (adjust?.vignette ?? 0) + (filter?.vignette ?? 0)),
       Math.min(1, (adjust?.grain ?? 0) + (filter?.grain ?? 0)),
     );
+
+    // Layer extensions (engine/gl/ext): each sets its uniforms and decides whether it runs.
+    if (LAYER_EXTENSIONS.length) {
+      let nextUnit = 4;
+      const sourceTime = clip.type === 'video' ? sourceTimeAt(clip, p.localTime) : undefined;
+      for (const ext of LAYER_EXTENSIONS) {
+        let on = false;
+        try {
+          on = ext.apply({ gl, glctx: ctx, prog, clip, localTime: p.localTime, sourceTime, provider: env.provider, W: env.W, H: env.H, px, identity, unit: () => nextUnit++ });
+        } catch (err) {
+          console.warn(`[gl] layer extension "${ext.id}" failed`, err);
+        }
+        gl.uniform1f(prog.loc(`u_ext_${ext.id}`), on ? 1 : 0);
+      }
+    }
 
     ctx.drawQuad();
   }

@@ -17,7 +17,8 @@ export const DESIGN_SHORT_SIDE = 1080;
 // Assets
 // ---------------------------------------------------------------------------------------------
 
-export type AssetKind = 'video' | 'audio' | 'image';
+/** `animation` = animated GIF / WebP / APNG or Lottie JSON (see `MediaAsset.format`). */
+export type AssetKind = 'video' | 'audio' | 'image' | 'animation';
 
 export type AssetSource =
   | { type: 'file'; path: string }
@@ -43,6 +44,14 @@ export interface MediaAsset {
   videoCodec?: string;
   audioCodec?: string;
   addedAt: number;
+  /** Animated assets: container format. */
+  format?: 'gif' | 'webp' | 'apng' | 'lottie';
+  /** Lightweight editing copy used by the preview (export always uses the original). */
+  proxy?: { path: string; width: number; height: number };
+  /** Source uses a high-dynamic-range transfer (PQ / HLG) and is tone-mapped for display. */
+  hdr?: boolean;
+  /** When the file was converted on import (e.g. ProRes via FFmpeg), the original file. */
+  transcodedFrom?: string;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -197,6 +206,71 @@ export interface Grade {
   grain: number;
   /** 0..1 */
   sharpen: number;
+  /** Tone curves (optional; absent = identity). */
+  curves?: Curves;
+  /** Lift / gamma / gain / offset colour wheels (optional; absent = neutral). */
+  wheels?: ColorWheels;
+}
+
+/** Curve control points in 0..1, sorted by x, always including x = 0 and x = 1. */
+export type CurvePoints = [number, number][];
+
+export interface Curves {
+  master: CurvePoints;
+  r: CurvePoints;
+  g: CurvePoints;
+  b: CurvePoints;
+}
+
+/** A colour wheel: hue (degrees) + strength (0..1) of the push, and a luminance offset (-1..1). */
+export interface WheelValue {
+  hue: number;
+  amount: number;
+  luma: number;
+}
+
+export interface ColorWheels {
+  lift: WheelValue;
+  gamma: WheelValue;
+  gain: WheelValue;
+  offset: WheelValue;
+}
+
+/** Reference to a user-imported .cube LUT (stored by the app, see the colour feature). */
+export interface LutRef {
+  id: string;
+  /** 0..1 */
+  intensity: number;
+}
+
+/** On-device background removal (person segmentation). */
+export interface Cutout {
+  enabled: boolean;
+  /** 0..1 edge softness. */
+  feather: number;
+  /** -1..1 shrinks (negative) or grows (positive) the matte. */
+  choke: number;
+}
+
+export interface EqBand {
+  type: 'lowshelf' | 'peaking' | 'highshelf' | 'highpass' | 'lowpass';
+  /** Hz */
+  frequency: number;
+  /** dB (ignored by pass filters) */
+  gain: number;
+  q: number;
+}
+
+export interface CompressorSettings {
+  enabled: boolean;
+  /** dBFS */
+  threshold: number;
+  ratio: number;
+  /** seconds */
+  attack: number;
+  release: number;
+  /** dB of make-up gain */
+  makeup: number;
 }
 
 export type ParamValue = number | string | boolean;
@@ -268,9 +342,9 @@ export interface ChromaKey {
 // Clips
 // ---------------------------------------------------------------------------------------------
 
-export type ClipType = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'shape' | 'generator' | 'adjustment';
+export type ClipType = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'shape' | 'generator' | 'adjustment' | 'compound';
 
-export const VISUAL_CLIP_TYPES: ClipType[] = ['video', 'image', 'text', 'sticker', 'shape', 'generator', 'adjustment'];
+export const VISUAL_CLIP_TYPES: ClipType[] = ['video', 'image', 'text', 'sticker', 'shape', 'generator', 'adjustment', 'compound'];
 
 interface ClipCore {
   id: ID;
@@ -282,6 +356,8 @@ interface ClipCore {
   duration: number;
   /** Clips created together (e.g. from one template) share a group id. */
   groupId?: ID;
+  /** Clips sharing a link id (a video and its detached audio) move, trim and delete together. */
+  linkId?: ID;
   keyframes?: Partial<Record<KeyframeProp, Keyframe[]>>;
 }
 
@@ -300,6 +376,10 @@ export interface VisualProps {
   filter?: FilterRef;
   effects: EffectInstance[];
   anim?: ClipAnimations;
+  /** User LUT applied after the grade. */
+  lut?: LutRef;
+  /** Background removal (video / image layers). */
+  cutout?: Cutout;
 }
 
 /** Properties shared by clips that play sound. */
@@ -310,6 +390,9 @@ export interface AudioProps {
   /** Seconds */
   fadeIn: number;
   fadeOut: number;
+  /** Parametric equaliser bands, applied in order. */
+  eq?: EqBand[];
+  compressor?: CompressorSettings;
 }
 
 /** Properties shared by clips backed by timed media. */
@@ -319,6 +402,17 @@ export interface TimedMediaProps {
   trimIn: number;
   /** Playback rate, 0.1..16 */
   speed: number;
+  /**
+   * Speed ramp: speed multiplier keyframes over clip-local time (values 0.1..16). When present
+   * it replaces the constant `speed` for time mapping.
+   */
+  speedRamp?: Keyframe[];
+  /** Play the source backwards (from trimIn + span down to trimIn). */
+  reverse?: boolean;
+  /** Hold the frame at `trimIn` for the whole clip (video only; audio is silent). */
+  freeze?: boolean;
+  /** Keep the original pitch when the speed is not 1. */
+  preservePitch?: boolean;
 }
 
 export interface VideoClip extends ClipCore, VisualProps, AudioProps, TimedMediaProps {
@@ -377,6 +471,10 @@ export interface TextClip extends ClipCore, VisualProps {
   text: TextStyle;
   /** Per-character / per-word animation presets. */
   textAnim?: ClipAnimations;
+  /** Count-up number. */
+  counter?: CounterSettings;
+  /** Present on caption clips (subtitle track). */
+  caption?: CaptionData;
 }
 
 export interface StickerClip extends ClipCore, VisualProps {
@@ -407,7 +505,9 @@ export type ShapeKind =
   | 'ring'
   | 'pill'
   | 'frame'
-  | 'blob';
+  | 'blob'
+  /** Free-form bezier path drawn with the pen tool (see `ShapeStyle.path`). */
+  | 'path';
 
 export interface ShapeStyle {
   kind: ShapeKind;
@@ -424,6 +524,54 @@ export interface ShapeStyle {
    * replaces it with that media, keeping timing, placement and animation.
    */
   slot?: boolean;
+  /** Pen-tool path, in the shape's own box (0..1 on both axes). */
+  path?: PathData;
+}
+
+export interface PathPoint {
+  x: number;
+  y: number;
+  /** Bezier handles relative to the point (0..1 units); omitted = sharp corner. */
+  inX?: number;
+  inY?: number;
+  outX?: number;
+  outY?: number;
+}
+
+export interface PathData {
+  points: PathPoint[];
+  closed: boolean;
+}
+
+/** Animated number for "count-up" text: replaces the text content while the clip plays. */
+export interface CounterSettings {
+  from: number;
+  to: number;
+  decimals: number;
+  prefix: string;
+  suffix: string;
+  /** Thousands separators. */
+  separator: boolean;
+  ease: EaseId;
+  /** Seconds from the clip start over which the count runs (default: whole clip). */
+  duration?: number;
+}
+
+export interface CaptionWord {
+  /** Clip-local seconds. */
+  start: number;
+  end: number;
+  text: string;
+}
+
+export type CaptionHighlight = 'none' | 'color' | 'box' | 'karaoke' | 'pop' | 'underline';
+
+export interface CaptionData {
+  /** Word timings (from transcription) for word-by-word highlight styles. */
+  words?: CaptionWord[];
+  highlight: CaptionHighlight;
+  /** Colour of the active word (or its box). */
+  highlightColor: string;
 }
 
 export interface ShapeClip extends ClipCore, VisualProps {
@@ -443,7 +591,21 @@ export interface AdjustmentClip extends ClipCore, VisualProps {
   type: 'adjustment';
 }
 
-export type Clip = VideoClip | ImageClip | AudioClip | TextClip | StickerClip | ShapeClip | GeneratorClip | AdjustmentClip;
+/** A nested timeline (several clips edited as one). */
+export interface Sequence {
+  tracks: Track[];
+  clips: Record<ID, Clip>;
+  transitions: Record<ID, Transition>;
+}
+
+export interface CompoundClip extends ClipCore, VisualProps, AudioProps {
+  type: 'compound';
+  sequence: Sequence;
+  /** Time inside the nested sequence shown at the clip's start. */
+  trimIn: number;
+}
+
+export type Clip = VideoClip | ImageClip | AudioClip | TextClip | StickerClip | ShapeClip | GeneratorClip | AdjustmentClip | CompoundClip;
 export type VisualClip = Exclude<Clip, AudioClip>;
 export type MediaClip = VideoClip | AudioClip;
 
@@ -472,6 +634,10 @@ export interface Track {
   /** Hides every clip on the track (visual tracks). */
   hidden: boolean;
   locked: boolean;
+  /** `captions` marks the subtitle track (holds caption text clips). */
+  role?: 'captions';
+  /** Row height in the timeline (px); default depends on the kind. */
+  height?: number;
 }
 
 /** A transition between two adjacent clips on the same track, centred on the cut. */
@@ -515,6 +681,9 @@ export interface Project {
   clips: Record<ID, Clip>;
   transitions: Record<ID, Transition>;
   markers: Marker[];
+  /** Marked range (seconds) for exporting a section. */
+  inPoint?: number;
+  outPoint?: number;
 }
 
 export interface ProjectFile {

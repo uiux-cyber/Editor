@@ -12,9 +12,11 @@ import { writeProp } from '../keyframeOps';
 import { AdjustTab, EffectsTab } from './AdjustTab';
 import { AnimateTab } from './AnimateTab';
 import { EditTab } from './EditTab';
+import { extraTabsFor, sectionsFor } from './sections';
 import { KeyframeButton, ParamControls, useLiveProp } from './shared';
 
-type TabId = 'edit' | 'animate' | 'adjust' | 'effects' | 'audio';
+/** Built-in tabs plus any extra tab contributed by a registered section. */
+type TabId = string;
 
 const TYPE_META: Record<Clip['type'], { label: string; icon: ReactNode }> = {
   video: { label: 'Video', icon: <Film size={14} /> },
@@ -25,6 +27,7 @@ const TYPE_META: Record<Clip['type'], { label: string; icon: ReactNode }> = {
   shape: { label: 'Shape', icon: <Shapes size={14} /> },
   generator: { label: 'Background', icon: <Sparkles size={14} /> },
   adjustment: { label: 'Adjustment', icon: <Layers size={14} /> },
+  compound: { label: 'Compound clip', icon: <Layers size={14} /> },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -260,6 +263,7 @@ export function Inspector(): ReactNode {
           { id: 'effects', label: 'Effects' },
           ...(type === 'video' ? [{ id: 'audio' as const, label: 'Audio' }] : []),
         ];
+  if (primary) tabs.push(...extraTabsFor(primary));
   const active = tabs.some((t) => t.id === tab) ? tab : (tabs[0]?.id ?? 'edit');
 
   // When the selection changes type, land on the first tab that exists for it.
@@ -313,6 +317,9 @@ export function Inspector(): ReactNode {
         {active === 'adjust' && <AdjustTab clip={primary} ids={ids} />}
         {active === 'effects' && <EffectsTab clip={primary} ids={ids} />}
         {active === 'audio' && (primary.type === 'video' || primary.type === 'audio') && <AudioPanel clip={primary} ids={ids} />}
+        {sectionsFor(primary, active).map((s) => (
+          <s.Component key={s.id} clip={primary} ids={ids} />
+        ))}
       </div>
     </aside>
   );

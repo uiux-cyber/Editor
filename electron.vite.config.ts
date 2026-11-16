@@ -18,6 +18,9 @@ export default defineConfig({
       },
     },
     plugins: [react()],
+    server: {
+      headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' },
+    },
     build: {
       target: 'chrome140',
       chunkSizeWarningLimit: 4000,

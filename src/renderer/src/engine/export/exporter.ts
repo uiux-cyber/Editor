@@ -33,6 +33,7 @@ import { clipGainAt, getAudioClips, getSceneItems } from '@/core/scene';
 import { clipEnd } from '@/core/time';
 import type { AudioClip, ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { api } from '@/platform/api';
+import { buildChain } from '../audio/chain';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
@@ -304,7 +305,14 @@ class AudioMixer {
       } catch {
         gain.gain.setValueAtTime(curve[0], when);
       }
-      node.connect(gain).connect(ctx.destination);
+      const chain = buildChain(ctx, clip, 'export');
+      if (chain.input && chain.output) {
+        node.connect(chain.input);
+        chain.output.connect(gain);
+      } else {
+        node.connect(gain);
+      }
+      gain.connect(ctx.destination);
       node.start(when);
     }
     return ctx.startRendering();

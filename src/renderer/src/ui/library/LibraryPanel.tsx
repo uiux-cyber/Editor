@@ -1,4 +1,4 @@
-import { Blend, FolderOpen, LayoutTemplate, Music, Palette, Shapes, Smile, Sparkles, Type } from 'lucide-react';
+import { Blend, FolderOpen, LayoutTemplate, Music, Palette, Shapes, Smile, Sparkles, Type, WandSparkles } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useUI, type LibraryTab } from '@/store/ui';
 import { AudioTab } from './AudioTab';
@@ -8,6 +8,7 @@ import { MediaTab } from './MediaTab';
 import { StickersTab } from './StickersTab';
 import { TemplatesTab } from './TemplatesTab';
 import { TextTab } from './TextTab';
+import { ToolsTab } from '../tools/ToolsTab';
 
 const TABS: { id: LibraryTab; label: string; icon: ReactNode }[] = [
   { id: 'media', label: 'Media', icon: <FolderOpen size={18} /> },
@@ -19,6 +20,7 @@ const TABS: { id: LibraryTab; label: string; icon: ReactNode }[] = [
   { id: 'filters', label: 'Filters', icon: <Palette size={18} /> },
   { id: 'audio', label: 'Audio', icon: <Music size={18} /> },
   { id: 'elements', label: 'Elements', icon: <Shapes size={18} /> },
+  { id: 'tools', label: 'Smart', icon: <WandSparkles size={18} /> },
 ];
 
 export function LibraryRail(): ReactNode {
@@ -55,6 +57,8 @@ export function LibraryPanel(): ReactNode {
       return <FiltersTab />;
     case 'audio':
       return <AudioTab />;
+    case 'tools':
+      return <ToolsTab />;
     case 'elements':
       return <ElementsTab />;
     default:

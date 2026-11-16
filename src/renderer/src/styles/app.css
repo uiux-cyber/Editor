@@ -2508,3 +2508,71 @@ body.is-dragging * {
   display: flex;
   gap: 4px;
 }
+
+/* ========================================================================================== */
+/* Smart tools                                                                                 */
+/* ========================================================================================== */
+
+.tool-group {
+  margin-bottom: 6px;
+}
+.tool-card {
+  margin-bottom: 6px;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  box-shadow: 0 0 0 1px var(--line) inset;
+  overflow: hidden;
+}
+.tool-card.is-open {
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.tool-card__head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 11px;
+  text-align: left;
+}
+.tool-card__head:hover {
+  background: var(--bg-3);
+}
+.tool-card__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+  flex: none;
+}
+.tool-card__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tool-card__text strong {
+  color: var(--text-0);
+  font-size: 12.5px;
+}
+.tool-card__text small {
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.tool-card__chev {
+  color: var(--text-3);
+  transition: transform 0.15s;
+  flex: none;
+}
+.tool-card.is-open .tool-card__chev {
+  transform: rotate(180deg);
+}
+.tool-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 12px;
+}

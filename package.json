@@ -18,7 +18,8 @@
     "dist:dir": "electron-vite build && electron-builder --win --dir",
     "icons": "python scripts/make-icons.py",
     "check": "node scripts/check-library.mjs",
-    "sheets": "node scripts/render-templates.mjs"
+    "sheets": "node scripts/render-templates.mjs",
+    "models": "node scripts/fetch-models.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/caveat": "^5.3.0",
@@ -45,7 +46,9 @@
     "@fontsource/press-start-2p": "^5.3.0",
     "@fontsource/righteous": "^5.3.0",
     "@fontsource/shrikhand": "^5.3.0",
+    "@huggingface/transformers": "^4.3.2",
     "@mediabunny/mp3-encoder": "^1.65.2",
+    "@mediapipe/tasks-vision": "^1.2.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -55,6 +58,7 @@
     "electron-vite": "^6.0.0",
     "gifenc": "^1.0.3",
     "immer": "^11.2.10",
+    "lottie-web": "^5.13.0",
     "lucide-react": "^1.72.0",
     "mediabunny": "^1.65.2",
     "playwright-core": "^1.65.0",
@@ -110,6 +114,15 @@
         "description": "Kinora video project",
         "icon": "resources/icon.ico",
         "role": "Editor"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "resources/models",
+        "to": "models",
+        "filter": [
+          "**/*"
+        ]
       }
     ]
   }
