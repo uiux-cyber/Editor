@@ -49,6 +49,8 @@ export function createProject(opts: NewProjectOptions): Project {
     clips: {},
     transitions: {},
     markers: [],
+    // New projects get the magnetic main track (older files stay as they were saved).
+    magneticMain: true,
   };
 }
 
@@ -128,6 +130,20 @@ export const clipKind = (clip: Pick<Clip, 'type'>): TrackKind => (clip.type === 
 
 export function getTrack(p: Project, trackId: ID): Track | undefined {
   return p.tracks.find((t) => t.id === trackId);
+}
+
+/** The "Main" track: the bottom-most visual track that is not a caption track. */
+export function mainTrackId(p: Project): ID | null {
+  for (let i = p.tracks.length - 1; i >= 0; i--) {
+    const t = p.tracks[i];
+    if (t.kind === 'visual' && t.role !== 'captions') return t.id;
+  }
+  return null;
+}
+
+/** True when `trackId` is the main track and the project keeps it magnetic (gap-free). */
+export function isMagneticTrack(p: Project, trackId: ID): boolean {
+  return !!p.magneticMain && mainTrackId(p) === trackId;
 }
 
 export function clipsOnTrack(p: Project, trackId: ID, ignore?: ReadonlySet<ID>): Clip[] {
@@ -257,9 +273,11 @@ export function ensureBaseTracks(p: Project): void {
 /** Mutates. Drops empty tracks, always keeping one of each kind. */
 export function pruneEmptyTracks(p: Project): void {
   const used = new Set(Object.values(p.clips).map((c) => c.trackId));
+  // A magnetic main track stays even when empty, so the track above never becomes "Main".
+  const main = p.magneticMain ? mainTrackId(p) : null;
   for (const kind of ['visual', 'audio'] as const) {
     const ofKind = p.tracks.filter((t) => t.kind === kind);
-    const empty = ofKind.filter((t) => !used.has(t.id));
+    const empty = ofKind.filter((t) => !used.has(t.id) && t.id !== main);
     let removable = empty.length;
     if (empty.length === ofKind.length) removable -= 1; // keep one
     if (removable <= 0) continue;
@@ -309,7 +327,22 @@ export function maxTransitionDuration(from: Clip, to: Clip): number {
 export function removeClips(p: Project, ids: Iterable<ID>, prune = true): void {
   for (const id of ids) delete p.clips[id];
   cleanupTransitions(p);
+  cleanupRelations(p);
   if (prune) pruneEmptyTracks(p);
+}
+
+/** Mutates. Drops group and link ids that no longer join at least two clips. */
+export function cleanupRelations(p: Project): void {
+  const groups = new Map<ID, number>();
+  const links = new Map<ID, number>();
+  for (const clip of Object.values(p.clips)) {
+    if (clip.groupId) groups.set(clip.groupId, (groups.get(clip.groupId) ?? 0) + 1);
+    if (clip.linkId) links.set(clip.linkId, (links.get(clip.linkId) ?? 0) + 1);
+  }
+  for (const clip of Object.values(p.clips)) {
+    if (clip.groupId && groups.get(clip.groupId)! < 2) delete p.clips[clip.id].groupId;
+    if (clip.linkId && links.get(clip.linkId)! < 2) delete p.clips[clip.id].linkId;
+  }
 }
 
 /**
@@ -334,6 +367,7 @@ export function rippleDelete(p: Project, ids: Iterable<ID>): void {
     }
   }
   cleanupTransitions(p);
+  cleanupRelations(p);
   pruneEmptyTracks(p);
 }
 
@@ -431,6 +465,13 @@ export function insertClipsAt(p: Project, clips: Clip[], time: number, sourceTra
   const keys = [...groups.keys()].sort((a, b) => order.indexOf(b) - order.indexOf(a));
   const inserted: ID[] = [];
   const usedTracks = new Set<ID>();
+  // Copies form their own groups / links (copied together → still grouped / linked together).
+  const remap = new Map<ID, ID>();
+  const fresh = (id: ID, prefix: string): ID => {
+    let next = remap.get(id);
+    if (!next) remap.set(id, (next = uid(prefix)));
+    return next;
+  };
   for (const key of keys) {
     const group = groups.get(key)!;
     const kind = clipKind(group[0]);
@@ -443,10 +484,13 @@ export function insertClipsAt(p: Project, clips: Clip[], time: number, sourceTra
       const copy = cloneClip(c);
       copy.trackId = target.id;
       copy.start = time + (c.start - origin);
+      if (copy.groupId) copy.groupId = fresh(copy.groupId, 'grp_');
+      if (copy.linkId) copy.linkId = fresh(copy.linkId, 'lk_');
       p.clips[copy.id] = copy;
       inserted.push(copy.id);
     }
   }
+  if (remap.size) cleanupRelations(p);
   return inserted;
 }
 
@@ -520,6 +564,8 @@ export function detachAudio(p: Project, clipId: ID): ID | null {
   if (!clip || clip.type !== 'video') return null;
   const asset = p.assets[clip.assetId];
   if (!asset || !asset.hasAudio) return null;
+  // Already detached: its sound is the linked audio clip.
+  if (clip.linkId && Object.values(p.clips).some((c) => c.type === 'audio' && c.linkId === clip.linkId)) return null;
   const track = trackWithRoom(p, 'audio', clip.start, clip.duration);
   const audio: AudioClip = {
     id: uid('au_'),
@@ -537,6 +583,9 @@ export function detachAudio(p: Project, clipId: ID): ID | null {
     fadeOut: clip.fadeOut,
   };
   if (clip.keyframes?.volume) audio.keyframes = { volume: clip.keyframes.volume };
+  // The picture and its sound stay linked: they move, trim, split and delete together.
+  audio.linkId = clip.linkId ?? uid('lk_');
+  clip.linkId = audio.linkId;
   p.clips[audio.id] = audio;
   clip.muted = true;
   return audio.id;
@@ -643,8 +692,13 @@ export function parseProjectFile(text: string): Project {
     transitions: {},
     markers: Array.isArray(src.markers) ? src.markers.filter((m) => isObj(m) && typeof m.id === 'string' && Number.isFinite(m.time)) : [],
   };
+  if (src.magneticMain === true) project.magneticMain = true;
   // Enforce the visual-then-audio ordering invariant.
   project.tracks = [...project.tracks.filter((t) => t.kind === 'visual'), ...project.tracks.filter((t) => t.kind === 'audio')];
+  for (const t of project.tracks) {
+    if (t.height !== undefined && !(Number.isFinite(t.height) && t.height > 0)) delete t.height;
+    else if (t.height !== undefined) t.height = Math.round(Math.min(240, Math.max(20, t.height)));
+  }
   ensureBaseTracks(project);
   const trackKinds = new Map(project.tracks.map((t) => [t.id, t.kind]));
   for (const clip of Object.values(isObj(src.clips) ? (src.clips as Project['clips']) : {})) {
@@ -653,6 +707,8 @@ export function parseProjectFile(text: string): Project {
     if (!(num(clip.duration, 0) > 0) || !Number.isFinite(clip.start)) continue;
     if ((clip.type === 'video' || clip.type === 'audio' || clip.type === 'image') && !project.assets[clip.assetId]) continue;
     clip.start = Math.max(0, clip.start);
+    if (clip.groupId !== undefined && typeof clip.groupId !== 'string') delete clip.groupId;
+    if (clip.linkId !== undefined && typeof clip.linkId !== 'string') delete clip.linkId;
     if (clip.type !== 'audio') {
       const v = clip as VisualClip;
       v.effects = Array.isArray(v.effects) ? v.effects : [];
@@ -674,5 +730,6 @@ export function parseProjectFile(text: string): Project {
     }
   }
   cleanupTransitions(project);
+  cleanupRelations(project);
   return project;
 }

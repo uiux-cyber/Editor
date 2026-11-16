@@ -684,6 +684,12 @@ export interface Project {
   /** Marked range (seconds) for exporting a section. */
   inPoint?: number;
   outPoint?: number;
+  /**
+   * Magnetic main track: the bottom-most visual track (see `mainTrackId`) never has gaps —
+   * clips dropped or moved onto it are inserted at a cut and later clips make room. Absent in
+   * projects saved before it existed (off); new projects turn it on.
+   */
+  magneticMain?: boolean;
 }
 
 export interface ProjectFile {
