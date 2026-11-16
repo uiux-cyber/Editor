@@ -1,4 +1,5 @@
-import type { ID, ShapeClip, ShapeKind, ShapeStyle } from '@/core/types';
+import { tracePath } from '@/core/path';
+import type { ID, PathData, ShapeClip, ShapeKind, ShapeStyle } from '@/core/types';
 import { MAX_RASTER, ctx2d, hashKey, makeCanvas, nextVersion, paintStyle, roundRectPath, type Ctx2D, type Raster } from './raster';
 
 function polygon(ctx: Ctx2D | Path2D, cx: number, cy: number, rx: number, ry: number, sides: number, rotation = -Math.PI / 2): void {
@@ -24,11 +25,18 @@ function star(ctx: Ctx2D | Path2D, cx: number, cy: number, rx: number, ry: numbe
   ctx.closePath();
 }
 
-/** Build the outline of a shape inside the box (0,0)-(w,h). Returns the fill rule to use. */
-export function shapePath(ctx: Ctx2D | Path2D, kind: ShapeKind, w: number, h: number, radius: number): CanvasFillRule {
+/**
+ * Build the outline of a shape inside the box (0,0)-(w,h). Returns the fill rule to use.
+ * `path` is the pen-tool path of kind 'path' (normalised to the box).
+ */
+export function shapePath(ctx: Ctx2D | Path2D, kind: ShapeKind, w: number, h: number, radius: number, path?: PathData): CanvasFillRule {
   const cx = w / 2;
   const cy = h / 2;
   switch (kind) {
+    case 'path':
+      if (path && path.points.length > 1) tracePath(ctx, path, w, h);
+      else ctx.rect(0, 0, w, h);
+      return 'nonzero';
     case 'rect':
       roundRectPath(ctx, 0, 0, w, h, radius);
       return 'nonzero';
@@ -221,12 +229,17 @@ function drawSlotHint(ctx: Ctx2D, w: number, h: number, radius: number): void {
   ctx.restore();
 }
 
+/** Line width (design px) of an open path that has no outline of its own. */
+const OPEN_PATH_WIDTH = 6;
+
 export class ShapeRenderer {
   private cache = new Map<ID, { key: string; raster: Raster }>();
 
   render(clip: ShapeClip, rasterScale: number): Raster {
     const shape: ShapeStyle = clip.shape;
-    const strokeW = shape.stroke ? shape.stroke.width : 0;
+    // Open pen paths are lines: stroked only (with the fill paint when they have no outline).
+    const openPath = shape.kind === 'path' && !!shape.path && !shape.path.closed;
+    const strokeW = shape.stroke ? shape.stroke.width : openPath ? OPEN_PATH_WIDTH : 0;
     const shadowPad = shape.shadow ? Math.max(Math.abs(shape.shadow.x), Math.abs(shape.shadow.y)) + shape.shadow.blur * 1.3 : 0;
     const padD = Math.max(strokeW / 2, shadowPad) + 2;
     let rs = Math.max(0.05, rasterScale);
@@ -249,7 +262,7 @@ export class ShapeRenderer {
     ctx.translate(pad, pad);
 
     const path = new Path2D();
-    const rule = shapePath(path, shape.kind, w, h, shape.radius * rs);
+    const rule = shapePath(path, shape.kind, w, h, shape.radius * rs, shape.path);
     ctx.fillStyle = paintStyle(ctx, shape.fill, 0, 0, w, h);
     ctx.save();
     if (shape.shadow) {
@@ -258,9 +271,17 @@ export class ShapeRenderer {
       ctx.shadowOffsetX = shape.shadow.x * rs;
       ctx.shadowOffsetY = shape.shadow.y * rs;
     }
-    ctx.fill(path, rule);
+    if (openPath) {
+      ctx.strokeStyle = shape.stroke ? shape.stroke.color : paintStyle(ctx, shape.fill, 0, 0, w, h);
+      ctx.lineWidth = strokeW * rs;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (strokeW > 0) ctx.stroke(path);
+    } else {
+      ctx.fill(path, rule);
+    }
     ctx.restore();
-    if (shape.stroke && strokeW > 0) {
+    if (shape.stroke && strokeW > 0 && !openPath) {
       ctx.strokeStyle = shape.stroke.color;
       ctx.lineWidth = strokeW * rs;
       ctx.lineJoin = 'round';
