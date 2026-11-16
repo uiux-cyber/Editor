@@ -3,7 +3,8 @@ import type { Clip, ID } from '@/core/types';
 
 export type Screen = 'home' | 'editor';
 export type LibraryTab = 'media' | 'templates' | 'text' | 'stickers' | 'transitions' | 'effects' | 'filters' | 'audio' | 'elements' | 'tools';
-export type Tool = 'select' | 'blade';
+/** Timeline tools. ripple / roll / slip / slide are the trim modes (ui/timeline/editGestures.ts). */
+export type Tool = 'select' | 'blade' | 'ripple' | 'roll' | 'slip' | 'slide';
 export type ModalId = 'export' | 'newProject' | 'shortcuts' | 'settings' | 'projectSettings' | null;
 
 export interface Toast {

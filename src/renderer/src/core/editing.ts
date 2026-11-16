@@ -494,6 +494,15 @@ export function syncLinkedPartners(p: Project, deltas: ReadonlyMap<ID, number>, 
   }
 }
 
+/** Mutates. Any of `ids` that overlaps another clip moves to the nearest free track of its kind. */
+export function relocateOverlaps(p: Project, ids: ID[]): void {
+  for (const id of ids) {
+    const c = p.clips[id];
+    if (!c || isFree(p, c.trackId, c.start, c.duration, new Set([id]))) continue;
+    c.trackId = roomFor(p, c, c.start, new Set([id])).id;
+  }
+}
+
 /**
  * Mutates. Packs the magnetic main track so it starts at 0 with no gaps, keeping linked clips in
  * sync. A no-op for projects without a magnetic main track. Returns true when anything moved.

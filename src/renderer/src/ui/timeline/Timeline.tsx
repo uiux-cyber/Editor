@@ -4,6 +4,8 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Group,
+  Link2,
   Lock,
   LockOpen,
   Magnet,
@@ -15,21 +17,24 @@ import {
   SquareSplitHorizontal,
   Trash2,
   Undo2,
+  Ungroup,
+  Unlink2,
   Volume2,
   VolumeX,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { adjacentAfter, adjacentBefore, expandSelection, hasTrimIn, insertOnMain, mainInsertionCut, relocateOverlaps } from '@/core/editing';
 import {
   addTrack,
   cleanupTransitions,
   clipKind,
   getIndex,
   isFree,
-  maxDurationFromSource,
+  isMagneticTrack,
+  mainTrackId,
   nearestFreeStart,
-  neighbours,
   pruneEmptyTracks,
   removeTrack,
 } from '@/core/project';
@@ -40,7 +45,7 @@ import { useAssetRuntime } from '@/engine/media/assets';
 import { getSound, getTemplate } from '@/library';
 import { soundAssetDuration } from '@/engine/media/sounds';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
-import { useUI } from '@/store/ui';
+import { toast, useUI } from '@/store/ui';
 import {
   addAdjustment,
   addAsset,
@@ -61,77 +66,51 @@ import {
   detachAudioFromSelection,
   duplicateSelection,
   fillSlotWith,
+  groupSelection,
+  linkSelection,
   paste,
   redo,
+  setTrackHeight,
   splitAtPlayhead,
   splitClip,
+  toggleMagneticMain,
   undo,
+  ungroupSelection,
+  unlinkSelection,
   type Placement,
 } from '../actions';
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { ClipView } from './ClipView';
-import { HEADER_W, LEFT_PAD, MAX_PPS, MIN_PPS, RIGHT_PAD, RULER_H, TOP_ZONE, TRACK_HEIGHT, layoutTracks, rowAt, rulerStep, timeToX, xToTime, type Layout, type TrackRow } from './geometry';
+import { EditReadout, HistoryButton, MagneticButton, TrimToolButtons } from './EditToolbar';
+import { editedIds, installEditCursors, startEditGesture, useEditReadout, type GestureContext } from './editGestures';
+import { SNAP_PX, bestSnap, snapPoints, trackPointer } from './gestureUtils';
+import { HEADER_W, LEFT_PAD, MAX_PPS, MIN_PPS, RIGHT_PAD, RULER_H, TOP_ZONE, TRACK_HEIGHT, TRACK_SIZES, clampTrackHeight, layoutTracks, rowAt, rulerStep, timeToX, trackHeight, xToTime, type Layout, type TrackRow } from './geometry';
+import { HistoryPanel } from './HistoryPanel';
+import { MainMagnetIcon } from './icons';
+import { TrimMonitor } from './TrimMonitor';
+import './timeline-editing.css';
 
 // ---------------------------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------------------------
 
-const SNAP_PX = 8;
+installEditCursors();
 
-function snapPoints(project: Project, exclude: ReadonlySet<ID>, includePlayhead = true): number[] {
-  const pts: number[] = [0];
-  if (includePlayhead) pts.push(engine.time);
-  for (const clip of Object.values(project.clips)) {
-    if (exclude.has(clip.id)) continue;
-    pts.push(clip.start, clipEnd(clip));
-  }
-  for (const m of project.markers) pts.push(m.time);
-  return pts;
+/** A stable colour per group, so the clips of one group share an outline colour. */
+function groupColor(groupId: ID): string {
+  let h = 0;
+  for (let i = 0; i < groupId.length; i++) h = (h * 31 + groupId.charCodeAt(i)) >>> 0;
+  return `hsl(${h % 360} 78% 66%)`;
 }
 
-/** Offset to add to one of `values` so it lands on the closest snap point within `tol`. */
-function bestSnap(values: number[], points: number[], tol: number): { delta: number; at: number } | null {
-  let best: { delta: number; at: number } | null = null;
-  for (const v of values) {
-    for (const p of points) {
-      const d = p - v;
-      if (Math.abs(d) <= tol && (!best || Math.abs(d) < Math.abs(best.delta))) best = { delta: d, at: p };
-    }
-  }
-  return best;
-}
-
-/** Track a pointer gesture on window until release. */
-function trackPointer(e: React.PointerEvent | PointerEvent, opts: { move: (ev: PointerEvent, moved: boolean) => void; end: (ev: PointerEvent, moved: boolean, cancelled: boolean) => void; threshold?: number }): void {
-  const x0 = e.clientX;
-  const y0 = e.clientY;
-  let moved = false;
-  const threshold = opts.threshold ?? 3;
-  const move = (ev: PointerEvent): void => {
-    if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) >= threshold) moved = true;
-    opts.move(ev, moved);
-  };
-  const finish = (ev: PointerEvent, cancelled: boolean): void => {
-    window.removeEventListener('pointermove', move, true);
-    window.removeEventListener('pointerup', up, true);
-    window.removeEventListener('pointercancel', cancel, true);
-    window.removeEventListener('keydown', key, true);
-    opts.end(ev, moved, cancelled);
-  };
-  const up = (ev: PointerEvent): void => finish(ev, false);
-  const cancel = (ev: PointerEvent): void => finish(ev, true);
-  const key = (ev: KeyboardEvent): void => {
-    if (ev.key === 'Escape') {
-      ev.stopPropagation();
-      finish(new PointerEvent('pointercancel', { clientX: x0, clientY: y0 }), true);
-    }
-  };
-  window.addEventListener('pointermove', move, true);
-  window.addEventListener('pointerup', up, true);
-  window.addEventListener('pointercancel', cancel, true);
-  window.addEventListener('keydown', key, true);
+/** Source timecode at a clip's first ('in') or last ('out') frame. */
+function sourceTc(clip: Clip, which: 'in' | 'out', fps: number): string {
+  const rate = clip.type === 'video' || clip.type === 'audio' ? clip.speed : 1;
+  const first = hasTrimIn(clip) ? clip.trimIn : 0;
+  const t = which === 'in' ? first : first + Math.max(0, clip.duration - 1 / fps) * rate;
+  return formatTimecode(t, fps);
 }
 
 function payloadKind(p: DragPayload, project: Project): TrackKind {
@@ -272,12 +251,13 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
   return (
     <div className="tl-toolbar">
       <div className="tl-toolbar__group">
-        <button type="button" className={`icon-btn ${tool === 'select' ? 'is-active' : ''}`} title="Select tool (V)" onClick={() => set({ tool: 'select' })}>
+        <button type="button" data-tool="select" className={`icon-btn ${tool === 'select' ? 'is-active' : ''}`} title="Select tool (V) — Shift-drag a clip edge to ripple trim, Alt-click to pick one clip of a group or link" onClick={() => set({ tool: 'select' })}>
           <MousePointer2 size={15} />
         </button>
-        <button type="button" className={`icon-btn ${tool === 'blade' ? 'is-active' : ''}`} title="Blade tool — click a clip to cut it (C)" onClick={() => set({ tool: 'blade' })}>
+        <button type="button" data-tool="blade" className={`icon-btn ${tool === 'blade' ? 'is-active' : ''}`} title="Blade tool — click a clip to cut it (C)" onClick={() => set({ tool: 'blade' })}>
           <Scissors size={15} />
         </button>
+        <TrimToolButtons />
         <span className="vdivider" />
         <button type="button" className="icon-btn" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
           <Undo2 size={15} />
@@ -285,6 +265,7 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
         <button type="button" className="icon-btn" title="Redo (Ctrl+Shift+Z)" disabled={!canRedo} onClick={redo}>
           <Redo2 size={15} />
         </button>
+        <HistoryButton />
         <span className="vdivider" />
         <button type="button" className="icon-btn" title="Split at playhead (S)" onClick={splitAtPlayhead}>
           <SquareSplitHorizontal size={15} />
@@ -299,6 +280,7 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
         <button type="button" className={`icon-btn ${snapping ? 'is-active' : ''}`} title="Snapping (N)" onClick={() => set({ snapping: !snapping })}>
           <Magnet size={15} />
         </button>
+        <MagneticButton />
         <button type="button" className="icon-btn" title="Add marker at playhead (M)" onClick={addMarker}>
           <Bookmark size={15} />
         </button>
@@ -356,8 +338,12 @@ export function Timeline(): ReactNode {
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [newTrackZone, setNewTrackZone] = useState<'above' | 'below' | null>(null);
   const [renaming, setRenaming] = useState<ID | null>(null);
+  /** Insertion point on the magnetic main track while a clip is dragged onto it. */
+  const [insertMark, setInsertMark] = useState<number | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
 
   const layout = useMemo(() => layoutTracks(project.tracks), [project.tracks]);
+  const mainId = project.magneticMain ? mainTrackId(project) : null;
   const idx = getIndex(project);
   const duration = idx.duration;
   const fps = project.settings.fps;
@@ -527,12 +513,20 @@ export function Timeline(): ReactNode {
 
   const startMove = (e: React.PointerEvent, clipId: ID): void => {
     const ui = useUI.getState();
-    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
-    const wasSelected = ui.selection.includes(clipId);
-    if (additive) ui.toggleSelect(clipId);
-    else if (!wasSelected) ui.select([clipId]);
-
     const base = getProject();
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+    // A grouped or linked clip brings its group and partners along; Alt+click takes just the one.
+    const unit = e.altKey ? [clipId] : expandSelection(base, [clipId]);
+    const wasSelected = ui.selection.includes(clipId);
+    if (additive) {
+      const sel = new Set(ui.selection);
+      for (const id of unit) {
+        if (wasSelected) sel.delete(id);
+        else sel.add(id);
+      }
+      ui.select([...sel]);
+    } else if (!wasSelected) ui.select(unit);
+
     const locked = new Set(base.tracks.filter((t) => t.locked).map((t) => t.id));
     const ids = (useUI.getState().selection.includes(clipId) ? useUI.getState().selection : [clipId]).filter((id) => base.clips[id] && !locked.has(base.clips[id].trackId));
     if (ids.length === 0 || additive) return;
@@ -541,12 +535,16 @@ export function Timeline(): ReactNode {
 
     const origin = new Map(ids.map((id) => [id, { start: base.clips[id].start, trackId: base.clips[id].trackId, duration: base.clips[id].duration }]));
     const moving = new Set(ids);
-    const singleTrack = new Set(ids.map((id) => base.clips[id].trackId)).size === 1;
     const kind = clipKind(lead);
-    const sameKind = ids.every((id) => clipKind(base.clips[id]) === kind);
+    // Vertical moves take the clips on the lead's track along. That needs every selected clip of
+    // the same kind to be on that track; linked sound on its own track simply follows in time.
+    const canChangeTrack = ids.every((id) => clipKind(base.clips[id]) !== kind || origin.get(id)!.trackId === lead.trackId);
+    const finalTrack = (id: ID, target: ID): ID => (canChangeTrack && origin.get(id)!.trackId === lead.trackId ? target : origin.get(id)!.trackId);
+    const magneticId = base.magneticMain ? mainTrackId(base) : null;
     const grab = locate(e.clientX, e.clientY).time;
     const minStart = Math.min(...ids.map((id) => origin.get(id)!.start));
     const points = snapPoints(base, moving);
+    const label = ids.length > 1 ? 'Move clips' : 'Move clip';
     let last = { dt: 0, trackId: lead.trackId };
     let zone: 'above' | 'below' | null = null;
     let started = false;
@@ -554,9 +552,10 @@ export function Timeline(): ReactNode {
     trackPointer(e, {
       move: (ev, moved) => {
         if (!moved) return;
+        const store = useProjectStore.getState();
         if (!started) {
           started = true;
-          useProjectStore.getState().begin();
+          store.begin(label);
         }
         edgeScroll(ev.clientX);
         const s = stateRef.current;
@@ -573,10 +572,9 @@ export function Timeline(): ReactNode {
         }
         dt = snapToFrame(lead.start + dt, s.fps) - lead.start;
 
-        // Vertical moves change track only when the whole selection lives on one track.
         let targetId = lead.trackId;
         zone = null;
-        if (singleTrack && sameKind) {
+        if (canChangeTrack) {
           const row = pos.row;
           if (row === 'above' || row === 'below') {
             if ((row === 'above' && kind === 'visual') || (row === 'below' && kind === 'audio')) zone = row;
@@ -584,40 +582,68 @@ export function Timeline(): ReactNode {
             targetId = row.id;
           }
         }
-        const current = getProject();
-        const fits = (d: number, track: ID): boolean => ids.every((id) => isFree(current, singleTrack ? track : origin.get(id)!.trackId, origin.get(id)!.start + d, origin.get(id)!.duration, moving));
-        if (!fits(dt, targetId)) {
-          // Slide to the closest free position for the dragged clip, if that works for all.
-          const o = origin.get(clipId)!;
-          const near = nearestFreeStart(current, singleTrack ? targetId : o.trackId, o.start + dt, o.duration, moving) - o.start;
-          if (minStart + near >= -1e-6 && fits(near, targetId)) {
-            dt = near;
-            line = null;
-          } else {
-            dt = last.dt;
-            targetId = last.trackId;
-            line = null;
+
+        // Magnetic main track: the clips going onto it are inserted as one block at the nearest
+        // cut and later clips make room; the rest of the selection follows by the same amount.
+        const onMain = magneticId && !zone ? ids.filter((id) => finalTrack(id, targetId) === magneticId) : [];
+        let applied = dt;
+        if (onMain.length) {
+          const blockStart = Math.min(...onMain.map((id) => origin.get(id)!.start));
+          store.updateFromBase((p) => {
+            applied = insertOnMain(p, onMain, Math.max(0, blockStart + dt), moving) - blockStart;
+            const others = ids.filter((id) => !onMain.includes(id));
+            for (const id of others) {
+              const c = p.clips[id];
+              c.start = Math.max(0, origin.get(id)!.start + applied);
+              c.trackId = finalTrack(id, targetId);
+            }
+            relocateOverlaps(p, others);
+          });
+          last = { dt, trackId: targetId };
+          setInsertMark(blockStart + applied);
+          line = null;
+        } else {
+          setInsertMark(null);
+          const fits = (d: number, track: ID): boolean =>
+            ids.every((id) => finalTrack(id, track) === magneticId || isFree(base, finalTrack(id, track), origin.get(id)!.start + d, origin.get(id)!.duration, moving));
+          if (!fits(dt, targetId)) {
+            // Slide to the closest free position for the dragged clip, if that works for all.
+            const o = origin.get(clipId)!;
+            const near = nearestFreeStart(base, finalTrack(clipId, targetId), o.start + dt, o.duration, moving) - o.start;
+            if (minStart + near >= -1e-6 && fits(near, targetId)) {
+              dt = near;
+              line = null;
+            } else {
+              dt = last.dt;
+              targetId = last.trackId;
+              line = null;
+            }
           }
+          last = { dt, trackId: targetId };
+          applied = dt;
+          store.updateFromBase((p) => {
+            for (const id of ids) {
+              const c = p.clips[id];
+              if (!c) continue;
+              c.start = Math.max(0, origin.get(id)!.start + dt);
+              c.trackId = finalTrack(id, targetId);
+            }
+          });
         }
-        last = { dt, trackId: targetId };
         setSnapLine(line);
         setNewTrackZone(zone);
-        updateProject((p) => {
-          for (const id of ids) {
-            const c = p.clips[id];
-            if (!c) continue;
-            c.start = Math.max(0, origin.get(id)!.start + dt);
-            if (singleTrack) c.trackId = targetId;
-          }
-        });
+        useEditReadout.setState({ readout: { x: ev.clientX, y: ev.clientY, title: label, delta: applied, fps: s.fps, limited: false } });
       },
       end: (_ev, moved, cancelled) => {
         setSnapLine(null);
         setNewTrackZone(null);
+        setInsertMark(null);
+        useEditReadout.setState({ readout: null });
         const store = useProjectStore.getState();
         if (!started) {
-          // A plain click on one clip of a multi-selection narrows the selection to it.
-          if (!moved && !additive && wasSelected && useUI.getState().selection.length > 1) useUI.getState().select([clipId]);
+          // A plain click on one clip of a multi-selection narrows the selection to it (and its
+          // group / linked partners).
+          if (!moved && !additive && wasSelected && useUI.getState().selection.length > unit.length) useUI.getState().select(unit);
           return;
         }
         if (cancelled) {
@@ -627,90 +653,168 @@ export function Timeline(): ReactNode {
         updateProject((p) => {
           if (zone) {
             const track = addTrack(p, kind);
-            for (const id of ids) if (p.clips[id]) p.clips[id].trackId = track.id;
+            for (const id of ids) if (p.clips[id] && (!canChangeTrack || origin.get(id)!.trackId === lead.trackId)) p.clips[id].trackId = track.id;
           }
           cleanupTransitions(p);
           pruneEmptyTracks(p);
         });
-        store.commit();
+        store.commit(label);
       },
     });
   };
 
-  const startTrim = (e: React.PointerEvent, clipId: ID, edge: 'l' | 'r'): void => {
+  // Trim modes ----------------------------------------------------------------------------------
+
+  const gestureCtx: GestureContext = {
+    timeAt: (x, y) => locate(x, y).time,
+    edgeScroll,
+    setSnapLine,
+    pps: () => stateRef.current.pps,
+  };
+
+  /** Drag a clip edge: a plain trim, or a ripple trim (Ripple tool, Shift, or the main track). */
+  const startTrim = (e: React.PointerEvent, clipId: ID, edge: 'l' | 'r', ripple: boolean): void => {
     const base = getProject();
     const orig = base.clips[clipId];
     if (!orig) return;
-    useUI.getState().select([clipId]);
+    const linked = !e.altKey;
+    const ids = editedIds(base, clipId, linked);
+    useUI.getState().select(ids);
     const f = base.settings.fps;
-    const min = 1 / f;
-    const { prev, next } = neighbours(base, orig);
-    const origEnd = clipEnd(orig);
-    const media = orig.type === 'video' || orig.type === 'audio' ? orig : null;
-    const minStart = Math.max(prev ? clipEnd(prev) : 0, media ? orig.start - media.trimIn / media.speed : 0);
-    const maxEnd = Math.min(next ? next.start : Infinity, orig.start + maxDurationFromSource(orig, base.assets));
-    const points = snapPoints(base, new Set([clipId]));
-    let started = false;
-    engine.pause();
+    const rippling = ripple || isMagneticTrack(base, orig.trackId);
+    startEditGesture(e, gestureCtx, {
+      op: { kind: 'trim', clipId, edge, ripple: rippling, linked },
+      label: rippling ? 'Ripple trim' : 'Trim',
+      snapEdges: [edge === 'l' ? orig.start : clipEnd(orig)],
+      exclude: ids,
+      seek: (_d, p) => {
+        const c = p.clips[clipId];
+        if (!c) return null;
+        return edge === 'l' ? c.start : Math.max(c.start, clipEnd(c) - 1 / f);
+      },
+      note: (_d, p) => (p.clips[clipId] ? `Length ${formatTimecode(p.clips[clipId].duration, f)}` : undefined),
+    });
+  };
 
+  /** Roll the cut between two adjacent clips. */
+  const startRoll = (e: React.PointerEvent, leftId: ID, rightId: ID): void => {
+    const base = getProject();
+    const left = base.clips[leftId];
+    const right = base.clips[rightId];
+    if (!left || !right) return;
+    const linked = !e.altKey;
+    const ids = [...new Set([...editedIds(base, leftId, linked), ...editedIds(base, rightId, linked)])];
+    useUI.getState().select(ids);
+    const f = base.settings.fps;
+    const cut = right.start;
+    startEditGesture(e, gestureCtx, {
+      op: { kind: 'roll', leftId, rightId, linked },
+      label: 'Roll edit',
+      snapEdges: [cut],
+      exclude: ids,
+      seek: (d) => cut + d,
+      note: (d) => `Cut at ${formatTimecode(cut + d, f)}`,
+      monitor:
+        left.type === 'audio'
+          ? undefined
+          : (_d, p) => {
+              const l = p.clips[leftId];
+              const r = p.clips[rightId];
+              if (!l || !r) return null;
+              return {
+                mode: 'roll',
+                left: { clipId: leftId, time: clipEnd(l) - 1 / f, title: 'Outgoing', detail: `Out ${sourceTc(l, 'out', f)}` },
+                right: { clipId: rightId, time: r.start, title: 'Incoming', detail: `In ${sourceTc(r, 'in', f)}` },
+              };
+            },
+    });
+  };
+
+  /** Slip a media clip's in / out points; its place and length stay. */
+  const startSlip = (e: React.PointerEvent, clipId: ID): void => {
+    const base = getProject();
+    const clip = base.clips[clipId];
+    if (!clip) return;
+    if (!hasTrimIn(clip)) {
+      useUI.getState().select([clipId]);
+      toast('info', 'Nothing to slip in this clip', 'Slip changes which part of a video or audio clip plays. Use it on a video or audio clip.');
+      return;
+    }
+    const linked = !e.altKey;
+    const ids = editedIds(base, clipId, linked);
+    useUI.getState().select(ids);
+    const f = base.settings.fps;
+    startEditGesture(e, gestureCtx, {
+      op: { kind: 'slip', clipId, linked },
+      label: 'Slip',
+      snapEdges: [],
+      exclude: ids,
+      note: (_d, p) => (p.clips[clipId] ? `In ${sourceTc(p.clips[clipId], 'in', f)} · Out ${sourceTc(p.clips[clipId], 'out', f)}` : undefined),
+      monitor:
+        clip.type === 'audio'
+          ? undefined
+          : (_d, p) => {
+              const c = p.clips[clipId];
+              if (!c) return null;
+              return {
+                mode: 'slip',
+                left: { clipId, time: c.start, title: 'In', detail: sourceTc(c, 'in', f) },
+                right: { clipId, time: clipEnd(c) - 1 / f, title: 'Out', detail: sourceTc(c, 'out', f) },
+              };
+            },
+    });
+  };
+
+  /** Slide a clip between its neighbours, which trim to compensate. */
+  const startSlide = (e: React.PointerEvent, clipId: ID): void => {
+    const base = getProject();
+    const clip = base.clips[clipId];
+    if (!clip) return;
+    const linked = !e.altKey;
+    const ids = editedIds(base, clipId, linked);
+    const touching = ids.flatMap((id) => [adjacentBefore(base, base.clips[id]), adjacentAfter(base, base.clips[id])]).flatMap((c) => (c ? [c.id] : []));
+    useUI.getState().select(ids);
+    const f = base.settings.fps;
+    startEditGesture(e, gestureCtx, {
+      op: { kind: 'slide', clipId, linked },
+      label: 'Slide',
+      snapEdges: [clip.start, clipEnd(clip)],
+      exclude: [...ids, ...touching],
+      seek: (_d, p) => p.clips[clipId]?.start ?? null,
+      note: (_d, p) => (p.clips[clipId] ? `Starts at ${formatTimecode(p.clips[clipId].start, f)}` : undefined),
+    });
+  };
+
+  /** Drag the bottom edge of a track header to resize the track. */
+  const startTrackResize = (e: React.PointerEvent, trackId: ID): void => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const track = getProject().tracks.find((t) => t.id === trackId);
+    if (!track) return;
+    const h0 = trackHeight(track);
+    const y0 = e.clientY;
+    let started = false;
     trackPointer(e, {
+      threshold: 1,
       move: (ev, moved) => {
         if (!moved) return;
+        const store = useProjectStore.getState();
         if (!started) {
           started = true;
-          useProjectStore.getState().begin();
+          store.begin('Resize track');
         }
-        edgeScroll(ev.clientX);
-        const s = stateRef.current;
-        let t = locate(ev.clientX, ev.clientY).time;
-        let line: number | null = null;
-        if (useUI.getState().snapping !== ev.altKey) {
-          const snap = bestSnap([t], points, SNAP_PX / s.pps);
-          if (snap) {
-            t += snap.delta;
-            line = snap.at;
-          }
-        }
-        t = snapToFrame(t, f);
-        if (edge === 'l') {
-          const start = Math.min(Math.max(t, minStart), origEnd - min);
-          const cut = start - orig.start;
-          updateProject((p) => {
-            const c = p.clips[clipId];
-            if (!c) return;
-            c.start = start;
-            c.duration = origEnd - start;
-            if ((c.type === 'video' || c.type === 'audio') && media) c.trimIn = Math.max(0, media.trimIn + cut * media.speed);
-            if (orig.keyframes) {
-              // Keyframes stay glued to the picture, not to the clip edge.
-              c.keyframes = {};
-              for (const [prop, frames] of Object.entries(orig.keyframes)) {
-                if (frames) (c.keyframes as Record<string, typeof frames>)[prop] = frames.map((k) => ({ ...k, t: Math.max(0, k.t - cut) }));
-              }
-            }
-          });
-          setSnapLine(line !== null && Math.abs(line - start) < 1e-6 ? line : null);
-          engine.seek(start);
-        } else {
-          const end = Math.max(orig.start + min, Math.min(t, maxEnd));
-          updateProject((p) => {
-            const c = p.clips[clipId];
-            if (c) c.duration = end - orig.start;
-          });
-          setSnapLine(line !== null && Math.abs(line - end) < 1e-6 ? line : null);
-          engine.seek(Math.max(orig.start, end - min));
-        }
+        const h = clampTrackHeight(track.kind, h0 + ev.clientY - y0);
+        store.updateFromBase((p) => {
+          const t = p.tracks.find((x) => x.id === trackId);
+          if (t) t.height = h;
+        });
       },
       end: (_ev, _moved, cancelled) => {
-        setSnapLine(null);
         if (!started) return;
         const store = useProjectStore.getState();
-        if (cancelled) {
-          store.cancel();
-          return;
-        }
-        updateProject((p) => cleanupTransitions(p));
-        store.commit();
+        if (cancelled) store.cancel();
+        else store.commit('Resize track');
       },
     });
   };
@@ -722,6 +826,8 @@ export function Timeline(): ReactNode {
     const y0 = e.clientY - rect.top + el.scrollTop;
     const additive = e.shiftKey || e.ctrlKey;
     const before = additive ? useUI.getState().selection : [];
+    // Boxed clips bring their groups and linked partners (Alt: only what the box touches).
+    const related = !e.altKey;
     trackPointer(e, {
       move: (ev, moved) => {
         if (!moved) return;
@@ -739,7 +845,7 @@ export function Timeline(): ReactNode {
           const cy0 = RULER_H + row.top;
           if (cx1 > box.x && cx0 < box.x + box.w && cy0 + row.height > box.y && cy0 < box.y + box.h) hits.push(clip.id);
         }
-        useUI.getState().select([...new Set([...before, ...hits])]);
+        useUI.getState().select([...new Set([...before, ...(related ? expandSelection(s.project, hits) : hits)])]);
       },
       end: (ev, moved) => {
         setMarquee(null);
@@ -772,15 +878,28 @@ export function Timeline(): ReactNode {
       if (!clip) return;
       const track = getProject().tracks.find((t) => t.id === clip.trackId);
       if (track?.locked) return;
-      if (useUI.getState().tool === 'blade') {
+      const currentTool = useUI.getState().tool;
+      if (currentTool === 'blade') {
         const s = stateRef.current;
         let t = locate(e.clientX, e.clientY).time;
         if (Math.abs(t - engine.time) < SNAP_PX / s.pps) t = engine.time;
-        splitClip(id, t);
+        // Linked partners are cut too; Alt cuts only the clicked clip.
+        splitClip(id, t, !e.altKey);
         return;
       }
       const handle = target.dataset.handle as 'l' | 'r' | undefined;
-      if (handle) startTrim(e, id, handle);
+      if (handle) {
+        if (currentTool === 'roll') {
+          const p = getProject();
+          const other = handle === 'r' ? adjacentAfter(p, clip) : adjacentBefore(p, clip);
+          if (other) {
+            startRoll(e, handle === 'r' ? id : other.id, handle === 'r' ? other.id : id);
+            return;
+          }
+        }
+        startTrim(e, id, handle, currentTool === 'ripple' || e.shiftKey);
+      } else if (currentTool === 'slip') startSlip(e, id);
+      else if (currentTool === 'slide') startSlide(e, id);
       else startMove(e, id);
       return;
     }
@@ -813,8 +932,9 @@ export function Timeline(): ReactNode {
     if (clipEl) {
       const id = clipEl.dataset.clip!;
       const ui = useUI.getState();
-      if (!ui.selection.includes(id)) ui.select([id]);
+      if (!ui.selection.includes(id)) ui.select(e.altKey ? [id] : expandSelection(getProject(), [id]));
       const clip = getProject().clips[id];
+      const sel = useUI.getState().selection.map((x) => getProject().clips[x]).filter(Boolean);
       const items: MenuItem[] = [
         { label: 'Split at playhead', icon: <SquareSplitHorizontal size={14} />, shortcut: 'S', run: splitAtPlayhead },
         { label: 'Duplicate', icon: <Copy size={14} />, shortcut: 'Ctrl+D', run: duplicateSelection },
@@ -823,6 +943,13 @@ export function Timeline(): ReactNode {
         { label: 'Copy', shortcut: 'Ctrl+C', run: () => void copySelection() },
         { label: 'Paste at playhead', shortcut: 'Ctrl+V', disabled: !ui.clipboard, run: paste },
         ...(clip?.type === 'video' ? [{ type: 'separator' as const }, { label: 'Detach audio', run: detachAudioFromSelection }] : []),
+        { type: 'separator' },
+        sel.some((c) => c.groupId)
+          ? { label: 'Ungroup', icon: <Ungroup size={14} />, shortcut: 'Ctrl+Shift+G', run: ungroupSelection }
+          : { label: 'Group', icon: <Group size={14} />, shortcut: 'Ctrl+G', disabled: sel.length < 2, run: groupSelection },
+        sel.some((c) => c.linkId)
+          ? { label: 'Unlink', icon: <Unlink2 size={14} />, shortcut: 'Ctrl+Shift+L', run: unlinkSelection }
+          : { label: 'Link', icon: <Link2 size={14} />, shortcut: 'Ctrl+L', disabled: sel.length < 2, run: linkSelection },
         { type: 'separator' },
         { label: 'Delete', icon: <Trash2 size={14} />, shortcut: 'Del', danger: true, run: () => deleteSelection(false) },
         { label: 'Delete and close gap', shortcut: 'Shift+Del', danger: true, run: () => deleteSelection(true) },
@@ -841,7 +968,7 @@ export function Timeline(): ReactNode {
         ? [
             { type: 'separator' as const },
             { label: 'Select all clips on this track', run: () => useUI.getState().select((getIndex(getProject()).byTrack.get(row.id) ?? []).map((c) => c.id)) },
-            { label: 'Delete track', danger: true, run: () => updateProject((p) => removeTrack(p, row.id)) },
+            { label: 'Delete track', danger: true, run: () => updateProject((p) => removeTrack(p, row.id), { label: 'Delete track' }) },
           ]
         : []),
     ]);
@@ -901,6 +1028,14 @@ export function Timeline(): ReactNode {
 
       const kind = payloadKind(payload, s.project);
       const usable = row && row.kind === kind && !s.project.tracks[row.index]?.locked ? row : null;
+      if (usable && isMagneticTrack(s.project, usable.id)) {
+        // Magnetic main track: insert at the nearest cut, later clips make room.
+        const cut = mainInsertionCut(s.project, pos.time);
+        return {
+          plan: { type: 'clip', kind, time: cut, duration: dur, row: usable, zone: null },
+          hint: { ghost: { left: timeToX(cut, s.pps), width: dur * s.pps, top: RULER_H + usable.top, height: usable.height, label: 'Insert' }, clipId: null, cut: { x: timeToX(cut, s.pps), top: RULER_H + usable.top, height: usable.height } },
+        };
+      }
       if (usable) {
         const start = nearestFreeStart(s.project, usable.id, time, dur);
         return {
@@ -993,12 +1128,24 @@ export function Timeline(): ReactNode {
       if (t) t[key] = !t[key];
     });
 
+  // Holding Shift over a clip edge with the Select tool shows the ripple cursor.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => void sectionRef.current?.classList.toggle('is-shift', e.shiftKey);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+    };
+  }, []);
+
   const lo = view.left - 500;
   const hi = view.left + view.width + 500;
   const empty = Object.keys(project.clips).length === 0;
+  const mainRow = mainId ? layout.byId.get(mainId) : undefined;
 
   return (
-    <section className={`timeline ${tool === 'blade' ? 'is-blade' : ''}`} data-timeline>
+    <section ref={sectionRef} className={`timeline ${tool === 'blade' ? 'is-blade' : ''} tool-${tool}`} data-timeline>
       <Toolbar onZoom={(v) => setZoom(v)} onFit={fitZoom} />
       <div className="tl-body" ref={bodyRef}>
         <div className="tl-headers" style={{ width: HEADER_W }}>
@@ -1012,17 +1159,28 @@ export function Timeline(): ReactNode {
             {layout.rows.map((row) => {
               const track = project.tracks[row.index];
               if (!track) return null;
+              const isMain = row.id === mainId;
+              const h = trackHeight(track);
               return (
                 <div
                   key={row.id}
-                  className={`tl-header tl-header--${row.kind} ${track.locked ? 'is-locked' : ''}`}
+                  className={`tl-header tl-header--${row.kind} ${track.locked ? 'is-locked' : ''} ${isMain ? 'is-main' : ''} ${row.height < 40 ? 'is-compact' : ''}`}
                   style={{ top: row.top, height: row.height }}
+                  data-track-header={track.id}
                   onContextMenu={(e) =>
                     openContextMenu(e, [
                       { label: 'Rename track', run: () => setRenaming(track.id) },
-                      { label: row.kind === 'visual' ? 'Add video track above' : 'Add audio track below', icon: <Plus size={14} />, run: () => updateProject((p) => void addTrack(p, row.kind, { trackId: row.id, where: row.kind === 'visual' ? 'above' : 'below' })) },
+                      { label: row.kind === 'visual' ? 'Add video track above' : 'Add audio track below', icon: <Plus size={14} />, run: () => updateProject((p) => void addTrack(p, row.kind, { trackId: row.id, where: row.kind === 'visual' ? 'above' : 'below' }), { label: 'Add track' }) },
+                      ...(row.kind === 'visual' && row.id === mainTrackId(project)
+                        ? [{ label: 'Magnetic main track', icon: <MainMagnetIcon size={14} />, checked: !!project.magneticMain, run: toggleMagneticMain }]
+                        : []),
                       { type: 'separator' },
-                      { label: 'Delete track', icon: <Trash2 size={14} />, danger: true, run: () => updateProject((p) => removeTrack(p, row.id)) },
+                      { type: 'label', label: 'Track height' },
+                      { label: 'Small', checked: h === TRACK_SIZES.small[row.kind], run: () => setTrackHeight(track.id, TRACK_SIZES.small[row.kind]) },
+                      { label: 'Medium', checked: h === TRACK_SIZES.medium[row.kind], run: () => setTrackHeight(track.id, undefined) },
+                      { label: 'Large', checked: h === TRACK_SIZES.large[row.kind], run: () => setTrackHeight(track.id, TRACK_SIZES.large[row.kind]) },
+                      { type: 'separator' },
+                      { label: 'Delete track', icon: <Trash2 size={14} />, danger: true, run: () => updateProject((p) => removeTrack(p, row.id), { label: 'Delete track' }) },
                     ])
                   }
                 >
@@ -1041,6 +1199,11 @@ export function Timeline(): ReactNode {
                         e.stopPropagation();
                       }}
                     />
+                  ) : isMain ? (
+                    <span className="tl-header__name tl-header__name--main truncate" onDoubleClick={() => setRenaming(track.id)} title={`Main track (${track.name}) — magnetic: clips stay together with no gaps, and clips dropped here are inserted at the nearest cut. Double-click to rename.`}>
+                      <MainMagnetIcon size={12} />
+                      Main
+                    </span>
                   ) : (
                     <span className="tl-header__name truncate" onDoubleClick={() => setRenaming(track.id)} title="Double-click to rename">
                       {track.name}
@@ -1059,6 +1222,13 @@ export function Timeline(): ReactNode {
                       {track.locked ? <Lock size={13} /> : <LockOpen size={13} />}
                     </button>
                   </span>
+                  <span
+                    className="tl-header__resize"
+                    data-track-resize={track.id}
+                    title="Drag to resize the track · double-click to reset"
+                    onPointerDown={(e) => startTrackResize(e, track.id)}
+                    onDoubleClick={() => track.height !== undefined && setTrackHeight(track.id, undefined)}
+                  />
                 </div>
               );
             })}
@@ -1076,7 +1246,7 @@ export function Timeline(): ReactNode {
               if (!track) return null;
               const clips = idx.byTrack.get(row.id) ?? [];
               return (
-                <div key={row.id} className={`tl-track tl-track--${row.kind} ${track.locked ? 'is-locked' : ''} ${track.hidden ? 'is-hidden' : ''}`} style={{ top: RULER_H + row.top, height: row.height }}>
+                <div key={row.id} className={`tl-track tl-track--${row.kind} ${track.locked ? 'is-locked' : ''} ${track.hidden ? 'is-hidden' : ''} ${row.id === mainId ? 'is-main' : ''}`} style={{ top: RULER_H + row.top, height: row.height }}>
                   {clips.map((clip) => {
                     const x0 = timeToX(clip.start, pps);
                     const x1 = timeToX(clipEnd(clip), pps);
@@ -1098,6 +1268,8 @@ export function Timeline(): ReactNode {
                         dimmed={track.hidden || (row.kind === 'audio' && track.muted)}
                         dropTarget={hint.clipId === clip.id}
                         thumb={rt?.thumb ?? null}
+                        groupColor={clip.groupId ? groupColor(clip.groupId) : undefined}
+                        linked={!!clip.linkId}
                       />
                     );
                   })}
@@ -1123,6 +1295,7 @@ export function Timeline(): ReactNode {
               </div>
             )}
             {hint.cut && <div className="tl-cut" style={{ left: hint.cut.x, top: hint.cut.top, height: hint.cut.height }} />}
+            {insertMark !== null && mainRow && <div className="tl-insert" data-insert-mark style={{ left: timeToX(insertMark, pps), top: RULER_H + mainRow.top - 4, height: mainRow.height + 8 }} />}
             {snapLine !== null && <div className="tl-snap" style={{ left: timeToX(snapLine, pps), top: RULER_H, height: layout.height }} />}
             {marquee && <div className="tl-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
             <div ref={bladeRef} className="tl-blade" style={{ top: RULER_H, height: layout.height, display: 'none' }} />
@@ -1136,6 +1309,9 @@ export function Timeline(): ReactNode {
           </div>
         </div>
       </div>
+      <EditReadout />
+      <TrimMonitor />
+      <HistoryPanel />
     </section>
   );
 }

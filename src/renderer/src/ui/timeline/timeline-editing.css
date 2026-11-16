@@ -1,0 +1,371 @@
+/* ========================================================================================== */
+/* Timeline editing depth: trim-mode cursors, magnetic main track, groups / links, track      */
+/* heights, live readout, trim monitor and the History panel. Imported by Timeline.tsx.         */
+/* ========================================================================================== */
+
+/* ---- Trim-mode cursors (custom properties set by editGestures.installEditCursors) -------- */
+
+.timeline.tool-ripple .clip__handle--l,
+.timeline.tool-select.is-shift .clip__handle--l {
+  cursor: var(--cur-ripple-l, w-resize);
+}
+.timeline.tool-ripple .clip__handle--r,
+.timeline.tool-select.is-shift .clip__handle--r {
+  cursor: var(--cur-ripple-r, e-resize);
+}
+.timeline.tool-roll .clip__handle {
+  width: 11px;
+  cursor: var(--cur-roll, col-resize);
+}
+.timeline.tool-slip .clip {
+  cursor: var(--cur-slip, ew-resize);
+}
+.timeline.tool-slide .clip {
+  cursor: var(--cur-slide, ew-resize);
+}
+.timeline.tool-ripple .clip__handle::after,
+.timeline.tool-roll .clip__handle::after {
+  background: var(--amber);
+}
+
+/* ---- Magnetic main track ------------------------------------------------------------------ */
+
+.tl-header.is-main::before {
+  background: linear-gradient(180deg, var(--accent-hi), var(--clip-video));
+  opacity: 1;
+}
+.tl-header__name--main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-hi);
+  letter-spacing: 0.01em;
+}
+.tl-header__name--main svg {
+  flex: none;
+}
+.tl-track.is-main {
+  background:
+    linear-gradient(90deg, rgba(124, 92, 255, 0.07), rgba(124, 92, 255, 0.025) 240px),
+    rgba(255, 255, 255, 0.022);
+  border-top-color: rgba(124, 92, 255, 0.16);
+  border-bottom-color: rgba(124, 92, 255, 0.16);
+}
+.tl-insert {
+  position: absolute;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--accent-hi);
+  box-shadow: 0 0 12px 2px var(--accent-glow);
+  pointer-events: none;
+  z-index: 6;
+}
+.tl-insert::before,
+.tl-insert::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: var(--accent-hi);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.tl-insert::before {
+  top: -6px;
+}
+.tl-insert::after {
+  bottom: -6px;
+  transform: rotate(180deg);
+}
+
+/* ---- Track heights ------------------------------------------------------------------------ */
+
+.tl-header__resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+.tl-header__resize::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 3px;
+  height: 1px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.tl-header:hover .tl-header__resize::after {
+  background: var(--line-2);
+}
+.tl-header__resize:hover::after,
+.tl-header__resize:active::after {
+  background: var(--accent-hi);
+  height: 2px;
+  top: 2.5px;
+}
+.tl-header.is-compact .tl-header__btns .icon-btn {
+  height: 18px;
+}
+
+/* ---- Groups and links --------------------------------------------------------------------- */
+
+.clip.is-grouped {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--group) 70%, transparent) inset,
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+}
+.clip.is-grouped.is-selected {
+  box-shadow:
+    0 0 0 2px #fff inset,
+    0 0 0 1px color-mix(in srgb, var(--group) 80%, #000);
+}
+.clip__group {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--group);
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 1;
+}
+.clip__badge {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 13px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.36);
+  color: #fff;
+}
+.clip__badge--group {
+  color: var(--group);
+}
+
+/* ---- Live drag readout -------------------------------------------------------------------- */
+
+.edit-readout {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 9px;
+  border-radius: var(--r-sm);
+  background: rgba(16, 18, 24, 0.94);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-pop);
+  color: var(--text-1);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+.edit-readout__title {
+  color: var(--text-0);
+  font-weight: 650;
+}
+.edit-readout__delta {
+  color: var(--accent-hi);
+  font-weight: 600;
+}
+.edit-readout__frames,
+.edit-readout__note {
+  color: var(--text-2);
+}
+.edit-readout__limit {
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(251, 191, 36, 0.16);
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 650;
+}
+.edit-readout.is-limited .edit-readout__delta {
+  color: var(--amber);
+}
+
+/* ---- Trim monitor (two-up view over the preview) ------------------------------------------ */
+
+.trim-monitor {
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(7, 8, 11, 0.9);
+  pointer-events: none;
+  animation: trim-monitor-in 0.12s var(--ease);
+}
+@keyframes trim-monitor-in {
+  from {
+    opacity: 0;
+  }
+}
+.trim-monitor__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+  max-width: 1100px;
+}
+.trim-monitor__pane {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+.trim-monitor__frame {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 200px);
+  object-fit: contain;
+  background: #000;
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.trim-monitor__pane figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.trim-monitor__pane figcaption strong {
+  color: var(--text-0);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+}
+.trim-monitor__mode {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---- History panel ------------------------------------------------------------------------ */
+
+.history {
+  position: fixed;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-md);
+  background: #1b1f27;
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: pop-in 0.1s var(--ease);
+}
+.history__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 6px 0 11px;
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+}
+.history__title {
+  color: var(--text-0);
+  font-weight: 650;
+}
+.history__count {
+  flex: 1;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.history__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+}
+.history__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  text-align: left;
+}
+.history__row:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+.history__row:disabled {
+  pointer-events: none;
+}
+.history__dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+}
+.history__label {
+  flex: 1;
+  min-width: 0;
+}
+.history__time {
+  flex: none;
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+.history__row.is-current {
+  background: var(--accent-soft);
+  color: var(--text-0);
+  font-weight: 600;
+}
+.history__row.is-current .history__dot {
+  border-color: var(--accent-hi);
+  background: var(--accent-hi);
+  box-shadow: 0 0 0 3px rgba(157, 133, 255, 0.2);
+}
+.history__row.is-current .history__time {
+  color: var(--accent-hi);
+}
+.history__row.is-undone {
+  color: var(--text-3);
+}
+.history__row.is-undone .history__label {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.18);
+}
+.history__foot {
+  flex: none;
+  padding: 7px 11px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
