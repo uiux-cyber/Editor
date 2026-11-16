@@ -643,6 +643,9 @@ export function parseProjectFile(text: string): Project {
     transitions: {},
     markers: Array.isArray(src.markers) ? src.markers.filter((m) => isObj(m) && typeof m.id === 'string' && Number.isFinite(m.time)) : [],
   };
+  // Export In / Out marks (optional).
+  if (typeof src.inPoint === 'number' && Number.isFinite(src.inPoint)) project.inPoint = Math.max(0, src.inPoint);
+  if (typeof src.outPoint === 'number' && Number.isFinite(src.outPoint)) project.outPoint = Math.max(0, src.outPoint);
   // Enforce the visual-then-audio ordering invariant.
   project.tracks = [...project.tracks.filter((t) => t.kind === 'visual'), ...project.tracks.filter((t) => t.kind === 'audio')];
   ensureBaseTracks(project);

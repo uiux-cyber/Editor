@@ -10,6 +10,11 @@ export interface Target {
 export interface GLOptions {
   /** Keep the drawing buffer after presenting (needed when frames are captured from the canvas). */
   preserveDrawingBuffer?: boolean;
+  /**
+   * Give the canvas an alpha channel (transparent exports). The live preview keeps the default
+   * opaque canvas; only throwaway export compositors turn this on.
+   */
+  alpha?: boolean;
 }
 
 /**
@@ -28,7 +33,7 @@ export class GLContext {
 
   constructor(canvas: HTMLCanvasElement | OffscreenCanvas, opts: GLOptions = {}) {
     const gl = canvas.getContext('webgl2', {
-      alpha: false,
+      alpha: !!opts.alpha,
       antialias: false,
       depth: false,
       stencil: false,
