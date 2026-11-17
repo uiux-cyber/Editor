@@ -10,7 +10,7 @@ import { TextRenderer } from './sources/text';
 import { GLContext, type Target } from './gl/context';
 import { isNeutralGrade, resolveFilterGrade, setGradeUniforms } from './gl/grade';
 import { LAYER_EXTENSIONS } from './gl/layerExt';
-import { BLEND_FRAG, BLEND_MODE_INDEX, COPY_FRAG, LAYER_VERT, MASK_SHAPE_INDEX, PRESENT_FRAG, layerFrag } from './gl/shaders';
+import { BLEND_FRAG, BLEND_MODE_INDEX, COPY_FRAG, LAYER_VERT, MASK_SHAPE_INDEX, PRESENT_ALPHA_FRAG, PRESENT_FRAG, layerFrag } from './gl/shaders';
 import { FULLSCREEN_VERT, hexToRgba, setParamUniforms, wrapEffect, wrapGenerator, wrapTransition, type Program } from './gl/shaderlib';
 import { propAt } from '@/core/keyframes';
 import { designSize, fitContain, sourceTimeAt } from '@/core/project';
@@ -92,6 +92,11 @@ interface FrameEnv {
 
 export interface CompositorOptions {
   preserveDrawingBuffer?: boolean;
+  /**
+   * Transparent background (export feature): the project background colour is not painted and
+   * the canvas keeps its alpha channel. The live preview never sets this.
+   */
+  transparent?: boolean;
 }
 
 const EVICT_AFTER_FRAMES = 240;
@@ -106,9 +111,11 @@ export class Compositor {
   private frame = 0;
   private last: Target | null = null;
   private lastPrune: Project | null = null;
+  private readonly transparent: boolean;
 
   constructor(canvas: HTMLCanvasElement | OffscreenCanvas, opts: CompositorOptions = {}) {
-    this.ctx = new GLContext(canvas, opts);
+    this.transparent = !!opts.transparent;
+    this.ctx = new GLContext(canvas, { preserveDrawingBuffer: opts.preserveDrawingBuffer, alpha: this.transparent });
   }
 
   get canvas(): HTMLCanvasElement | OffscreenCanvas {
@@ -146,7 +153,9 @@ export class Compositor {
     let comp = ctx.acquire(W, H, false);
     ctx.bind(comp);
     const [br, bg, bb] = hexToRgba(project.settings.background);
-    gl.clearColor(br, bg, bb, 1);
+    // Transparent exports leave the backdrop empty (premultiplied 0,0,0,0).
+    if (this.transparent) gl.clearColor(0, 0, 0, 0);
+    else gl.clearColor(br, bg, bb, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     for (const item of getSceneItems(project, time)) {
@@ -182,7 +191,7 @@ export class Compositor {
     // Present
     ctx.bind(null);
     gl.disable(gl.BLEND);
-    const present = ctx.program('present', FULLSCREEN_VERT, PRESENT_FRAG);
+    const present = this.transparent ? ctx.program('present-alpha', FULLSCREEN_VERT, PRESENT_ALPHA_FRAG) : ctx.program('present', FULLSCREEN_VERT, PRESENT_FRAG);
     if (present) {
       gl.useProgram(present.program);
       ctx.useTexture(present, 'u_tex', 0, comp.tex);

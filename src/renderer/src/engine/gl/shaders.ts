@@ -257,3 +257,13 @@ void main() {
   outColor = vec4(texture(u_tex, vec2(v_uv.x, 1.0 - v_uv.y)).rgb, 1.0);
 }
 `;
+
+/** Present variant that keeps the (premultiplied) alpha — transparent exports only. */
+export const PRESENT_ALPHA_FRAG = `${GLSL_HEADER}
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_tex;
+void main() {
+  outColor = texture(u_tex, vec2(v_uv.x, 1.0 - v_uv.y));
+}
+`;

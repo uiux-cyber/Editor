@@ -5,6 +5,7 @@ import { api } from '@/platform/api';
 import { updateProject, useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { addMarker, copySelection, cutSelection, deleteSelection, duplicateSelection, paste, redo, selectAll, splitAtPlayhead, undo } from '../actions';
+import { ExportQueueButton } from '../export/QueueButton';
 import { openMenuBelow, type MenuItem } from '../common/overlays';
 import { importViaDialog } from '../library/MediaTab';
 import { closeProject, newProjectPrompt, openProject, saveProject } from './commands';
@@ -142,6 +143,8 @@ export function TitleBar(): ReactNode {
       )}
 
       <div className="titlebar__right no-drag">
+        {/* Export queue (ui/export): progress ring + popover; hidden while the queue is empty. */}
+        <ExportQueueButton />
         {editor && (
           <button
             type="button"

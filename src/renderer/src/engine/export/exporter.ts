@@ -2,6 +2,10 @@
  * Export pipeline. Renders the project frame by frame with a dedicated compositor (exactly the
  * same code path as the preview), decodes source video with WebCodecs through Mediabunny, mixes
  * audio offline with Web Audio, and encodes + muxes straight to disk.
+ *
+ * v1.1 additions (all optional settings, so existing callers keep working): exact bitrates for
+ * platform presets, transparent output (WebM VP9 with alpha, PNG still / PNG sequence), caption
+ * handling (burn-in on / off, SRT / VTT sidecars, embedded WebVTT track).
  */
 
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder';
@@ -9,7 +13,6 @@ import { GIFEncoder, applyPalette, quantize } from 'gifenc';
 import {
   AudioBufferSink,
   AudioBufferSource,
-  CanvasSink,
   CanvasSource,
   MovOutputFormat,
   Mp3OutputFormat,
@@ -17,6 +20,7 @@ import {
   Output,
   Quality,
   StreamTarget,
+  TextSubtitleSource,
   WavOutputFormat,
   WebMOutputFormat,
   canEncodeAudio,
@@ -26,20 +30,21 @@ import {
   type InputAudioTrack,
   type StreamTargetChunk,
   type VideoCodec,
-  type WrappedCanvas,
 } from 'mediabunny';
+import { toSrt, toVtt, type CaptionCue } from '@/core/captions';
 import { getIndex, projectDuration, sourceTimeAt } from '@/core/project';
-import { clipGainAt, getAudioClips, getSceneItems } from '@/core/scene';
+import { clipGainAt, getAudioClips } from '@/core/scene';
 import { clipEnd } from '@/core/time';
 import type { AudioClip, ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { api } from '@/platform/api';
 import { buildChain } from '../audio/chain';
-import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
-import { getImage, openInput, preloadImages } from '../media/assets';
-import { ensureFont } from '../sources/text';
+import { exportCaptionCues, withoutBurnedCaptions } from './captions';
+import { FrameRenderer, prepareResources } from './frameRenderer';
 
-export type ExportContainer = 'mp4' | 'webm' | 'mov' | 'gif' | 'mp3' | 'wav' | 'png';
+/** `png-sequence` writes one PNG per frame into the folder given as the export path. */
+export type ExportContainer = 'mp4' | 'webm' | 'mov' | 'gif' | 'mp3' | 'wav' | 'png' | 'png-sequence';
 export type QualityLevel = 'low' | 'medium' | 'high' | 'best';
+export type SubtitleFormat = 'srt' | 'vtt';
 
 export interface ExportSettings {
   container: ExportContainer;
@@ -56,6 +61,23 @@ export interface ExportSettings {
   hardware: 'no-preference' | 'prefer-hardware' | 'prefer-software';
   /** Put the index at the front of MP4 / MOV files (needs the whole file in memory). */
   fastStart: boolean;
+  /** Exact video bitrate (bits / s), e.g. from a platform preset. Default: derived from `quality`. */
+  videoBitrate?: number;
+  /** Exact audio bitrate (bits / s). Default: derived from `quality`. */
+  audioBitrate?: number;
+  /**
+   * Transparent background. Honoured by WebM (VP9 / VP8 with alpha), PNG and PNG sequences; other
+   * containers render opaque as usual.
+   */
+  transparent?: boolean;
+  /** Draw caption tracks into the picture (default true). False hides them for this export. */
+  burnInCaptions?: boolean;
+  /** Subtitle files written next to the output, re-based on the exported range. */
+  sidecars?: SubtitleFormat[];
+  /** Add a WebVTT subtitle track inside MP4 / WebM outputs. */
+  embedSubtitles?: boolean;
+  /** File name prefix of the frames of a PNG sequence (default: the folder name). */
+  sequenceName?: string;
 }
 
 export interface ExportProgress {
@@ -74,6 +96,10 @@ export interface ExportResult {
   path: string;
   seconds: number;
   frames: number;
+  /** Subtitle sidecars written next to the output. */
+  extraFiles?: string[];
+  /** Total bytes written (image sequences; files are measured by the caller). */
+  bytes?: number;
 }
 
 export class ExportCancelled extends Error {
@@ -89,21 +115,37 @@ const BPP: Record<QualityLevel, number> = { low: 0.045, medium: 0.085, high: 0.1
 const CODEC_EFFICIENCY: Record<string, number> = { avc: 1, hevc: 0.68, vp9: 0.7, av1: 0.58, vp8: 1.15 };
 
 /** Target video bitrate (bits per second) for the given settings. */
-export function videoBitrate(s: Pick<ExportSettings, 'width' | 'height' | 'fps' | 'quality' | 'videoCodec'>): number {
+export function videoBitrate(s: Pick<ExportSettings, 'width' | 'height' | 'fps' | 'quality' | 'videoCodec'> & { videoBitrate?: number }): number {
+  if (s.videoBitrate && s.videoBitrate > 0) return Math.round(s.videoBitrate);
   const raw = s.width * s.height * Math.min(60, s.fps) * BPP[s.quality] * (CODEC_EFFICIENCY[s.videoCodec] ?? 1);
   return Math.round(Math.min(120e6, Math.max(300e3, raw)));
 }
 
 export const audioBitrate = (q: QualityLevel): number => (q === 'low' ? 128000 : q === 'best' ? 256000 : 192000);
 
+const audioRate = (s: Pick<ExportSettings, 'quality' | 'audioBitrate'>): number => (s.audioBitrate && s.audioBitrate > 0 ? s.audioBitrate : audioBitrate(s.quality));
+
+/** Containers that can carry a transparent picture. */
+export const supportsAlpha = (s: Pick<ExportSettings, 'container' | 'videoCodec'>): boolean =>
+  s.container === 'png' || s.container === 'png-sequence' || (s.container === 'webm' && (s.videoCodec === 'vp9' || s.videoCodec === 'vp8'));
+
+/** Containers that can carry an embedded WebVTT subtitle track. */
+export const supportsEmbeddedSubtitles = (container: ExportContainer): boolean => container === 'mp4' || container === 'webm';
+
+/** Containers next to which subtitle sidecar files make sense. */
+export const supportsSidecars = (container: ExportContainer): boolean => container !== 'gif' && container !== 'png';
+
+export { exportCaptionCues, withoutBurnedCaptions };
+
 /** Rough output size in bytes. */
 export function estimateSize(s: ExportSettings, hasAudio: boolean): number {
   const seconds = Math.max(0, s.end - s.start);
   if (s.container === 'wav') return seconds * AUDIO_SAMPLE_RATE * 4;
-  if (s.container === 'mp3') return (seconds * audioBitrate(s.quality)) / 8;
+  if (s.container === 'mp3') return (seconds * audioRate(s)) / 8;
   if (s.container === 'gif') return seconds * s.fps * s.width * s.height * 0.22;
-  if (s.container === 'png') return s.width * s.height * 1.2;
-  return (seconds * (videoBitrate(s) + (hasAudio && s.audio ? audioBitrate(s.quality) : 0))) / 8;
+  if (s.container === 'png') return s.width * s.height * (s.transparent ? 1.6 : 1.2);
+  if (s.container === 'png-sequence') return Math.max(1, Math.round(seconds * s.fps)) * s.width * s.height * (s.transparent ? 1.6 : 1.2);
+  return (seconds * (videoBitrate(s) * (s.transparent && supportsAlpha(s) ? 1.35 : 1) + (hasAudio && s.audio ? audioRate(s) : 0))) / 8;
 }
 
 export interface Capabilities {
@@ -128,86 +170,17 @@ export function getCapabilities(): Promise<Capabilities> {
   return capsCache;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Video decoding
-// ---------------------------------------------------------------------------------------------
+const sizeCaps = new Map<string, Promise<boolean>>();
 
-/** Sequential decoder for one video clip: hands out the frame shown at increasing source times. */
-class ClipDecoder {
-  private iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null = null;
-  private current: WrappedCanvas | null = null;
-  private next: WrappedCanvas | null = null;
-  private exhausted = false;
-  private lastTime = -Infinity;
-  private width = 0;
-  private height = 0;
-  version = 0;
-
-  constructor(
-    private sink: CanvasSink,
-    private firstTimestamp: number,
-  ) {}
-
-  private async start(time: number): Promise<void> {
-    await this.iterator?.return();
-    // Start slightly early so the frame covering `time` is guaranteed to be in the stream.
-    this.iterator = this.sink.canvases(Math.max(this.firstTimestamp, time - 0.6));
-    this.current = null;
-    this.next = null;
-    this.exhausted = false;
-    await this.pull();
+/** Whether this PC can encode `codec` at the given frame size (e.g. H.264 at 4K). Cached. */
+export function canEncodeSize(codec: VideoCodec, width: number, height: number, bitrate?: number): Promise<boolean> {
+  const key = `${codec}:${width}x${height}:${bitrate ?? 0}`;
+  let p = sizeCaps.get(key);
+  if (!p) {
+    p = canEncodeVideo(codec, { width, height, ...(bitrate ? { bitrate } : {}) }).catch(() => false);
+    sizeCaps.set(key, p);
   }
-
-  private async pull(): Promise<void> {
-    if (!this.iterator || this.exhausted) {
-      this.next = null;
-      return;
-    }
-    const r = await this.iterator.next();
-    if (r.done) {
-      this.exhausted = true;
-      this.next = null;
-    } else {
-      this.next = r.value;
-    }
-  }
-
-  /** Position the decoder on the frame visible at `time` (seconds in the source file). */
-  async seek(time: number): Promise<void> {
-    if (!this.iterator || time < this.lastTime - 1e-4) await this.start(time);
-    this.lastTime = time;
-    while (this.next && this.next.timestamp <= time + 1e-4) {
-      this.current = this.next;
-      this.version++;
-      await this.pull();
-    }
-    if (!this.current && this.next) {
-      // Requested time is before the first frame: show the first frame.
-      this.current = this.next;
-      this.version++;
-      await this.pull();
-    }
-    if (this.current) {
-      this.width = this.current.canvas.width;
-      this.height = this.current.canvas.height;
-    }
-  }
-
-  frame(): FrameImage | null {
-    if (!this.current) return null;
-    return { source: this.current.canvas as TexImageSource, width: this.width, height: this.height, version: this.version };
-  }
-
-  async dispose(): Promise<void> {
-    try {
-      await this.iterator?.return();
-    } catch {
-      /* decoder already closed */
-    }
-    this.iterator = null;
-    this.current = null;
-    this.next = null;
-  }
+  return p;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -352,25 +325,27 @@ async function openDiskWriter(path: string): Promise<DiskWriter> {
 
 const yieldToUI = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-/** Everything the export needs that must be loaded before the first frame. */
-async function prepareResources(project: Project): Promise<void> {
-  const fonts: Promise<void>[] = [];
-  const images = new Set<ID>();
-  for (const clip of Object.values(project.clips)) {
-    if (clip.type === 'text') fonts.push(ensureFont(clip.text));
-    if (clip.type === 'image') images.add(clip.assetId);
-  }
-  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images])]);
-}
-
 export interface ExportHandle {
   /** Canvas being rendered — the dialog mirrors it as a live preview. */
   canvas: HTMLCanvasElement;
 }
 
+const pngBlob = (canvas: HTMLCanvasElement): Promise<Blob | null> => new Promise((r) => canvas.toBlob((b) => r(b), 'image/png'));
+
+/** Write the subtitle sidecars of an export (SRT / VTT next to the file, or inside a sequence folder). */
+async function writeSidecars(path: string, folder: boolean, cues: CaptionCue[], formats: SubtitleFormat[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const fmt of [...new Set(formats)]) {
+    const text = fmt === 'srt' ? toSrt(cues) : toVtt(cues);
+    out.push(await api.call<string>('x:export:writeSidecar', path, fmt, text, folder));
+  }
+  return out;
+}
+
 /**
  * Export `project` to `path`. Resolves when the file is complete; rejects with ExportCancelled
- * when `signal` aborts (the partial file is removed).
+ * when `signal` aborts (the partial file is removed). For `png-sequence`, `path` is a folder the
+ * user picked (see `x:export:pickFolder`).
  */
 export async function exportProject(
   project: Project,
@@ -384,8 +359,11 @@ export async function exportProject(
   const start = Math.max(0, settings.start);
   const end = Math.min(Math.max(start, settings.end), Math.max(projectDuration(project), start));
   const fps = settings.fps;
-  const audioOnly = settings.container === 'mp3' || settings.container === 'wav';
-  const still = settings.container === 'png';
+  const container = settings.container;
+  const audioOnly = container === 'mp3' || container === 'wav';
+  const still = container === 'png';
+  const sequence = container === 'png-sequence';
+  const transparent = !!settings.transparent && supportsAlpha(settings);
   const totalFrames = still ? 1 : Math.max(1, Math.round((end - start) * fps));
   const checkAbort = (): void => {
     if (signal.aborted) throw new ExportCancelled();
@@ -396,133 +374,95 @@ export async function exportProject(
     onProgress({ phase, ratio: Math.min(1, frame / totalFrames), frame, totalFrames, speed, eta: speed > 0 ? (totalFrames - frame) / speed : 0 });
   };
 
+  // Captions: cues come from the project as edited; the picture hides caption tracks when they
+  // are not burned in.
+  const wantSidecars = (settings.sidecars?.length ?? 0) > 0 && supportsSidecars(container);
+  const wantEmbedded = !!settings.embedSubtitles && supportsEmbeddedSubtitles(container);
+  const cues = wantSidecars || wantEmbedded ? exportCaptionCues(project, { start, end }) : [];
+  const scene = settings.burnInCaptions === false ? withoutBurnedCaptions(project) : project;
+
   report('preparing', 0);
-  await prepareResources(project);
+  await prepareResources(scene);
   checkAbort();
 
-  // Shared Mediabunny inputs, one per asset.
-  const inputs = new Map<ID, Input>();
-  const inputFor = (asset: MediaAsset): Input => {
-    let input = inputs.get(asset.id);
-    if (!input) {
-      input = openInput(asset);
-      inputs.set(asset.id, input);
-    }
-    return input;
-  };
-
-  const canvas = document.createElement('canvas');
-  canvas.width = settings.width;
-  canvas.height = settings.height;
-  let compositor: Compositor | null = null;
-  const decoders = new Map<ID, ClipDecoder | null>();
-  const mixer = new AudioMixer(project, inputFor);
+  const renderer = new FrameRenderer({ width: settings.width, height: settings.height, transparent, noVideo: audioOnly });
+  const canvas = renderer.canvas;
+  const mixer = new AudioMixer(scene, renderer.inputFor);
   let writer: DiskWriter | null = null;
   let output: Output | null = null;
-
-  const decoderFor = async (clip: VideoClip): Promise<ClipDecoder | null> => {
-    if (decoders.has(clip.id)) return decoders.get(clip.id)!;
-    let decoder: ClipDecoder | null = null;
-    const asset = project.assets[clip.assetId];
-    try {
-      if (asset) {
-        const track = await inputFor(asset).getPrimaryVideoTrack();
-        if (track && (await track.canDecode())) {
-          decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3 }), await track.getFirstTimestamp());
-        }
-      }
-    } catch (err) {
-      console.warn('[export] video source unavailable', clip.name, err);
-    }
-    decoders.set(clip.id, decoder);
-    return decoder;
-  };
-
-  const provider: MediaProvider = {
-    videoFrame: (clip) => decoders.get(clip.id)?.frame() ?? null,
-    image: (assetId) => {
-      const img = getImage(assetId);
-      return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
-    },
-  };
-
-  /** Decode every video frame needed at timeline time `t`, and free decoders of finished clips. */
-  const prepareFrame = async (t: number): Promise<void> => {
-    const active = new Set<ID>();
-    for (const item of getSceneItems(project, t)) {
-      const refs = item.kind === 'layer' ? [item.layer] : [item.from, item.to];
-      for (const ref of refs) {
-        if (ref.clip.type !== 'video') continue;
-        const asset = project.assets[ref.clip.assetId];
-        if (!asset) continue;
-        active.add(ref.clip.id);
-        const decoder = await decoderFor(ref.clip);
-        if (!decoder) continue;
-        const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
-        await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
-      }
-    }
-    for (const [id, decoder] of decoders) {
-      if (decoder && !active.has(id)) {
-        const clip = project.clips[id];
-        // Keep decoders for clips that will be needed again shortly (transition handles).
-        if (!clip || clipEnd(clip) + 3 < t) {
-          await decoder.dispose();
-          decoders.delete(id);
-        }
-      }
-    }
-  };
-
-  const cleanup = async (): Promise<void> => {
-    for (const d of decoders.values()) await d?.dispose();
-    decoders.clear();
-    for (const input of inputs.values()) {
-      try {
-        input.dispose();
-      } catch {
-        /* already disposed */
-      }
-    }
-    inputs.clear();
-    try {
-      compositor?.dispose();
-      // Release the GPU context right away instead of waiting for garbage collection.
-      (compositor?.ctx.gl.getExtension('WEBGL_lose_context') as { loseContext(): void } | null)?.loseContext();
-    } catch {
-      /* context already lost */
-    }
-    compositor = null;
+  const frame = async (t: number): Promise<void> => {
+    await renderer.prepare(scene, t);
+    renderer.render(scene, t);
   };
 
   try {
-    if (!audioOnly) {
-      compositor = new Compositor(canvas, { preserveDrawingBuffer: true });
-      compositor.setSize(settings.width, settings.height);
-      onHandle?.({ canvas });
-    }
+    if (!audioOnly) onHandle?.({ canvas });
 
     // ---- Still image -------------------------------------------------------------------------
     if (still) {
-      await prepareFrame(start);
-      compositor!.render(project, start, provider);
-      const blob = await new Promise<Blob | null>((r) => canvas.toBlob((b) => r(b), 'image/png'));
+      await frame(start);
+      const blob = await pngBlob(canvas);
       if (!blob) throw new Error('The frame could not be encoded.');
       await api.fs.writeFile(path, new Uint8Array(await blob.arrayBuffer()));
       report('finalizing', 1);
       return { path, seconds: (performance.now() - started) / 1000, frames: 1 };
     }
 
+    // ---- PNG image sequence (into a folder) ------------------------------------------------
+    if (sequence) {
+      const prefix = (settings.sequenceName || path.replace(/[\\/]+$/, '').replace(/^.*[\\/]/, '') || 'frame').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_');
+      const digits = Math.max(5, String(totalFrames).length);
+      const written: string[] = [];
+      const pending = new Set<Promise<void>>();
+      let bytes = 0;
+      let failure: unknown = null;
+      try {
+        for (let i = 0; i < totalFrames; i++) {
+          checkAbort();
+          if (failure) throw failure;
+          await frame(start + i / fps);
+          // toBlob snapshots the canvas immediately, so the next frame can render while this one
+          // is encoded and written; keep a few in flight.
+          const name = `${prefix}_${String(i).padStart(digits, '0')}.png`;
+          const job = pngBlob(canvas)
+            .then(async (blob) => {
+              if (!blob) throw new Error('A frame could not be encoded.');
+              const data = new Uint8Array(await blob.arrayBuffer());
+              await api.call('x:export:writeFrame', path, name, data);
+              written.push(name);
+              bytes += data.byteLength;
+            })
+            .catch((err) => {
+              failure ??= err;
+            });
+          pending.add(job);
+          void job.finally(() => pending.delete(job));
+          if (pending.size >= 4) await Promise.race(pending);
+          report('rendering', i + 1);
+          if (i % 10 === 0) await yieldToUI();
+        }
+        await Promise.all(pending);
+        if (failure) throw failure;
+        checkAbort();
+      } catch (err) {
+        await Promise.all(pending);
+        // Leave nothing half-written behind.
+        if (written.length) await api.call('x:export:deleteFrames', path, written).catch(() => undefined);
+        throw err;
+      }
+      report('finalizing', totalFrames);
+      const extraFiles = wantSidecars && cues.length ? await writeSidecars(path, true, cues, settings.sidecars!) : [];
+      return { path, seconds: (performance.now() - started) / 1000, frames: totalFrames, extraFiles, bytes };
+    }
+
     // ---- Animated GIF ------------------------------------------------------------------------
-    if (settings.container === 'gif') {
+    if (container === 'gif') {
       const gif = GIFEncoder();
       const delay = Math.round(1000 / fps);
       for (let i = 0; i < totalFrames; i++) {
         checkAbort();
-        const t = start + i / fps;
-        await prepareFrame(t);
-        compositor!.render(project, t, provider);
-        const px = compositor!.readPixels();
+        await frame(start + i / fps);
+        const px = renderer.compositor!.readPixels();
         if (px) {
           const palette = quantize(px.data, 256);
           gif.writeFrame(applyPalette(px.data, palette), px.width, px.height, { palette, delay });
@@ -542,30 +482,39 @@ export async function exportProject(
     const caps = await getCapabilities();
     const wantAudio = (audioOnly || settings.audio) && mixer.hasAudio;
     let audioCodec: AudioCodec = 'aac';
-    if (settings.container === 'mp3') {
+    if (container === 'mp3') {
       if (!(await canEncodeAudio('mp3').catch(() => false))) registerMp3Encoder();
       audioCodec = 'mp3';
-    } else if (settings.container === 'wav') {
+    } else if (container === 'wav') {
       audioCodec = 'pcm-s16';
-    } else if (settings.container === 'webm') {
+    } else if (container === 'webm') {
       audioCodec = 'opus';
     } else {
       audioCodec = caps.aac ? 'aac' : 'opus';
     }
     if (audioOnly && !mixer.hasAudio) throw new Error('This project has no audio to export.');
-    if (!audioOnly && !caps.video[settings.videoCodec]) {
-      throw new Error(`This PC cannot encode ${settings.videoCodec.toUpperCase()} video. Choose a different format.`);
+    if (!audioOnly) {
+      if (!caps.video[settings.videoCodec]) throw new Error(`This PC cannot encode ${settings.videoCodec.toUpperCase()} video. Choose a different format.`);
+      if (!(await canEncodeSize(settings.videoCodec, settings.width, settings.height))) {
+        throw new Error(`This PC cannot encode ${settings.videoCodec.toUpperCase()} video at ${settings.width} × ${settings.height}. Choose a lower resolution or another codec.`);
+      }
     }
 
     writer = await openDiskWriter(path);
+    // Fast start reserves room for the index at the front of the file (sized from the packet
+    // counts below) instead of buffering the whole movie in memory.
+    const fastStart = settings.fastStart ? ('reserve' as const) : false;
+    const duration = end - start;
+    // Packet maxima are only needed (and only enforced) when space is reserved for the index.
+    const packetLimit = (n: number): number | undefined => (fastStart ? Math.ceil(n * 1.35) + 16 : undefined);
     const format =
-      settings.container === 'mp4'
-        ? new Mp4OutputFormat({ fastStart: settings.fastStart ? 'in-memory' : false })
-        : settings.container === 'mov'
-          ? new MovOutputFormat({ fastStart: settings.fastStart ? 'in-memory' : false })
-          : settings.container === 'webm'
+      container === 'mp4'
+        ? new Mp4OutputFormat({ fastStart })
+        : container === 'mov'
+          ? new MovOutputFormat({ fastStart })
+          : container === 'webm'
             ? new WebMOutputFormat()
-            : settings.container === 'mp3'
+            : container === 'mp3'
               ? new Mp3OutputFormat()
               : new WavOutputFormat();
     output = new Output({ format, target: new StreamTarget(writer.writable, { chunked: true, chunkSize: 4 * 1024 * 1024 }) });
@@ -578,18 +527,30 @@ export async function exportProject(
         keyFrameInterval: 2,
         latencyMode: 'quality',
         hardwareAcceleration: settings.hardware,
+        // VP9 with alpha: Mediabunny encodes the alpha plane as WebM BlockAdditional side data.
+        ...(transparent ? { alpha: 'keep' as const } : {}),
       });
-      output.addVideoTrack(videoSource, { frameRate: fps });
+      output.addVideoTrack(videoSource, { frameRate: fps, maximumPacketCount: packetLimit(totalFrames) });
     }
     let audioSource: AudioBufferSource | null = null;
     if (wantAudio) {
-      audioSource = new AudioBufferSource(audioCodec === 'pcm-s16' ? { codec: audioCodec } : { codec: audioCodec, quality: new Quality({ bitrate: audioBitrate(settings.quality) }) });
-      output.addAudioTrack(audioSource);
+      audioSource = new AudioBufferSource(audioCodec === 'pcm-s16' ? { codec: audioCodec } : { codec: audioCodec, quality: new Quality({ bitrate: audioRate(settings) }) });
+      // Audio packets are at most ~10 ms long.
+      output.addAudioTrack(audioSource, { maximumPacketCount: packetLimit(duration * 100) });
+    }
+    let subtitleSource: TextSubtitleSource | null = null;
+    if (wantEmbedded && cues.length > 0) {
+      subtitleSource = new TextSubtitleSource('webvtt');
+      // Every cue and every gap is one packet.
+      output.addSubtitleTrack(subtitleSource, { name: 'Captions', languageCode: 'und', maximumPacketCount: packetLimit(cues.length * 2 + 2) });
     }
     await output.start();
     checkAbort();
+    if (subtitleSource) {
+      await subtitleSource.add(toVtt(cues));
+      subtitleSource.close();
+    }
 
-    const duration = end - start;
     let audioDone = 0; // seconds of audio already submitted
     const feedAudio = async (upTo: number): Promise<void> => {
       if (!audioSource) return;
@@ -616,9 +577,7 @@ export async function exportProject(
         const rel = i / fps;
         // Keep the audio a little ahead of the picture so the muxer can interleave as it goes.
         if (audioSource && rel >= audioDone - 0.5) await feedAudio(Math.min(duration, audioDone + AUDIO_WINDOW));
-        const t = start + rel;
-        await prepareFrame(t);
-        compositor!.render(project, t, provider);
+        await frame(start + rel);
         await videoSource!.add(rel, 1 / fps);
         if (i % 5 === 0) {
           report('rendering', i + 1);
@@ -632,7 +591,8 @@ export async function exportProject(
     report('finalizing', totalFrames);
     await output.finalize();
     await writer.close();
-    return { path, seconds: (performance.now() - started) / 1000, frames: totalFrames };
+    const extraFiles = wantSidecars && cues.length ? await writeSidecars(path, false, cues, settings.sidecars!) : [];
+    return { path, seconds: (performance.now() - started) / 1000, frames: totalFrames, extraFiles };
   } catch (err) {
     try {
       if (output && output.state !== 'finalized' && output.state !== 'canceled') await output.cancel();
@@ -642,7 +602,7 @@ export async function exportProject(
     await writer?.abort().catch(() => undefined);
     throw err;
   } finally {
-    await cleanup();
+    await renderer.dispose();
   }
 }
 
