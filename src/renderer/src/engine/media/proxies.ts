@@ -15,6 +15,7 @@ import { hdrPassthrough } from './hdr';
 import { mediaPrefs, useMediaPrefs } from './prefs';
 import { ProxyCanceled, runProxyConversion, type ProxyRun, type ProxySpec } from './proxyConvert';
 import { proxyBitrate, proxyDimensions, proxyEligibility, proxyFileName, type Eligibility } from './proxyRules';
+import proxyWorkerUrl from './proxyWorker.ts?worker&url';
 
 export type ProxyJobState = 'queued' | 'running' | 'error';
 
@@ -43,6 +44,10 @@ const patchJob = (id: ID, patch: Partial<ProxyJob> | null): void =>
   });
 
 const queue: ID[] = [];
+let lastRunner: 'worker' | 'main-thread' | null = null;
+
+/** Where the last proxy transcode ran (diagnostics / tests). */
+export const proxyRunner = (): typeof lastRunner => lastRunner;
 let active: { id: ID; cancel: () => void } | null = null;
 
 // ---------------------------------------------------------------------------------------------
@@ -136,16 +141,46 @@ function pump(): void {
   });
 }
 
+let workerBlobUrl: Promise<string | null> | null = null;
+
+/**
+ * Ways to start the proxy worker, best first. The page is cross-origin isolated (COEP), and
+ * kinora://app does not send COEP headers for scripts, so a worker loaded from its URL is
+ * refused; the same bundled (self-contained, classic) script started from a blob URL inherits
+ * the page's policy. The dev server serves module workers with the right headers.
+ */
+function workerFactories(): (() => Promise<Worker>)[] {
+  return [
+    async () => {
+      workerBlobUrl ??= fetch(proxyWorkerUrl)
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+        .then((code) => URL.createObjectURL(new Blob([code], { type: 'text/javascript' })))
+        .catch(() => null);
+      const url = await workerBlobUrl;
+      if (!url) throw new Error('worker script unavailable');
+      return new Worker(url, { name: 'kinora-proxy' });
+    },
+    async () => new Worker(proxyWorkerUrl, { type: 'module', name: 'kinora-proxy' }),
+  ];
+}
+
 /** Start a conversion in a worker; resolves to null if workers are unavailable. */
-function startInWorker(spec: ProxySpec, write: (pos: number, data: Uint8Array) => Promise<void>, progress: (r: number) => void): Promise<ProxyRun | null> {
-  return new Promise((resolve) => {
+async function startInWorker(spec: ProxySpec, write: (pos: number, data: Uint8Array) => Promise<void>, progress: (r: number) => void): Promise<ProxyRun | null> {
+  for (const create of workerFactories()) {
     let worker: Worker;
     try {
-      worker = new Worker(new URL('./proxyWorker.ts', import.meta.url), { type: 'module', name: 'kinora-proxy' });
+      worker = await create();
     } catch {
-      resolve(null);
-      return;
+      continue;
     }
+    const run = await attachWorker(worker, spec, write, progress);
+    if (run) return run;
+  }
+  return null;
+}
+
+function attachWorker(worker: Worker, spec: ProxySpec, write: (pos: number, data: Uint8Array) => Promise<void>, progress: (r: number) => void): Promise<ProxyRun | null> {
+  return new Promise((resolve) => {
     let settle: { ok: () => void; ko: (e: Error) => void } | null = null;
     const promise = new Promise<void>((ok, ko) => (settle = { ok, ko }));
     const finish = (err?: Error): void => {
@@ -216,7 +251,10 @@ async function runJob(asset: MediaAsset): Promise<void> {
     if (canceled) throw new ProxyCanceled();
     const write = (position: number, data: Uint8Array): Promise<void> => api.call('x:media:write', opened.handle, position, data);
     const progress = (r: number): void => patchJob(id, { progress: Math.min(0.995, r) });
-    run = (await startInWorker(spec, write, progress)) ?? runProxyConversion(spec, { write, progress });
+    run = await startInWorker(spec, write, progress);
+    lastRunner = run ? 'worker' : 'main-thread';
+    // Fallback when workers are unavailable: same code on the UI thread (it yields often).
+    run ??= runProxyConversion(spec, { write, progress });
     if (canceled) run.cancel();
     await run.promise;
     const info = await api.call<{ path: string; size: number }>('x:media:closeWrite', opened.handle);

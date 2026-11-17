@@ -139,6 +139,8 @@ export default async function media(ctx) {
   }, proxy.path);
   expect(probed.w === 960 && probed.h === 540 && probed.codec === 'avc' && probed.audio === 'aac', `proxy is ${probed.w}×${probed.h} ${probed.codec} + ${probed.audio}`);
   expect(probed.keys >= Math.floor(probed.duration / 0.5), `short key-frame interval (${probed.keys} key frames in ${probed.duration.toFixed(1)} s)`);
+  const runner = await run(() => window.__kinoraMedia.proxies.proxyRunner());
+  expect(runner === 'worker', `the proxy was transcoded off the UI thread (${runner})`);
   await win.waitForSelector('.media-tile .mt-badge--proxy');
   await shot('41-media-proxy-ready');
 
@@ -242,9 +244,10 @@ export default async function media(ctx) {
     const k = window.__kinora;
     let n = 0;
     const fx = (effectId, params = {}) => ({ uid: `fx_${n++}`, effectId, enabled: true, params });
-    // Deliberately heavy: 12 full-frame procedural layers, each with 8 multi-pass effects
-    // (~250 full-frame shader passes per frame), plus a title.
-    const gens = ['aurora', 'plasma', 'liquid-marble', 'clouds', 'flowing-silk', 'water-caustics', 'lava-lamp', 'soft-waves', 'mesh-gradient', 'gradient-flow', 'flame', 'conic-sweep'];
+    // Deliberately heavy: 18 full-frame procedural layers, each with 8 multi-pass effects
+    // (~380 full-frame shader passes per frame), plus a title.
+    const base = ['aurora', 'plasma', 'liquid-marble', 'clouds', 'flowing-silk', 'water-caustics', 'lava-lamp', 'soft-waves', 'mesh-gradient', 'gradient-flow', 'flame', 'conic-sweep'];
+    const gens = [...base, ...base.slice(0, 6)];
     for (const g of gens) k.actions.addGenerator(g, { time: 0 });
     k.actions.addText('gradient-title', { time: 2 });
     k.useProjectStore.getState().update((p) => {
@@ -484,6 +487,26 @@ export default async function media(ctx) {
   expect(ex[0] < ex[1] && ex[1] < ex[2] && ex[2] <= ex[3], 'brighter HDR patches stay brighter after tone-mapping');
   expect(Math.abs(ex[0] - Math.round(0.508 * 255)) > 20, `tone-mapping is applied (100-nit patch ${ex[0]} ≠ raw PQ code ${Math.round(0.508 * 255)})`);
   await shot('57-media-hdr-preview');
+
+  // An HDR proxy keeps the raw signal, so the preview through the proxy matches the export too.
+  await win.locator('.media-tile', { hasText: 'media-hdr-pq' }).click({ button: 'right' });
+  await win.locator('.menu__item', { hasText: 'Create proxy' }).click();
+  await waitFor((id) => !!window.__kinora.assets.useAssetRuntime.getState().items[id]?.proxyUrl, hdrA.id, 'HDR proxy', 60000);
+  await run(() => window.__kinora.engine.seek(0.25));
+  await waitFor(async () => [...document.querySelectorAll('video')].some((v) => decodeURIComponent(v.src).toLowerCase().includes('\\proxies\\') && v.videoWidth === 960), null, 'HDR proxy in the preview');
+  await run(() => window.__kinora.engine.seek(0.5));
+  await sleep(900);
+  const viaProxy = await run(async () => {
+    const bmp = await createImageBitmap(await window.__kinora.engine.snapshot());
+    const c = document.createElement('canvas');
+    c.width = bmp.width;
+    c.height = bmp.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bmp, 0, 0);
+    return [0.125, 0.375, 0.625, 0.875].map((x) => g.getImageData(Math.floor(x * bmp.width), Math.floor(0.75 * bmp.height), 1, 1).data[0]);
+  });
+  const proxyDev = Math.max(...viaProxy.map((v, i) => Math.abs(v - ex[i])));
+  expect(proxyDev <= 8, `HDR proxy preview matches the export after tone-mapping (${JSON.stringify(viaProxy)}, max deviation ${proxyDev})`);
 
   // SDR media is untouched: export a frame of the SDR clip and compare it with the decoded source.
   await run(() => {

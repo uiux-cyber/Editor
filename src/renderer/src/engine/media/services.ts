@@ -6,15 +6,14 @@
 
 import { hasBridge } from '@/platform/api';
 import { getProject, useProjectStore } from '@/store/project';
-import { clearRenderCache, defaultRenderRange, renderPreview, cancelRender, reloadCacheIndex, segmentStatus, statusRuns, useRenderCache } from '../cache/renderCache';
+import { cancelRender, clearRenderCache, defaultRenderRange, reloadCacheIndex, renderPreview, segmentStatus, startRenderCache, statusRuns, useRenderCache } from '../cache/renderCache';
 import { playbackStats, resetPlaybackStats } from '../cache/player';
 import { onAssetsImported, onProjectAssetsPrepared } from './assets';
 import { exposeDebug } from './debug';
 import { convertAndImport, detectFfmpeg, startFfmpegService, useFfmpeg } from './ffmpeg';
 import { hdrInfoById, hdrPassthrough, probeHdrPipeline, setHdrInfo } from './hdr';
 import { loadMediaPrefs, useMediaPrefs } from './prefs';
-import { autoProxy, cancelProxy, clearAllProxies, deleteProxy, eligibility, requestProxy, setUseProxies, startProxyService, useProxyJobs, verifyProxies } from './proxies';
-import { startRenderCache } from '../cache/renderCache';
+import { autoProxy, cancelProxy, clearAllProxies, deleteProxy, eligibility, proxyRunner, requestProxy, setUseProxies, startProxyService, useProxyJobs, verifyProxies } from './proxies';
 
 let started = false;
 
@@ -38,7 +37,7 @@ export function startMediaServices(): void {
 
   exposeDebug({
     prefs: useMediaPrefs,
-    proxies: { requestProxy, cancelProxy, deleteProxy, clearAllProxies, eligibility, setUseProxies, jobs: useProxyJobs },
+    proxies: { requestProxy, cancelProxy, deleteProxy, clearAllProxies, eligibility, setUseProxies, proxyRunner, jobs: useProxyJobs },
     cache: { renderPreview, cancelRender, clearRenderCache, reloadCacheIndex, defaultRenderRange, statusRuns, segmentStatus, state: useRenderCache, playbackStats, resetPlaybackStats },
     ffmpeg: { detectFfmpeg, convertAndImport, state: useFfmpeg },
     hdr: { hdrInfoById, hdrPassthrough, probeHdrPipeline },
