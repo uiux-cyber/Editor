@@ -139,27 +139,36 @@ folder registers it automatically.
 
 ## 6. Release plan
 
-1. **1.0 (this build)** — everything in §2 and §3, NSIS installer for Windows x64.
+1. **1.0** — everything in §2 and §3, NSIS installer for Windows x64.
 2. **Before public distribution**
    - Code-sign the installer (EV certificate) to avoid SmartScreen warnings.
    - Auto-update channel (electron-updater with a signed feed).
    - Crash reporting (opt-in) and anonymous performance telemetry (opt-in).
    - Beta on a range of GPUs (Intel iGPU, AMD, NVIDIA) and on 8 GB RAM machines.
-3. **1.1 — editing depth**: proxy / optimised media for 4K+ sources, audio waveform-based snapping,
-   ripple / roll / slip / slide trim modes, clip groups, nested sequences, freeze frame, reverse.
-4. **1.2 — colour & audio**: curves and colour wheels, scopes (waveform / vectorscope), LUT import
-   (.cube), audio EQ / compressor / noise reduction, ducking, beat markers for music beds.
-5. **1.3 — smart features**: automatic captions (on-device speech recognition), background removal,
-   motion tracking for stickers / text, auto-reframe between aspect ratios, silence removal.
+3. **1.1 (this build)** — shipped together: editing depth (trim modes, magnetic main track, groups,
+   links, track heights, History; speed ramps, freeze frame, reverse, keep pitch, compound clips),
+   on-device smart features (captions, SRT / VTT, filler words, silences, beats, noise reduction,
+   TTS, ducking, background removal, auto-reframe, scene detection, colour match, motion tracking),
+   colour & audio (curves, wheels, LUTs, scopes, EQ, compressor, track meters), text & graphics
+   (GIF / WebP / APNG / Lottie, pen tool, count-up numbers), templates & brand (save as template,
+   brand kit, music, content packs), export (presets, multi-aspect, queue, In / Out, transparency,
+   captions), performance & media (proxies, render cache, optional FFmpeg, HDR) and workflow
+   (command palette, custom shortcuts, settings, light theme, 5 translations, accessibility,
+   collect project). See the README for a summary.
+4. **Later** — cloud backup and review links (needs a hosted service), translation of the
+   remaining panels (library, inspector, timeline, export dialog), native-speaker review of the
+   translations, more languages.
+5. **Before public distribution** (unchanged): code signing, auto-update, opt-in crash reports,
+   GPU / low-RAM beta.
 6. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 
-## 7. Known limitations in 1.0
+## 7. Known limitations
 
 - Source formats are limited to what WebCodecs can decode on the PC (H.264, HEVC with the Windows
-  HEVC extension or a supporting GPU, VP8 / VP9, AV1, AAC, MP3, Opus, FLAC, PCM). ProRes / DNxHD
-  sources must be converted first.
+  HEVC extension or a supporting GPU, VP8 / VP9, AV1, AAC, MP3, Opus, FLAC, PCM). ProRes / DNxHD /
+  MXF sources are converted on import when FFmpeg is installed (Kinora does not ship FFmpeg).
 - Changing clip speed changes the pitch of its sound unless "Keep pitch" is on (WSOLA time-stretch,
   also through speed ramps; above ~4× the stretched sound becomes choppy). Reversed clips longer than
   5 minutes play silently in the preview (they export with sound).
@@ -167,3 +176,9 @@ folder registers it automatically.
 - Only built-in music beds can be attached to templates (`TemplateDef.music`); user templates keep
   built-in sounds, and other audio only when the template embeds its media.
 - Projects that use fonts installed on one PC fall back to a default font on PCs without them.
+- The interface is translated in the menus, command palette, settings, start screen and dialogs of
+  the shell; the library, inspector, timeline and export panels are still English. Translations
+  have not been reviewed by native speakers.
+- Smart features were tested on synthetic and sample footage; accuracy on real-world material
+  (filler words in natural speech, segmentation of real people, non-English captions) varies.
+- FFmpeg conversion was tested against a stand-in executable, and HDR against synthetic PQ clips.

@@ -72,6 +72,8 @@ for (const d of downloads) await download(d);
 
 // WebAssembly runtimes, served from the same folder so the app never reaches the network.
 await copyDir(path.join(root, 'node_modules/@mediapipe/tasks-vision/wasm'), path.join(out, 'mediapipe/wasm'), () => true);
-await copyDir(path.join(root, 'node_modules/onnxruntime-web/dist'), path.join(out, 'ort'), (n) => /^ort-wasm.*\.(wasm|mjs)$/.test(n));
+// Only the asyncify build is loaded (CPU and WebGPU alike); the jsep / jspi / plain builds are
+// not needed and would add ~59 MB to the installer.
+await copyDir(path.join(root, 'node_modules/onnxruntime-web/dist'), path.join(out, 'ort'), (n) => /^ort-wasm-simd-threaded\.asyncify\.(wasm|mjs)$/.test(n));
 console.log('  ✓ runtimes copied (mediapipe/wasm, ort)');
 console.log('Done.');

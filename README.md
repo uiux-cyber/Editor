@@ -6,6 +6,30 @@ text styles, animations and royalty-free sounds.
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.1
+
+- **Editing:** ripple, roll, slip and slide trims; a magnetic main track; groups and linked
+  video/audio; resizable tracks; a History panel. Speed ramps, freeze frames, reverse, keep pitch
+  and compound (nested) clips.
+- **Smart, on this PC:** auto captions with word highlighting (Whisper), SRT / VTT import and
+  export, filler-word and silence removal, beat detection and cut-to-beat, noise reduction,
+  Windows text-to-speech, auto ducking. Background removal, auto-reframe, scene detection,
+  colour match and motion tracking. All models ship inside the installer; nothing is uploaded.
+- **Colour & audio:** curves, colour wheels, `.cube` LUT import, waveform / parade /
+  vectorscope / histogram; EQ, compressor and per-track meters.
+- **Text & graphics:** animated GIF / WebP / APNG and Lottie, a pen tool, count-up numbers.
+- **Templates & brand:** save your own templates, a brand kit applied to every template,
+  templates with music, installable content packs (`.kinorapack`).
+- **Export:** platform presets, several aspect ratios in one go, an export queue, In / Out
+  ranges, transparent video, burned-in or sidecar captions.
+- **Performance & media:** automatic proxies, a background render cache, optional FFmpeg for
+  ProRes / DNxHD / MXF, HDR (PQ / HLG) tone mapping.
+- **Workflow:** command palette (Ctrl+K), customisable shortcuts, Settings window, light theme,
+  Spanish / French / German / Portuguese / Hindi, keyboard navigation (F6), collect project.
+
+Developers: see [docs/EXTENDING.md](docs/EXTENDING.md) (extension points), [docs/I18N.md](docs/I18N.md)
+and [docs/PACKS.md](docs/PACKS.md).
+
 ## Install (end users)
 
 Run `Kinora-Setup-<version>.exe` from the `release` folder. The installer is not code-signed yet,
@@ -41,6 +65,11 @@ node scripts/e2e.mjs export               # build, export every format, re-impor
 node scripts/e2e.mjs ui                   # drive the UI with real mouse and keyboard input
 node scripts/e2e.mjs ui --packaged        # same, against release/win-unpacked
 ```
+
+Scenarios: `smoke ui export export-queue graphics editing time workflow speech vision
+color-audio media templates`. Test windows run off-screen without taking focus; set
+`KINORA_E2E_SHOW=1` to watch a run. Run `npm run models` once before the speech / vision
+scenarios (it downloads the bundled AI models into `resources/models/`).
 
 End-to-end runs use an isolated profile and write screenshots and exports to `.e2e/`.
 

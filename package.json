@@ -1,7 +1,7 @@
 {
   "name": "kinora",
   "productName": "Kinora",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Kinora — a GPU-accelerated, template-driven video editor for Windows.",
   "author": "Kinora",
   "license": "UNLICENSED",
@@ -121,7 +121,11 @@
         "from": "resources/models",
         "to": "models",
         "filter": [
-          "**/*"
+          "**/*",
+          "!ort/ort-wasm-simd-threaded.jsep.*",
+          "!ort/ort-wasm-simd-threaded.jspi.*",
+          "!ort/ort-wasm-simd-threaded.mjs",
+          "!ort/ort-wasm-simd-threaded.wasm"
         ]
       }
     ]
