@@ -1,4 +1,4 @@
-import { Camera, ChevronFirst, ChevronLast, Grid3x3, Maximize, Pause, Play, Repeat, StepBack, StepForward, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { Activity, Camera, ChevronFirst, ChevronLast, Grid3x3, Maximize, Pause, Play, Repeat, StepBack, StepForward, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { propAt } from '@/core/keyframes';
 import { designSize, projectDuration } from '@/core/project';
@@ -14,6 +14,8 @@ import { addAdjustment, addAsset, addGenerator, addShape, addSound, addSticker, 
 import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { writeProp } from '../keyframeOps';
+import { useColorAudioPrefs, toggleScopes } from '../coloraudio/prefs';
+import { ScopesDock } from '../coloraudio/ScopesPanel';
 
 const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type HandleId = (typeof HANDLE_IDS)[number];
@@ -290,6 +292,7 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
   const volume = useUI((s) => s.masterVolume);
   const set = useUI((s) => s.set);
   const lastVolume = useRef(1);
+  const scopesOpen = useColorAudioPrefs((s) => s.scopesOpen);
 
   const snapshot = async (): Promise<void> => {
     const blob = await engine.snapshot();
@@ -359,6 +362,10 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
         </button>
         <button type="button" className={`icon-btn ${safeZones ? 'is-active' : ''}`} title="Safe zones & centre guides" onClick={() => set({ safeZones: !safeZones })}>
           <Grid3x3 size={15} />
+        </button>
+        {/* colour-audio: video scopes dock */}
+        <button type="button" className={`icon-btn ${scopesOpen ? 'is-active' : ''}`} title="Video scopes" data-action="toggle-scopes" onClick={toggleScopes}>
+          <Activity size={15} />
         </button>
         <Select
           value={quality}
@@ -508,6 +515,8 @@ export function Preview(): ReactNode {
 
   return (
     <div className="preview" ref={rootRef} data-preview>
+      {/* colour-audio: the preview area shares its row with the docked scopes. */}
+      <div className="preview__main">
       <div className="preview__area" ref={areaRef} onPointerDown={(e) => e.target === e.currentTarget && useUI.getState().clearSelection()}>
         <div className={`stage ${dropOver ? 'is-drop' : ''}`} style={{ width: stage.w, height: stage.h }}>
           <canvas ref={canvasRef} className="stage__canvas" />
@@ -538,6 +547,8 @@ export function Preview(): ReactNode {
             )}
           </div>
         </div>
+      </div>
+      <ScopesDock />
       </div>
       <Transport onFullscreen={fullscreen} />
     </div>

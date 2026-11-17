@@ -71,6 +71,7 @@ import {
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
+import { soundTrackIds, TrackMeter } from '../coloraudio/TrackMeter';
 import { ClipView } from './ClipView';
 import { HEADER_W, LEFT_PAD, MAX_PPS, MIN_PPS, RIGHT_PAD, RULER_H, TOP_ZONE, TRACK_HEIGHT, layoutTracks, rowAt, rulerStep, timeToX, xToTime, type Layout, type TrackRow } from './geometry';
 
@@ -993,6 +994,9 @@ export function Timeline(): ReactNode {
       if (t) t[key] = !t[key];
     });
 
+  // colour-audio: tracks that carry sound show a live stereo meter in their header.
+  const soundTracks = soundTrackIds(project);
+
   const lo = view.left - 500;
   const hi = view.left + view.width + 500;
   const empty = Object.keys(project.clips).length === 0;
@@ -1058,6 +1062,7 @@ export function Timeline(): ReactNode {
                     <button type="button" className={`icon-btn icon-btn--sm ${track.locked ? 'is-active' : ''}`} title={track.locked ? 'Unlock track' : 'Lock track'} onClick={() => toggleTrack(track.id, 'locked')}>
                       {track.locked ? <Lock size={13} /> : <LockOpen size={13} />}
                     </button>
+                    {soundTracks.has(track.id) && <TrackMeter trackId={track.id} muted={track.muted} />}
                   </span>
                 </div>
               );
