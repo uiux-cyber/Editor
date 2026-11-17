@@ -619,7 +619,7 @@ async function trackJob(req: TrackRequest, ctx: JobCtx): Promise<TrackResponse> 
 
 const cancelled = new Set<number>();
 
-async function handle(id: number, msg: VisionRequest, ctx: JobCtx): Promise<{ data: unknown; transfer?: Transferable[] }> {
+async function handle(msg: VisionRequest, ctx: JobCtx): Promise<{ data: unknown; transfer?: Transferable[] }> {
   switch (msg.type) {
     case 'init': {
       const t0 = performance.now();
@@ -637,16 +637,6 @@ async function handle(id: number, msg: VisionRequest, ctx: JobCtx): Promise<{ da
         msg.bitmap.close();
       }
     }
-    case 'segmentMedia': {
-      const seg = await getSegmenter();
-      let result: MaskResult | null = null;
-      for await (const f of framesAt(msg.media, [msg.time], msg.maxSide, ctx.cancelled)) {
-        result = segment(seg, f.canvas as TexImageSource);
-        break;
-      }
-      if (!result) throw new Error('No frame to segment.');
-      return { data: result, transfer: [result.mask.buffer] };
-    }
     case 'focus':
       return { data: await focusJob(msg.media, msg.fps, msg.start, msg.end, ctx) };
     case 'scenes':
@@ -659,14 +649,9 @@ async function handle(id: number, msg: VisionRequest, ctx: JobCtx): Promise<{ da
     }
     case 'track':
       return { data: await trackJob(msg.req, ctx) };
-    case 'probe': {
-      const src = await videoSource(msg.media.url);
-      return { data: { width: src.width, height: src.height, duration: src.duration, fps: src.fps } };
-    }
     default:
       throw new Error(`Unknown vision request ${(msg as { type: string }).type}`);
   }
-  void id;
 }
 
 scope.onmessage = (e: MessageEvent<MainMessage>) => {
@@ -680,7 +665,7 @@ scope.onmessage = (e: MessageEvent<MainMessage>) => {
     progress: (value, label) => scope.postMessage({ id, type: 'progress', value, label }),
     cancelled: () => cancelled.has(id),
   };
-  handle(id, msg, ctx).then(
+  handle(msg, ctx).then(
     ({ data, transfer }) => {
       cancelled.delete(id);
       scope.postMessage({ id, type: 'result', data }, transfer ?? []);

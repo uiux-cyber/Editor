@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { seededRandom } from '@/core/easing';
+import { makeVideo } from '@/core/factory';
+import { createProject } from '@/core/project';
+import { reframeProject, setFocusProvider } from '@/core/reframe';
+import type { MediaAsset, VisualClip } from '@/core/types';
 import { evalCamera, smoothCameraPath, type FocusSample } from '@/vision/algo/camera';
 import { compileGrade, gradePixels, labStats, matchColors, statDistance } from '@/vision/algo/color';
 import { cutScore, detectCuts, frameDifference, frameFeatures, type FrameStat } from '@/vision/algo/scenes';
@@ -86,6 +90,48 @@ describe('auto-reframe camera path', () => {
     const keys = smoothCameraPath(samples((t) => ({ x: 0.2 + t * 0.06, y: 0.5 })));
     for (let t = 2; t <= 8; t += 0.5) expect(Math.abs(evalCamera(keys, t).x - (0.2 + t * 0.06))).toBeLessThan(0.06);
     expect(keys.length).toBeLessThan(12);
+  });
+});
+
+describe('reframe with the focus provider', () => {
+  const asset: MediaAsset = { id: 'v', kind: 'video', name: 'v.mp4', source: { type: 'file', path: 'C:/v.mp4' }, duration: 10, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false, size: 1, addedAt: 0 };
+  const project = (edit?: (c: VisualClip) => void) => {
+    const p = createProject({ width: 1920, height: 1080, fps: 30 });
+    p.assets.v = asset;
+    const video = makeVideo(asset);
+    video.trackId = p.tracks[0].id;
+    edit?.(video);
+    p.clips[video.id] = video;
+    return { p, id: video.id };
+  };
+
+  it('uses the per-key easing and maps focus through flips', () => {
+    const { p, id } = project((c) => (c.flipH = true));
+    setFocusProvider(() => [
+      { t: 0, x: 0.2, y: 0.5, ease: 'easeIn' },
+      { t: 5, x: 0.8, y: 0.5, ease: 'linear' },
+    ]);
+    const r = reframeProject(p, 1080, 1920);
+    setFocusProvider(null);
+    const xs = r.clips[id].keyframes!.x!;
+    // Mirrored: a subject on the left of the source is on the right of the layer.
+    expect(xs[0].v).toBeLessThan(0);
+    expect(xs[1].v).toBeGreaterThan(0);
+    expect(xs[0].ease).toBe('easeIn');
+    expect(r.clips[id].keyframes!.y).toBeUndefined(); // no vertical room → no y keys
+  });
+
+  it('accounts for the crop when panning', () => {
+    // Crop away the left half: source x = 0.75 is the centre of what is shown.
+    const { p, id } = project((c) => (c.crop = { l: 0.5, t: 0, r: 0, b: 0 }));
+    setFocusProvider(() => [
+      { t: 0, x: 0.75, y: 0.5 },
+      { t: 5, x: 0.75, y: 0.5 },
+    ]);
+    const r = reframeProject(p, 1080, 1920);
+    setFocusProvider(null);
+    expect(Math.abs((r.clips[id] as VisualClip).transform.x)).toBeLessThan(1);
+    expect(r.clips[id].keyframes?.x).toBeUndefined(); // constant → static value, no keyframes
   });
 });
 

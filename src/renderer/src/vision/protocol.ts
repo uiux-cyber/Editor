@@ -84,20 +84,11 @@ export interface TrackResponse {
 export type VisionRequest =
   | { type: 'init'; wasmBase: string; loaderUrl: string; models: Record<'segmenter' | 'face' | 'object', string>; gpu: boolean }
   | { type: 'segment'; bitmap: ImageBitmap }
-  | { type: 'segmentMedia'; media: MediaRef; time: number; maxSide: number }
   | { type: 'focus'; media: MediaRef; fps: number; start: number; end: number }
   | { type: 'scenes'; media: MediaRef; start: number; end: number; width: number }
   | { type: 'thumbs'; media: MediaRef; times: number[]; width: number }
   | { type: 'colorMatch'; req: ColorMatchRequest }
-  | { type: 'track'; req: TrackRequest }
-  | { type: 'probe'; media: MediaRef };
-
-export interface ProbeResult {
-  width: number;
-  height: number;
-  duration: number;
-  fps: number;
-}
+  | { type: 'track'; req: TrackRequest };
 
 export type WorkerMessage =
   | { id: number; type: 'progress'; value: number; label?: string }

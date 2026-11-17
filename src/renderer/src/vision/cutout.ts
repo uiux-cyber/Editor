@@ -176,6 +176,7 @@ function show(clipId: ID, key: string, idx: number, mask: Mask, blend: boolean):
 }
 
 let lastInvalidate: (() => void) | null = null;
+let lastProject: Project | null = null;
 // When the final (export) delegate becomes ready, repaint so paused frames upgrade to it.
 onFinalDelegateReady(() => lastInvalidate?.());
 
@@ -228,6 +229,10 @@ export function previewMatte(clip: VisualClip, project: Project, env: PreviewMat
   const asset = project.assets[clip.assetId];
   if (!asset) return null;
   lastInvalidate = env.invalidate;
+  if (project !== lastProject) {
+    lastProject = project;
+    pruneCutoutState(project);
+  }
   if (clip.type === 'image') return previewStill(clip, asset, env);
 
   const frame = env.frame();

@@ -124,29 +124,31 @@ export function reframeAssets(project: Project): MediaAsset[] {
 }
 
 /**
+ * Analyse every media asset of a project that has no cached analysis yet (progress 0..1).
+ * After this, `reframeProject` (auto-reframe, multi-aspect export) pans to the subjects.
+ */
+export async function analyseProjectFocus(project: Project, opts: { signal?: AbortSignal; onProgress?: (v: number, label?: string) => void } = {}): Promise<void> {
+  const todo = reframeAssets(project).filter((a) => !focusTrack(a));
+  const totalSeconds = todo.reduce((s, a) => s + Math.max(0.2, a.duration), 0) || 1;
+  let done = 0;
+  for (const a of todo) {
+    const weight = Math.max(0.2, a.duration) / totalSeconds;
+    await analyseFocus(a, { signal: opts.signal, onProgress: (v) => opts.onProgress?.(done + v * weight, `Analysing “${a.name}”`) });
+    done += weight;
+  }
+  opts.onProgress?.(1);
+}
+
+/**
  * Analyse the project's media (with progress), build the reframed copy and open it as a new,
  * unsaved project. Returns the new project, or null when cancelled / failed.
  */
 export async function autoReframe(aspect: AspectId): Promise<Project | null> {
   const source = getProject();
-  const assets = reframeAssets(source);
-  const todo = assets.filter((a) => !focusTrack(a));
-  const ok = await runJob(
-    'reframe',
-    'reframe',
-    `Auto-reframe ${aspect}`,
-    async (job) => {
-      const totalSeconds = todo.reduce((s, a) => s + Math.max(0.2, a.duration), 0) || 1;
-      let done = 0;
-      for (const a of todo) {
-        const weight = Math.max(0.2, a.duration) / totalSeconds;
-        await analyseFocus(a, { signal: job.signal, onProgress: (v) => job.progress(done + v * weight, `Analysing “${a.name}”`) });
-        done += weight;
-      }
-      job.progress(1, 'Building the reframed copy');
-      return true;
-    },
-  );
+  const ok = await runJob('reframe', 'reframe', `Auto-reframe ${aspect}`, async (job) => {
+    await analyseProjectFocus(source, { signal: job.signal, onProgress: (v, l) => job.progress(v, l ?? 'Building the reframed copy') });
+    return true;
+  });
   if (!ok) return null;
   const { width, height } = aspectSize(source, aspect);
   const copy = reframeProject(source, width, height);
