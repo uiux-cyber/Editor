@@ -7,7 +7,7 @@
  */
 
 import { X } from 'lucide-react';
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { usePlayback } from '@/engine/engine';
 import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
@@ -24,6 +24,18 @@ interface Props {
 function DrawLayer({ stageW, stageH, k }: Props): ReactNode {
   const draw = useVision((s) => s.draw);
   const drag = useRef<{ x0: number; y0: number; mode: 'new' | 'move'; box: DesignBox | null } | null>(null);
+  const active = !!draw?.active;
+  useEffect(() => {
+    if (!active) return;
+    // Escape leaves drawing mode (before the editor's own Escape handling clears the selection).
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      stopDrawing();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [active]);
   if (!draw?.active) return null;
   const toDesign = (e: React.PointerEvent): { x: number; y: number } => {
     const host = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -56,7 +68,6 @@ function DrawLayer({ stageW, stageH, k }: Props): ReactNode {
         if (d?.mode === 'new' && box && (box.w < 6 || box.h < 6)) setDrawBox(d.box);
         else if (box) stopDrawing();
       }}
-      onKeyDown={(e) => e.key === 'Escape' && stopDrawing()}
     />
   );
 }

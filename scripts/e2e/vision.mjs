@@ -729,6 +729,17 @@ export default async function vision(ctx) {
     await sleep(500);
     const after = await run((id) => ({ jobs: Object.keys(window.__kinoraVision.useVision.getState().jobs).length, scenes: !!window.__kinoraVision.useVision.getState().scenes[id], toasts: window.__kinora.useUI.getState().toasts.filter((t) => t.kind === 'error').length }), clipId);
     expect(after.jobs === 0 && !after.scenes && after.toasts === 0, 'cancelling from the progress panel stops the job without an error');
+
+    // Commands (palette / menus): enabled state follows the selection, and they act on it.
+    await run(() => window.__kinora.useUI.getState().clearSelection());
+    expect(!(await run(() => window.__kinoraVision.commandEnabled('vision.removeBackground'))), 'Remove background command is disabled without a media clip selected');
+    await select([clipId]);
+    expect(await run(() => window.__kinoraVision.runCommand('vision.removeBackground')), 'Remove background command runs on the selected clip');
+    expect(await run((id) => window.__kinora.useProjectStore.getState().project.clips[id].cutout?.enabled === true, clipId), 'the command turned the cutout on');
+    await run(() => window.__kinoraVision.runCommand('vision.removeBackground'));
+    expect(await run((id) => window.__kinora.useProjectStore.getState().project.clips[id].cutout?.enabled === false, clipId), 'running it again turns it off');
+    expect(await run(() => window.__kinoraVision.commandEnabled('vision.detectScenes')), 'Detect scenes command is available for a video clip');
+    expect(await run(() => window.__kinoraVision.commandEnabled('vision.autoReframe.9x16')), 'Auto-reframe commands are registered');
   }
 
   console.log(`\nVision performance: ${JSON.stringify(perf, null, 1)}`);
