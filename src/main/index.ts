@@ -289,7 +289,10 @@ function registerProtocol(): void {
         const filePath = path.normalize(path.join(rendererRoot, rel));
         if (!filePath.startsWith(rendererRoot)) return new Response('Forbidden', { status: 403 });
         const isHtml = extOf(filePath) === 'html';
-        return await serveFile(request, filePath, isHtml ? { 'Content-Security-Policy': CSP, ...ISOLATION } : { 'Cache-Control': 'max-age=31536000' });
+        // Scripts also carry the isolation headers: a cross-origin-isolated page may only start
+        // Web Workers (on-device AI) whose script response opts into COEP as well.
+        const isScript = extOf(filePath) === 'js' || extOf(filePath) === 'mjs';
+        return await serveFile(request, filePath, isHtml ? { 'Content-Security-Policy': CSP, ...ISOLATION } : isScript ? { 'Cache-Control': 'max-age=31536000', ...ISOLATION } : { 'Cache-Control': 'max-age=31536000' });
       }
       return new Response('Not found', { status: 404 });
     } catch (err) {

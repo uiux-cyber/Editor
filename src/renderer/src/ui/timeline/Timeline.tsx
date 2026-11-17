@@ -86,6 +86,7 @@ import { registerDropTarget, type DragPayload } from '../dnd';
 import { InOutMarks } from '../export/InOutMarks';
 import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
 import { cachedThemeColor, useTheme } from '../theme';
+import { SpeechTimelineOverlay } from '../speech/TimelineOverlay';
 import { ClipView } from './ClipView';
 import { EditReadout, HistoryButton, MagneticButton, TrimToolButtons } from './EditToolbar';
 import { editedIds, installEditCursors, startEditGesture, useEditReadout, type GestureContext } from './editGestures';
@@ -1177,7 +1178,7 @@ export function Timeline(): ReactNode {
               return (
                 <div
                   key={row.id}
-                  className={`tl-header tl-header--${row.kind} ${track.locked ? 'is-locked' : ''} ${isMain ? 'is-main' : ''} ${row.height < 40 ? 'is-compact' : ''}`}
+                  className={`tl-header tl-header--${row.kind} ${track.role === 'captions' ? 'tl-header--captions' : ''} ${track.locked ? 'is-locked' : ''} ${isMain ? 'is-main' : ''} ${row.height < 40 ? 'is-compact' : ''}`}
                   style={{ top: row.top, height: row.height }}
                   data-track-header={track.id}
                   onContextMenu={(e) =>
@@ -1261,7 +1262,7 @@ export function Timeline(): ReactNode {
               if (!track) return null;
               const clips = idx.byTrack.get(row.id) ?? [];
               return (
-                <div key={row.id} className={`tl-track tl-track--${row.kind} ${track.locked ? 'is-locked' : ''} ${track.hidden ? 'is-hidden' : ''} ${row.id === mainId ? 'is-main' : ''}`} style={{ top: RULER_H + row.top, height: row.height }}>
+                <div key={row.id} className={`tl-track tl-track--${row.kind} ${track.role === 'captions' ? 'tl-track--captions' : ''} ${track.locked ? 'is-locked' : ''} ${track.hidden ? 'is-hidden' : ''} ${row.id === mainId ? 'is-main' : ''}`} style={{ top: RULER_H + row.top, height: row.height }}>
                   {clips.map((clip) => {
                     const x0 = timeToX(clip.start, pps);
                     const x1 = timeToX(clipEnd(clip), pps);
@@ -1303,6 +1304,9 @@ export function Timeline(): ReactNode {
                 </div>
               );
             })}
+
+            {/* Speech & audio tools: silences under review, filler words and the beat grid. */}
+            <SpeechTimelineOverlay pps={pps} top={RULER_H} height={layout.height} viewLeft={view.left} viewWidth={view.width} />
 
             {hint.ghost && (
               <div className="tl-ghost" style={{ left: hint.ghost.left, width: Math.max(4, hint.ghost.width), top: hint.ghost.top, height: hint.ghost.height }}>
