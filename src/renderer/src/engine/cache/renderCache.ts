@@ -28,6 +28,8 @@ export interface RenderJob {
   /** Segments to render / rendered so far. */
   total: number;
   done: number;
+  /** 0..1 including the segment in progress (frame granularity). */
+  progress: number;
   /** Timeline range being rendered. */
   start: number;
   end: number;
@@ -127,7 +129,7 @@ async function waitWhileBusy(): Promise<void> {
 
 class RenderCanceled extends Error {}
 
-async function renderSegment(renderer: CacheFrameRenderer, seg: Segment, project: Project): Promise<void> {
+async function renderSegment(renderer: CacheFrameRenderer, seg: Segment, project: Project, onFrame: (fraction: number) => void): Promise<void> {
   const fps = project.settings.fps;
   const { width, height } = renderer.canvas;
   const opened = await api.call<{ handle: number; path: string }>('x:media:openWrite', 'cache', cacheFileName(seg.key!));
@@ -149,6 +151,7 @@ async function renderSegment(renderer: CacheFrameRenderer, seg: Segment, project
       if (cancelRequested) throw new RenderCanceled();
       await renderer.render((seg.firstFrame + f) / fps);
       await source.add(f / fps, 1 / fps);
+      onFrame((f + 1) / seg.frames);
       await yieldToUI();
     }
     await output.finalize();
@@ -199,7 +202,7 @@ export function renderPreview(range?: { start: number; end: number }, opts: { on
     return Promise.resolve();
   }
   cancelRequested = false;
-  useRenderCache.setState({ job: { total: targets.length, done: 0, start: r.start, end: r.end, auto: !!opts.auto, startedAt: performance.now() } });
+  useRenderCache.setState({ job: { total: targets.length, done: 0, progress: 0, start: r.start, end: r.end, auto: !!opts.auto, startedAt: performance.now() } });
   const size = state.size;
   running = (async () => {
     if (!(await canEncodeVideo('avc', { width: size.width, height: size.height }).catch(() => false))) {
@@ -216,11 +219,18 @@ export function renderPreview(range?: { start: number; end: number }, opts: { on
         // a segment of the snapshot is still valid if it is unchanged in the current project.
         const live = useRenderCache.getState();
         if (live.project !== project && !live.segments.some((s) => s.key === seg.key)) {
-          useRenderCache.setState((s) => (s.job ? { job: { ...s.job, done: s.job.done + 1 } } : {}));
+          useRenderCache.setState((s) => (s.job ? { job: { ...s.job, done: s.job.done + 1, progress: (s.job.done + 1) / s.job.total } } : {}));
           continue;
         }
-        if (!cached.has(seg.key!)) await renderSegment(renderer, seg, project);
-        useRenderCache.setState((s) => (s.job ? { job: { ...s.job, done: s.job.done + 1 } } : {}));
+        let lastUpdate = 0;
+        const onFrame = (fraction: number): void => {
+          const now = performance.now();
+          if (now - lastUpdate < 150) return;
+          lastUpdate = now;
+          useRenderCache.setState((s) => (s.job ? { job: { ...s.job, progress: (s.job.done + fraction) / s.job.total } } : {}));
+        };
+        if (!cached.has(seg.key!)) await renderSegment(renderer, seg, project, onFrame);
+        useRenderCache.setState((s) => (s.job ? { job: { ...s.job, done: s.job.done + 1, progress: (s.job.done + 1) / s.job.total } } : {}));
         bump();
       }
     } catch (err) {

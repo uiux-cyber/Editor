@@ -49,7 +49,7 @@ function HdrSection({ clip, ids }: InspectorSectionProps): ReactNode {
         <Select value={tm.operator} onChange={(v) => edit({ operator: v })} options={TONE_MAP_OPERATORS.map((o) => ({ value: o.id, label: o.label }))} />
       </Field>
       <SliderField label="Exposure" value={tm.exposure} min={-3} max={3} step={0.05} defaultValue={0} bipolar precision={2} suffix=" EV" onChange={(v) => edit({ exposure: v }, 'hdr-exposure')} />
-      <SliderField label="Source peak" value={tm.peak} min={400} max={10000} step={50} defaultValue={1000} suffix=" nits" onChange={(v) => edit({ peak: v }, 'hdr-peak')} />
+      <SliderField label="Peak (nits)" value={tm.peak} min={400} max={10000} step={50} defaultValue={1000} onChange={(v) => edit({ peak: v }, 'hdr-peak')} />
       <p className="hint">{op?.hint}. The same mapping is used for the preview and the export.</p>
     </Section>
   );

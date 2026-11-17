@@ -87,7 +87,7 @@ function TasksPopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () =>
             <X size={13} />
           </button>
           <div className="progress">
-            <div className="progress__bar" style={{ width: `${Math.round((job.done / Math.max(1, job.total)) * 100)}%` }} />
+            <div className="progress__bar" style={{ width: `${Math.round(job.progress * 100)}%` }} />
           </div>
           <span className="mx-task__meta">
             {job.done} of {job.total} second{job.total === 1 ? '' : 's'} rendered · pauses while you play
@@ -155,7 +155,7 @@ export function BackgroundTasks(): ReactNode {
   let pct: number | null = null;
   if (job) {
     label = 'Rendering';
-    pct = job.done / Math.max(1, job.total);
+    pct = job.progress;
   } else if (proxyList.length) {
     const running = proxyList.find((p) => p.state === 'running');
     label = proxyList.length > 1 ? `${proxyList.length} proxies` : 'Proxy';

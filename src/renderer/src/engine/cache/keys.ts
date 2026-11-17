@@ -72,18 +72,25 @@ function collectAssetIds(clip: Clip, out: Set<ID>): void {
 }
 
 // Clip / transition hashes are memoised per immutable object (immer keeps unchanged objects).
+// A clip's entry also remembers the media facts it was hashed with: relinking a file changes
+// the asset but not the clip object.
 const clipHashes = new WeakMap<object, string>();
+const clipEntries = new WeakMap<object, { json: string; ids: ID[]; facts: string; hash: string }>();
 
 function clipHash(clip: Clip, project: Project): string {
-  let h = clipHashes.get(clip);
-  if (h === undefined) {
+  let e = clipEntries.get(clip);
+  if (!e) {
     const ids = new Set<ID>();
     collectAssetIds(clip, ids);
-    const facts = [...ids].sort().map((id) => assetFacts(project.assets[id]));
-    h = hashString(`${stableStringify(clip)}#${facts.join(';')}`);
-    clipHashes.set(clip, h);
+    e = { json: hashString(stableStringify(clip)), ids: [...ids].sort(), facts: '', hash: '' };
+    clipEntries.set(clip, e);
   }
-  return h;
+  const facts = e.ids.map((id) => assetFacts(project.assets[id])).join(';');
+  if (facts !== e.facts || !e.hash) {
+    e.facts = facts;
+    e.hash = hashString(`${e.json}#${facts}`);
+  }
+  return e.hash;
 }
 
 function transitionHash(tr: Transition): string {
