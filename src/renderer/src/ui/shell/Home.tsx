@@ -2,15 +2,17 @@ import { Clock, FolderOpen, History, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatDuration } from '@/core/time';
 import { LIBRARY_COUNTS, TEMPLATES, getTemplate } from '@/library';
-import { ASPECT_SIZES, sortCategories, buildTemplate, supportsAspect, variationPage, type TemplateVariation } from '@/library/templateEngine';
+import { ASPECT_SIZES, hasMorePages, isUserTemplate, sortCategories, supportsAspect, variationPage, type TemplateVariation } from '@/library/templateEngine';
 import type { AspectId, TemplateCategory } from '@/library/types';
 import { api } from '@/platform/api';
 import type { AutosaveEntry, RecentProject } from '@shared/ipc';
 import { formatNumber, formatRelative, useT } from '../i18n';
 import { Chips, labelOf, unique } from '../library/common';
-import { LiveThumb, templateThumbProject, type ThumbSpec } from '../library/thumbs';
+import { LiveThumb, type ThumbSpec } from '../library/thumbs';
 import { newProject, openProject, recoverAutosave } from '../projectIO';
 import { useSetting } from '../settings/store';
+import { startProjectFromTemplate, templateThumbSpec } from '../templates/apply';
+import { BrandToggle, MusicBadge, MusicToggle, openUserTemplateMenu, useGalleryState } from '../templates/gallery';
 import { Logo } from './TitleBar';
 
 /** `hint` is an English source string (translated where shown). */
@@ -22,24 +24,26 @@ export const PROJECT_FORMATS: { id: AspectId | '21:9'; label: string; hint: stri
   { id: '21:9', label: '21:9', hint: 'Cinematic', w: 2560, h: 1080 },
 ];
 
-function HomeTemplate({ variation, aspect, onPick }: { variation: TemplateVariation; aspect: AspectId; onPick: () => void }): ReactNode {
+function HomeTemplate({ variation, aspect, epoch, onPick }: { variation: TemplateVariation; aspect: AspectId; epoch: number; onPick: () => void }): ReactNode {
   const t = useT();
   const def = getTemplate(variation.templateId);
   const size = ASPECT_SIZES[aspect];
   const w = size.ch > size.cw ? 216 : 384;
   const h = Math.round((w * size.ch) / size.cw);
-  const build = useCallback((): ThumbSpec | null => {
-    const built = buildTemplate(variation, size.cw, size.ch);
-    if (!built) return null;
-    return { project: templateThumbProject(built.clips, w, h, size.cw, size.ch), poster: built.duration * (built.def.poster ?? 0.6), from: 0, to: built.duration };
-  }, [variation, size.cw, size.ch, w, h]);
+  // Includes brand logos and media embedded in the user's own templates (ui/templates).
+  const build = useCallback((): ThumbSpec | null => templateThumbSpec(variation, size.cw, size.ch, w, h), [variation, size.cw, size.ch, w, h]);
   if (!def) return null;
+  const mine = isUserTemplate(def);
   return (
-    <button type="button" className="home-tpl" onClick={onPick} title={t('Start a project from “{name}”', { name: def.name })}>
+    <button type="button" className={`home-tpl ${mine ? 'home-tpl--mine' : ''}`} onClick={onPick} title={t('Start a project from “{name}”', { name: def.name })} data-template={def.id} onContextMenu={(e) => mine && openUserTemplateMenu(e, def.id)}>
       <span className="home-tpl__thumb" style={{ aspectRatio: `${w} / ${h}` }}>
-        <LiveThumb id={`home:${variation.key}:${aspect}`} width={w} height={h} build={build} />
+        <LiveThumb id={`home:${variation.key}:${epoch}:${aspect}`} width={w} height={h} build={build} />
+        <MusicBadge def={def} />
       </span>
-      <span className="home-tpl__name truncate">{def.name}</span>
+      <span className="home-tpl__name truncate">
+        {mine && <span className="home-tpl__mine">{t('Mine')}</span>}
+        {def.name}
+      </span>
     </button>
   );
 }
@@ -49,11 +53,13 @@ export function Home(): ReactNode {
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [autosaves, setAutosaves] = useState<AutosaveEntry[]>([]);
   const [aspect, setAspect] = useState<AspectId>('16:9');
-  const [category, setCategory] = useState<TemplateCategory | 'all'>('all');
+  const [category, setCategory] = useState<TemplateCategory | 'all' | 'mine'>('all');
   const [pages, setPages] = useState(1);
   // Settings → General → frame rate for new projects.
   const [fps] = useSetting<number>('general.defaultFps', 30);
   const sentinel = useRef<HTMLDivElement>(null);
+  // Brand kit, "My templates" and content packs (ui/templates).
+  const g = useGalleryState();
 
   const refresh = useCallback(async (): Promise<void> => {
     const [r, a] = await Promise.all([api.app.getRecent(), api.autosave.list()]);
@@ -66,14 +72,18 @@ export function Home(): ReactNode {
     void refresh();
   }, [refresh]);
 
-  const categories = useMemo(() => sortCategories(unique(TEMPLATES.filter((tp) => supportsAspect(tp, aspect)).map((tp) => tp.category))), [aspect]);
+  const categories = useMemo(() => sortCategories(unique(TEMPLATES.filter((tp) => supportsAspect(tp, aspect) && !isUserTemplate(tp)).map((tp) => tp.category))), [aspect, g.libraryVersion]);
   const variations = useMemo(() => {
     const out: TemplateVariation[] = [];
-    for (let p = 0; p < pages; p++) out.push(...variationPage({ aspect, category }, p));
+    for (let p = 0; p < pages; p++) out.push(...variationPage({ aspect, category, brand: g.brand }, p));
     return out;
-  }, [aspect, category, pages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aspect, category, pages, g.brand, g.brandRevision, g.libraryVersion]);
 
-  useEffect(() => setPages(1), [aspect, category]);
+  useEffect(() => setPages(1), [aspect, category, g.brand]);
+  useEffect(() => {
+    if (category === 'mine' && g.mineCount === 0) setCategory('all');
+  }, [category, g.mineCount]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -234,30 +244,45 @@ export function Home(): ReactNode {
         <section className="home__section" aria-labelledby="home-templates">
           <header className="home__head">
             <h2 id="home-templates">{t('Start from a template')}</h2>
-            <div className="segmented" role="group" aria-label={t('Format')}>
-              {(['16:9', '9:16', '1:1', '4:5'] as AspectId[]).map((a) => (
-                <button key={a} type="button" className={aspect === a ? 'is-active' : ''} aria-pressed={aspect === a} onClick={() => setAspect(a)}>
-                  {a}
-                </button>
-              ))}
+            <div className="home__tpl-tools">
+              <BrandToggle />
+              <MusicToggle />
+              <div className="segmented" role="group" aria-label={t('Format')}>
+                {(['16:9', '9:16', '1:1', '4:5'] as AspectId[]).map((a) => (
+                  <button key={a} type="button" className={aspect === a ? 'is-active' : ''} aria-pressed={aspect === a} onClick={() => setAspect(a)}>
+                    {a}
+                  </button>
+                ))}
+              </div>
             </div>
           </header>
           <div style={{ margin: '0 -12px 4px' }}>
-            <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: t('All') }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
+            <Chips
+              value={category}
+              onChange={setCategory}
+              options={[
+                ...(g.mineCount > 0 ? [{ value: 'mine' as const, label: t('My templates · {count}', { count: g.mineCount }) }] : []),
+                { value: 'all' as const, label: t('All') },
+                ...categories.map((c) => ({ value: c, label: labelOf(c) })),
+              ]}
+            />
           </div>
           <div className={`home__templates ${portrait ? 'is-portrait' : aspect === '1:1' || aspect === '4:5' ? 'is-square' : ''}`}>
-            {variations.map((v, i) => (
-              <HomeTemplate key={`${i}:${v.key}`} variation={v} aspect={aspect} onPick={() => void newProject({ width: format.w, height: format.h, fps }, v)} />
-            ))}
+            {g.thumbsReady &&
+              variations.map((v, i) => (
+                <HomeTemplate key={`${i}:${v.key}`} variation={v} aspect={aspect} epoch={g.epoch} onPick={() => void startProjectFromTemplate({ width: format.w, height: format.h, fps }, v)} />
+              ))}
           </div>
-          {variations.length > 0 ? (
-            <div ref={sentinel} className="lib__more">
-              <span className="spinner" aria-hidden="true" /> {t('Generating more styles…')}
-            </div>
-          ) : (
+          {variations.length === 0 ? (
             <div className="empty">
               <p>{t('No templates for this format yet.')}</p>
             </div>
+          ) : (
+            hasMorePages({ aspect, category, brand: g.brand }, pages) && (
+              <div ref={sentinel} className="lib__more">
+                <span className="spinner" aria-hidden="true" /> {t('Generating more styles…')}
+              </div>
+            )
           )}
         </section>
       </div>

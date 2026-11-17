@@ -5,8 +5,8 @@
  * Every helper is pure and deterministic; randomness always comes from `env.rng`.
  */
 
-import { makeText, type TextOpts } from '@/core/factory';
-import type { Paint, TextClip, TextStyle } from '@/core/types';
+import { makeSlot, makeText, type TextOpts } from '@/core/factory';
+import type { ClipAnimations, Paint, ShapeClip, TextClip, TextStyle } from '@/core/types';
 import { measureTextBlock, type TextMetrics } from '@/engine/sources/textLayout';
 import type { FontRole, TemplateEnv } from '../../types';
 
@@ -97,6 +97,42 @@ export function safeArea(env: TemplateEnv, factor = 1): Safe {
 
 /** The frame's shorter side is always 1080; this is 1 on 16:9 and grows for taller frames. */
 export const tallness = (env: TemplateEnv): number => env.ch / env.cw;
+
+// ---------------------------------------------------------------------------------------------
+// Brand logo
+// ---------------------------------------------------------------------------------------------
+
+export type Corner = 'tl' | 'tr' | 'bl' | 'br';
+
+export interface LogoBugOpts {
+  start: number;
+  duration: number;
+  /** Edge length in design px (default: 10 % of the shorter side, 12 % on vertical video). */
+  size?: number;
+  fill?: Paint;
+  anim?: ClipAnimations;
+}
+
+/**
+ * A small brand-logo placeholder in a corner of the title-safe area ("station bug"). It is named
+ * `Logo`, so the brand kit fills it with the user's logo; otherwise it is a drop-in placeholder.
+ */
+export function logoBug(env: TemplateEnv, corner: Corner, o: LogoBugOpts): ShapeClip {
+  const safe = safeArea(env);
+  const size = Math.round(o.size ?? Math.min(env.cw, env.ch) * (env.portrait ? 0.12 : 0.1));
+  return makeSlot({
+    name: 'Logo',
+    start: o.start,
+    duration: o.duration,
+    width: size,
+    height: size,
+    radius: Math.round(size * 0.22),
+    x: Math.round((corner.endsWith('l') ? -1 : 1) * (env.cw / 2 - safe.mx - size / 2)),
+    y: Math.round((corner.startsWith('t') ? -1 : 1) * (env.ch / 2 - safe.my - size / 2)),
+    ...(o.fill ? { fill: o.fill } : {}),
+    anim: o.anim ?? { in: { id: 'fade-in', duration: 0.6 }, out: { id: 'fade-out', duration: 0.4 } },
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Typography

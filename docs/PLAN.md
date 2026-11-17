@@ -164,5 +164,6 @@ folder registers it automatically.
   also through speed ramps; above ~4× the stretched sound becomes choppy). Reversed clips longer than
   5 minutes play silently in the preview (they export with sound).
 - The installer is unsigned, so Windows SmartScreen shows a warning on first run.
-- Templates cannot contain sounds yet; add music from the Audio tab after applying one.
+- Only built-in music beds can be attached to templates (`TemplateDef.music`); user templates keep
+  built-in sounds, and other audio only when the template embeds its media.
 - Projects that use fonts installed on one PC fall back to a default font on PCs without them.

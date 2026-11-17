@@ -13,6 +13,8 @@ Prefer these extension points over editing shared core files.
 | Main-process feature (files, OS integration, child processes) | `src/main/handlers/<area>.ts` → `register(ctx)` | `src/main/context.ts` |
 | Settings page section | `src/renderer/src/ui/settings/defs/<area>.tsx` → `SettingsSectionDef[]` | `ui/settings/index.ts` |
 | Content (transitions, effects, templates…) | `src/renderer/src/library/<pack>/*.ts` | `library/types.ts` |
+| Content at runtime (packs, user templates) | `registerContent(source, { palettes, filters, templates… })` | `library/index.ts` (`onLibraryChange` notifies galleries) |
+| Data-only content pack for users | `*.kinorapack` (JSON + GLSL), built with `scripts/build-pack.mjs` | [`docs/PACKS.md`](PACKS.md) |
 
 ## Commands, menus and shortcuts
 

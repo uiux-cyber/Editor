@@ -2,7 +2,7 @@ import { linear, makeShape, makeSlot, radial } from '@/core/factory';
 import type { Clip, ShapeClip } from '@/core/types';
 import type { TemplateDef, TemplateEnv } from '../types';
 import { A, B, H, alignLeft, alpha, backdrop, column, fitAspect, holder, hrow, label, lay, mix, pItem, pill, setXY, split, strong, tItem, textOn, till, vivid, vstack, type Box, type Txt } from './_lib/b-kit';
-import { chance, pick } from './_lib/kit';
+import { chance, logoBug, pick } from './_lib/kit';
 
 const cardShadow = (env: TemplateEnv, k = 1): { color: string; blur: number; x: number; y: number } => ({ color: alpha('#000000', (env.palette.dark ? 0.42 : 0.12) * k), blur: 34, x: 0, y: 14 });
 
@@ -17,6 +17,7 @@ const templates: TemplateDef[] = [
     tags: ['corporate', 'presentation', 'title', 'board', 'quarterly', 'report', 'company'],
     duration: 6,
     poster: 0.6,
+    music: { soundId: 'music-corporate-inspire' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -57,8 +58,10 @@ const templates: TemplateDef[] = [
       const who = strong(env, 'Elena Ruiz', { name: 'Presenter', start: 1.6, duration: till(d, 1.6), size: L.tall ? 44 : L.wide ? 36 : 32, weight: 700, style: { align: 'left' }, anim: A('fade-in', 0.5, 'fade-out', 0.35) });
       const role = B(env, 'Chief Financial Officer', { name: 'Presenter role', start: 1.7, duration: till(d, 1.7), size: L.tall ? 36 : L.wide ? 30 : 28, color: c.textMuted, style: { align: 'left' }, anim: A('fade-in', 0.5, 'fade-out', 0.35) });
       column([tItem(company, 24), { clips: [line], w: 120, h: 6, gap: 30 }, tItem(title, 26), tItem(sub, L.tall ? 64 : 48), tItem(who, 4), tItem(role)], zone, 'left');
+      // Company logo (brand kit): over the photo when stacked, else under the copy column.
+      const logo = logoBug(env, stacked ? 'tl' : mediaRight ? 'bl' : 'br', { start: 1.0, duration: till(d, 1.0), anim: A('fade-in', 0.6, 'fade-out', 0.4) });
 
-      return [bg, photo, edge, company, line, title, sub, who, role];
+      return [bg, photo, edge, company, line, title, sub, who, role, logo];
     },
   },
 
@@ -138,7 +141,9 @@ const templates: TemplateDef[] = [
         setXY([k.fill], left + k.fw / 2, by);
       });
 
-      return [bg, kicker, title, ...cards.flatMap((k) => [k.card, k.val, k.lab, k.track, k.fill])];
+      // Company logo in a free corner (brand kit).
+      const logo = logoBug(env, 'tr', { start: 0.6, duration: till(d, 0.6), anim: A('fade-in', 0.6, 'fade-out', 0.4) });
+      return [bg, kicker, title, ...cards.flatMap((k) => [k.card, k.val, k.lab, k.track, k.fill]), logo];
     },
   },
 
@@ -289,6 +294,7 @@ const templates: TemplateDef[] = [
     tags: ['logo', 'reveal', 'brand', 'intro', 'corporate', 'sting', 'ident'],
     duration: 5,
     poster: 0.65,
+    music: { soundId: 'music-corporate-inspire' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;

@@ -19,6 +19,7 @@ const templates: TemplateDef[] = [
     tags: ['intro', 'channel', 'logo', 'youtube', 'opener', 'creator', 'brand'],
     duration: 5,
     poster: 0.55,
+    music: { soundId: 'music-upbeat-pop' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -33,7 +34,7 @@ const templates: TemplateDef[] = [
         makeShape('ellipse', { name: `Ring ${i + 1}`, start: 0.25 + i * 0.18, duration: till(d, 0.25 + i * 0.18), width: logo + 70 + i * 70, height: logo + 70 + i * 70, fill: alpha(c.bg, 0), stroke: { color: alpha(i ? c.secondary : pop, i ? 0.45 : 0.9), width: i ? 3 : 6 }, anim: A('zoom-in', 0.6, 'zoom-out', 0.4) }),
       );
       const disc = makeShape('ellipse', { name: 'Logo backing', start: 0.3, duration: till(d, 0.3), width: logo + 20, height: logo + 20, fill: c.surface, anim: A('pop-in', 0.5, 'pop-out', 0.4) });
-      const slot = makeSlot({ name: 'Channel logo', start: 0.4, duration: till(d, 0.4), width: logo, height: logo, radius: logo / 2, anim: A('twist-pop-in', 0.6, 'pop-out', 0.4) });
+      const slot = makeSlot({ name: 'Logo', start: 0.4, duration: till(d, 0.4), width: logo, height: logo, radius: logo / 2, anim: A('twist-pop-in', 0.6, 'pop-out', 0.4) });
       const spark = makeSticker('sparkles-twinkle', { name: 'Sparkles', start: 0.9, duration: till(d, 0.9), size: logo * 0.5, colors: [mix(pop, '#ffffff', 0.4), c.secondary], x: logo * 0.55, y: -logo * 0.45, anim: A('pop-in', 0.4, 'fade-out', 0.35) });
 
       const name = H(env, 'Studio Kettle', { name: 'Channel name', start: 1.0, duration: till(d, 1.0), size: L.tall ? 136 : L.wide ? 128 : 104, maxWidth: L.wide ? 1400 : L.s.w, maxLines: 1, textAnim: { in: { id: pick(r, ['char-spring-in', 'char-rise-in', 'cascade-center-in']), duration: 0.9 } }, anim: A(undefined, 0, 'zoom-out', 0.45) });
@@ -62,6 +63,7 @@ const templates: TemplateDef[] = [
     tags: ['end screen', 'outro', 'subscribe', 'watch next', 'youtube', 'thumbnails', 'end card'],
     duration: 12,
     poster: 0.5,
+    music: { soundId: 'music-lofi-chill' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -87,7 +89,7 @@ const templates: TemplateDef[] = [
 
       // Channel block
       const av = L.wide ? 300 : L.tall ? 220 : 170;
-      const avatar = makeSlot({ name: 'Channel avatar', start: 0.6, duration: till(d, 0.6), width: av, height: av, radius: av / 2, anim: A('pop-in', 0.5, 'pop-out', 0.4) });
+      const avatar = makeSlot({ name: 'Logo', start: 0.6, duration: till(d, 0.6), width: av, height: av, radius: av / 2, anim: A('pop-in', 0.5, 'pop-out', 0.4) });
       const avRing = makeShape('ellipse', { name: 'Avatar ring', start: 0.55, duration: till(d, 0.55), width: av + 20, height: av + 20, fill: alpha(c.bg, 0), stroke: { color: pop, width: 5 }, anim: A('zoom-in', 0.5, 'fade-out', 0.4) });
       const chan = strong(env, 'Studio Kettle', { name: 'Channel name', start: 0.9, duration: till(d, 0.9), size: L.tall ? 48 : L.wide ? 48 : 38, weight: 700, style: { align: 'left' }, anim: A('soft-slide-left-in', 0.45, 'fade-out', 0.4) });
       const subs = B(env, '312K subscribers', { name: 'Subscribers', start: 1.0, duration: till(d, 1.0), size: L.tall ? 32 : L.wide ? 32 : 26, color: c.textMuted, style: { align: 'left' }, anim: A('soft-slide-left-in', 0.45, 'fade-out', 0.4) });

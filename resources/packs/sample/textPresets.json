@@ -1,0 +1,26 @@
+[
+  {
+    "id": "kinora-sample-ribbon-title",
+    "name": "Ribbon Title",
+    "category": "title",
+    "sample": "Summer Sale",
+    "style": {
+      "fontFamily": "Anton",
+      "fontWeight": 400,
+      "fontSize": 140,
+      "uppercase": true,
+      "letterSpacing": 0.04,
+      "fill": {
+        "type": "linear",
+        "angle": 90,
+        "stops": [
+          { "offset": 0, "color": "#fff4d6" },
+          { "offset": 1, "color": "#ffc46b" }
+        ]
+      },
+      "background": { "color": "#9a2a12", "opacity": 0.94, "padX": 44, "padY": 12, "radius": 6 },
+      "shadow": { "color": "#00000066", "blur": 18, "x": 0, "y": 8 }
+    },
+    "anim": { "in": { "id": "pop-in", "duration": 0.5 }, "out": { "id": "fade-out", "duration": 0.4 } }
+  }
+]

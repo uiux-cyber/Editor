@@ -1,6 +1,7 @@
 import { Blend, FolderOpen, LayoutTemplate, Music, Palette, Shapes, Smile, Sparkles, Type, WandSparkles } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { useUI, type LibraryTab } from '@/store/ui';
+import { useLibraryVersion } from '../templates/hooks';
 import { AudioTab } from './AudioTab';
 import { ElementsTab } from './ElementsTab';
 import { EffectsTab, FiltersTab, TransitionsTab } from './FxTabs';
@@ -40,6 +41,12 @@ export function LibraryRail(): ReactNode {
 
 export function LibraryPanel(): ReactNode {
   const tab = useUI((s) => s.libraryTab);
+  // Content packs register items at runtime: remount the open gallery so its lists refresh.
+  const version = useLibraryVersion();
+  return <Fragment key={version}>{panelFor(tab)}</Fragment>;
+}
+
+function panelFor(tab: LibraryTab): ReactNode {
   switch (tab) {
     case 'media':
       return <MediaTab />;

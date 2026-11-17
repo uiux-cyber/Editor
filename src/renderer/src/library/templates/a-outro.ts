@@ -13,6 +13,7 @@ const templates: TemplateDef[] = [
     tags: ['outro', 'thanks', 'subscribe', 'like', 'end screen', 'confetti', 'youtube'],
     duration: 6,
     poster: 0.6,
+    music: { soundId: 'music-upbeat-pop' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -21,8 +22,12 @@ const templates: TemplateDef[] = [
       const sub = copy(env, pick(env.rng, ['See you in the next video', 'New episodes every Friday', 'Don’t forget to subscribe']), { name: 'Subtitle', ...life(env, 0.9, 0.1), size: 44, color: c.textMuted, maxWidth: safe.w, maxLines: 2, anim: an('soft-slide-up-in', 0.6, 'fade-out', 0.4) });
       const rowH = 170;
       const row = { transform: { y: 0 } };
+      // Channel / brand logo above the title (filled by the brand kit).
+      const L = env.portrait ? 170 : 120;
+      const logo = makeSlot({ name: 'Logo', ...life(env, 0.15, 0.1), width: L, height: L, radius: L / 2, fill: slotFill(env), anim: an('pop-in', 0.6, 'zoom-soft-out', 0.45) });
       stack(
         [
+          { clip: logo, height: L, gap: 36 },
           { clip: head, height: head.metrics.height, gap: 30 },
           { clip: sub, height: sub.metrics.height, gap: 70 },
           { clip: row, height: rowH },
@@ -35,10 +40,11 @@ const templates: TemplateDef[] = [
       const total = icon * 2 + subW + gap * 2;
       const x0 = -total / 2;
       const ry = row.transform.y;
-      const blockH = head.metrics.height + 30 + sub.metrics.height + 70 + rowH;
+      const blockH = L + 36 + head.metrics.height + 30 + sub.metrics.height + 70 + rowH;
       return [
         makeGenerator('confetti', { name: 'Confetti', duration: d, params: { colorBg: c.bg, colorA: c.primary, colorB: c.secondary, colorC: c.accent, colorD: tone(c.text, c.bg, 0.3), density: 0.38, size: 0.85, speed: 0.6 } }),
         softShade({ duration: d, start: 0, x: 0, y: 0, w: Math.min(env.cw * 1.4, safe.w + 900), h: blockH + 620, color: c.bg, strength: 1, plateau: true }),
+        logo,
         head,
         sub,
         makeSticker('like-thumb', { name: 'Like', ...life(env, 1.3, 0.25), size: icon, x: Math.round(x0 + icon / 2), y: ry, colors: [c.secondary, inkOn(env, c.secondary)], anim: an('pop-up-in', 0.5, 'pop-out', 0.3) }),
@@ -56,6 +62,7 @@ const templates: TemplateDef[] = [
     tags: ['outro', 'end screen', 'end card', 'next video', 'subscribe', 'youtube', 'channel'],
     duration: 10,
     poster: 0.5,
+    music: { soundId: 'music-lofi-chill' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -162,7 +169,7 @@ const templates: TemplateDef[] = [
         kick,
         head,
         makeShape('ellipse', { name: 'Avatar ring', ...life(env, 1.0, 0.1), width: av + 12, height: av + 12, x: avX, y: chY, fill: linear(45, c.primary, c.secondary), anim: an('pop-in', 0.5, 'pop-out', 0.35) }),
-        makeSlot({ name: 'Channel avatar', ...life(env, 1.05, 0.1), width: av, height: av, radius: av / 2, x: avX, y: chY, fill: slotFill(env), anim: an('pop-in', 0.5, 'pop-out', 0.35) }),
+        makeSlot({ name: 'Logo', ...life(env, 1.05, 0.1), width: av, height: av, radius: av / 2, x: avX, y: chY, fill: slotFill(env), anim: an('pop-in', 0.5, 'pop-out', 0.35) }),
         chName,
         makeShape('pill', { name: 'Subscribe pill', ...life(env, 1.35, 0.1), width: pillW, height: pillH, x: Math.round(tx + pillW / 2), y: pillY, fill: c.primary, anim: an('pop-in', 0.45, 'pop-out', 0.3, 'pulse', 1.6) }),
         subTxt,
@@ -179,6 +186,7 @@ const templates: TemplateDef[] = [
     tags: ['outro', 'follow', 'social', 'creator', 'reels', 'profile', 'cta'],
     duration: 6,
     poster: 0.75,
+    music: { soundId: 'music-hiphop-beat' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -219,7 +227,8 @@ const templates: TemplateDef[] = [
       return [
         makeGenerator('bokeh', { name: 'Bokeh', duration: d, params: { colorBg: c.bg, colorA: tone(c.primary, c.bg, 0.4), colorB: tone(c.secondary, c.bg, 0.5), colorC: tone(c.accent, c.bg, 0.55), density: 0.8, size: 1, speed: 0.5 } }),
         makeShape('ellipse', { name: 'Avatar ring', ...life(env, 0.15, 0.1), width: A + 24, height: A + 24, y: ay, fill: linear(45, c.primary, c.secondary, c.accent), anim: an('zoom-soft-in', 0.6, 'zoom-soft-out', 0.4, 'breathe', 4) }),
-        makeSlot({ name: 'Avatar', ...life(env, 0.2, 0.1), width: A, height: A, radius: A / 2, y: ay, fill: slotFill(env), anim: an('elastic-in', 0.9, 'zoom-soft-out', 0.4) }),
+        // The channel's logo or avatar (named Logo so the brand kit fills it).
+        makeSlot({ name: 'Logo', ...life(env, 0.2, 0.1), width: A, height: A, radius: A / 2, y: ay, fill: slotFill(env), anim: an('elastic-in', 0.9, 'zoom-soft-out', 0.4) }),
         chance(env.rng, 0.5)
           ? makeSticker('floating-hearts', { name: 'Hearts', ...life(env, 2.6, 0.1), size: Math.round(A * 0.9), x: Math.round(A / 2 + 60), y: Math.round(ay - A * 0.15), colors: [c.secondary, tone(c.secondary, '#ffffff', 0.4)], anim: an('fade-in', 0.4, 'fade-out', 0.4) })
           : makeSticker('sparkles-twinkle', { name: 'Sparkles', ...life(env, 2.6, 0.1), size: Math.round(A * 0.6), x: Math.round(A / 2 + 30), y: Math.round(ay - A / 2 + 20), colors: [lightPanel(env), c.accent], anim: an('pop-in', 0.4, 'fade-out', 0.4) }),
@@ -244,6 +253,7 @@ const templates: TemplateDef[] = [
     tags: ['outro', 'credits', 'film', 'roll', 'cast', 'crew', 'ending'],
     duration: 12,
     poster: 0.35,
+    music: { soundId: 'music-cinematic-pad' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -314,6 +324,7 @@ const templates: TemplateDef[] = [
     tags: ['outro', 'minimal', 'contact', 'website', 'brand', 'signoff', 'business'],
     duration: 6,
     poster: 0.6,
+    music: { soundId: 'music-ambient-drone', volume: 0.9 },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;

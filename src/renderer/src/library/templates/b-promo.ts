@@ -30,7 +30,7 @@ import {
   type Item,
   type Txt,
 } from './_lib/b-kit';
-import { chance, pick } from './_lib/kit';
+import { chance, logoBug, pick } from './_lib/kit';
 
 const softShadow = (env: TemplateEnv, k = 1): { color: string; blur: number; x: number; y: number } => ({ color: alpha('#000000', (env.palette.dark ? 0.45 : 0.16) * k), blur: 40, x: 0, y: 18 });
 
@@ -61,6 +61,7 @@ const templates: TemplateDef[] = [
     tags: ['sale', 'discount', 'flash sale', 'offer', 'shop', 'ecommerce', 'percent off'],
     duration: 6,
     poster: 0.6,
+    music: { soundId: 'music-funk-groove' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -87,8 +88,10 @@ const templates: TemplateDef[] = [
       const sub = strong(env, 'Ends tonight at midnight', { name: 'Deadline', start: 1.6, duration: till(d, 1.6), size: L.tall ? 48 : L.wide ? 44 : 36, weight: 500, color: alpha(c.text, 0.85), maxWidth: z.text.w, maxLines: 2, style: { align }, anim: A('soft-slide-up-in', 0.5, 'fade-out', 0.35) });
       const cta = pill(env, 'Shop now', { size: L.tall ? 44 : L.wide ? 40 : 34, fill: c.primary, start: 2.0, duration: till(d, 2.0), shadow: softShadow(env, 0.6), anim: A('pop-up-in', 0.5, 'pop-out', 0.3, 'pulse', 1.4) });
       column([pItem(kicker, 26), tItem(title, 4), tItem(offer, 18), tItem(sub, L.tall ? 48 : 36), pItem(cta)], z.text, align);
+      // Shop logo (brand kit) in the bottom corner of the copy side.
+      const logo = logoBug(env, z.stacked || side === 'left' ? 'br' : 'bl', { start: 0.8, duration: till(d, 0.8), anim: A('fade-in', 0.6, 'fade-out', 0.4) });
 
-      return [bg, plate, media, badge, ...kicker.clips, title, offer, sub, ...cta.clips];
+      return [bg, plate, media, badge, ...kicker.clips, title, offer, sub, ...cta.clips, logo];
     },
   },
 
@@ -102,6 +105,7 @@ const templates: TemplateDef[] = [
     tags: ['launch', 'product', 'introducing', 'tech', 'reveal', 'specs', 'new'],
     duration: 8,
     poster: 0.62,
+    music: { soundId: 'music-deep-house', volume: 0.7 },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -170,7 +174,10 @@ const templates: TemplateDef[] = [
         else price.transform.x = Math.round(ctaRow.transform.x);
       }
 
-      return [bg, glow, floor, media, intro, name, tag, ...specs.flatMap((s) => [s.val, s.lab]), ...cta.clips, price];
+      // Maker's logo (brand kit): top corner of the frame.
+      const logo = logoBug(env, z.stacked ? 'tl' : 'tr', { start: 1.0, duration: till(d, 1.0), anim: A('fade-in', 0.6, 'fade-out', 0.4) });
+
+      return [bg, glow, floor, media, intro, name, tag, ...specs.flatMap((s) => [s.val, s.lab]), ...cta.clips, price, logo];
     },
   },
 
@@ -375,6 +382,7 @@ const templates: TemplateDef[] = [
     tags: ['fashion', 'collection', 'lookbook', 'collage', 'editorial', 'drop', 'season'],
     duration: 8,
     poster: 0.6,
+    music: { soundId: 'music-deep-house', volume: 0.7 },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -442,6 +450,7 @@ const templates: TemplateDef[] = [
     tags: ['limited time', 'offer', 'bogo', 'marquee', 'ticker', 'cafe', 'restaurant', 'weekend'],
     duration: 6,
     poster: 0.55,
+    music: { soundId: 'music-future-bass', volume: 0.7 },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;

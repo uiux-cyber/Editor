@@ -1,0 +1,9 @@
+{
+  "format": "kinora-pack",
+  "version": 1,
+  "id": "kinora-sample",
+  "name": "Kinora Sample Pack",
+  "packVersion": "1.0.0",
+  "author": "Kinora",
+  "description": "A small tour of what content packs can add: three palettes, a font pairing, two filters, a text style, a transition, an effect, an animated background and a template."
+}

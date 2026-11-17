@@ -14,6 +14,8 @@ import { Ease, seededRandom } from '@/core/easing';
 import { MAX_COUNTER_DECIMALS, formatCounter } from '@/core/counter';
 import type { Clip, ClipAnimations } from '@/core/types';
 import type { AnimMod, AspectId, FontPair, GlyphMod, Palette, TemplateEnv, TextPresetDef } from '@/library/types';
+import { packContent, validatePack } from '@/library/packs';
+import { registerContent } from '@/library';
 
 type Level = 'error' | 'warn';
 interface Issue {
@@ -641,6 +643,18 @@ function checkTemplates(): void {
   }
   for (const def of L.TEMPLATES) {
     if (!(def.duration >= 1 && def.duration <= 120)) report('templates', def.id, 'error', 'duration out of range (1..120 s)');
+    // Music bed: a looping `music` sound, sensible level and fades that fit the template.
+    if (def.music) {
+      const m = def.music;
+      const sound = L.getSound(m.soundId);
+      if (!sound) report('templates', def.id, 'error', `music: unknown sound "${m.soundId}"`);
+      else if (sound.category !== 'music') report('templates', def.id, 'error', `music: "${m.soundId}" is a ${sound.category} sound, not a music bed`);
+      if (m.volume !== undefined && !(m.volume > 0 && m.volume <= 2)) report('templates', def.id, 'error', `music: volume ${m.volume} outside 0..2`);
+      for (const k of ['fadeIn', 'fadeOut'] as const) {
+        const v = m[k];
+        if (v !== undefined && !(v >= 0 && v <= def.duration / 2)) report('templates', def.id, 'error', `music: ${k} ${v}s must be within 0..${def.duration / 2}s`);
+      }
+    }
     const aspects = def.aspects ?? (Object.keys(ASPECTS) as AspectId[]);
     for (const aspect of aspects) {
       const [cw, ch] = ASPECTS[aspect];
@@ -667,6 +681,18 @@ function checkTemplates(): void {
             if (ids.has(clip.id)) report('templates', def.id, 'error', `[${aspect}] duplicate clip id`);
             ids.add(clip.id);
             checkClip('templates', def.id, clip, env, def.duration);
+            // Brand logo placeholders: a slot named "Logo", not too elongated, inside the frame.
+            if (clip.name.trim().toLowerCase() === 'logo' && clip.type === 'shape') {
+              const s = clip.shape;
+              if (!s.slot) report('templates', def.id, 'error', `[${aspect}] a layer named "Logo" must be a placeholder (makeSlot)`);
+              else {
+                const ratio = Math.max(s.width, s.height) / Math.max(1, Math.min(s.width, s.height));
+                if (ratio > 4) report('templates', def.id, 'warn', `[${aspect}] Logo placeholder is very elongated (${ratio.toFixed(1)}:1)`);
+                const hw = (s.width * Math.abs(clip.transform.scaleX)) / 2;
+                const hh = (s.height * Math.abs(clip.transform.scaleY)) / 2;
+                if (Math.abs(clip.transform.x) + hw > cw / 2 + 1 || Math.abs(clip.transform.y) + hh > ch / 2 + 1) report('templates', def.id, 'error', `[${aspect}] Logo placeholder leaves the frame`);
+              }
+            }
           }
           const end = Math.max(...clips.map((c) => c.start + c.duration));
           if (end < def.duration * 0.7) report('templates', def.id, 'warn', `[${aspect}] content ends at ${end.toFixed(1)}s, well before the ${def.duration}s duration`);
@@ -683,7 +709,47 @@ function checkTemplates(): void {
 
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Content packs shipped in resources/packs: validated exactly like an install (every shader
+// compiled), then registered so every other check below also covers their items.
+// ---------------------------------------------------------------------------------------------
+
+const PACK_FILES = import.meta.glob('../../resources/packs/*.kinorapack', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+
+function checkPacks(): void {
+  let n = 0;
+  for (const [file, text] of Object.entries(PACK_FILES)) {
+    const name = file.split('/').pop() ?? file;
+    const res = validatePack(text, {
+      compile: (kind, def) => {
+        try {
+          const src = kind === 'transition' ? wrapTransition(def as never) : kind === 'effect' ? wrapEffect(def as never) : wrapGenerator(def as never);
+          gl.deleteProgram(createProgram(gl, FULLSCREEN_VERT, src).program);
+          return null;
+        } catch (err) {
+          return (err as Error).message;
+        }
+      },
+    });
+    for (const e of res.errors) report('packs', name, 'error', e);
+    for (const w of res.warnings) report('packs', name, 'warn', w);
+    if (res.ok && res.pack) {
+      registerContent(`pack:${res.pack.id}`, packContent(res.pack));
+      n++;
+    }
+  }
+  counts.packs = n;
+}
+
 async function main(): Promise<void> {
+  // Packs first: their items join the registries the other steps walk.
+  if (wants('packs') || requested.length === 0 || ['transitions', 'effects', 'generators', 'filters', 'textPresets', 'templates'].some((p) => requested.includes(p))) {
+    try {
+      checkPacks();
+    } catch (err) {
+      report('packs', '*', 'error', `checker crashed: ${(err as Error).stack ?? String(err)}`);
+    }
+  }
   const steps: [string, () => void | Promise<void>][] = [
     ['transitions', checkTransitions],
     ['effects', checkEffects],

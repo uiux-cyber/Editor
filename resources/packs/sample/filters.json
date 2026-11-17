@@ -1,0 +1,34 @@
+[
+  {
+    "id": "kinora-sample-amber-glow",
+    "name": "Amber Glow",
+    "category": "cinematic",
+    "grade": {
+      "temperature": 0.32,
+      "tint": 0.04,
+      "contrast": 0.12,
+      "vibrance": 0.15,
+      "highlights": -0.12,
+      "shadowTint": "#3b1f5c",
+      "shadowTintAmount": 0.16,
+      "highlightTint": "#ffd59e",
+      "highlightTintAmount": 0.14,
+      "vignette": 0.22
+    }
+  },
+  {
+    "id": "kinora-sample-arctic-fade",
+    "name": "Arctic Fade",
+    "category": "mood",
+    "grade": {
+      "temperature": -0.28,
+      "saturation": -0.22,
+      "contrast": -0.06,
+      "fade": 0.16,
+      "highlightTint": "#dff3ff",
+      "highlightTintAmount": 0.16,
+      "shadowTint": "#16324a",
+      "shadowTintAmount": 0.12
+    }
+  }
+]

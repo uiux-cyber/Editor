@@ -7,8 +7,8 @@
 import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { makeImage, makeTrack, uid } from '@/core/factory';
 import { createProject } from '@/core/project';
-import type { Clip, MediaAsset, Project } from '@/core/types';
-import { Compositor, type MediaProvider } from '@/engine/compositor';
+import type { Clip, ID, MediaAsset, Project } from '@/core/types';
+import { Compositor, type FrameImage, type MediaProvider } from '@/engine/compositor';
 
 // ---------------------------------------------------------------------------------------------
 // Demo pictures (drawn once, used to preview filters, effects and transitions)
@@ -171,12 +171,19 @@ const demoAsset = (id: string): MediaAsset => ({
 export const DEMO_A = demoAsset('demo-a');
 export const DEMO_B = demoAsset('demo-b');
 
+// Other pictures thumbnails may show (brand logos, media embedded in user templates) are
+// provided by the templates feature (ui/templates/thumbImages.ts).
+let extraImages: ((assetId: ID) => FrameImage | null) | null = null;
+export function setExtraThumbImages(fn: ((assetId: ID) => FrameImage | null) | null): void {
+  extraImages = fn;
+}
+
 export const demoProvider: MediaProvider = {
-  videoFrame: () => null,
+  videoFrame: (clip) => extraImages?.(clip.assetId) ?? null,
   image: (assetId) => {
     if (assetId === 'demo-a') return { source: (demoA ??= demoCanvas(drawDemoA)), width: DEMO_W, height: DEMO_H, version: 1 };
     if (assetId === 'demo-b') return { source: (demoB ??= demoCanvas(drawDemoB)), width: DEMO_W, height: DEMO_H, version: 2 };
-    return null;
+    return extraImages?.(assetId) ?? null;
   },
 };
 
