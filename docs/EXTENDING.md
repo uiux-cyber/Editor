@@ -54,6 +54,18 @@ count-up text, pen paths, LUTs, curves / wheels, cutouts, EQ / compressor, proxi
 points, track roles and heights) — implement against them rather than inventing parallel fields.
 `parseProjectFile` must keep accepting older projects: new fields are optional.
 
+## Undo steps and timeline invariants
+
+- Every change goes through `updateProject(recipe, { label })` (or `begin(label)` / `commit(label)`
+  for gestures). The label names the step in the History panel ("Apply LUT", "Remove silence");
+  without one a name is derived from what changed. `updateFromBase` rebuilds the live project from
+  the gesture's starting snapshot (handy for "base + delta" drags).
+- The store keeps the magnetic main track packed after every update (`packMainTrack` in
+  `core/editing.ts`): when `project.magneticMain` is on, the bottom visual track (`mainTrackId`)
+  never has gaps, and linked partners follow its clips. New projects have it on.
+- `core/editing.ts` also has the trim modes (`applyEdit` with ripple / roll / slip / slide),
+  `insertOnMain`, group / link helpers and `splitClipsAt` (splits linked partners too).
+
 ## Shared helpers
 
 - `core/captions.ts` — caption clips (text clips on a `role: 'captions'` track) → cues, SRT / WebVTT

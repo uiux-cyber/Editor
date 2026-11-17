@@ -6,7 +6,9 @@ import {
   cutSelection,
   deleteSelection,
   duplicateSelection,
+  groupSelection,
   jumpToEdit,
+  linkSelection,
   nudgeSelection,
   paste,
   redo,
@@ -14,7 +16,10 @@ import {
   splitAtPlayhead,
   trimToPlayhead,
   undo,
+  ungroupSelection,
+  unlinkSelection,
 } from '../actions';
+import { runCommand } from '../commands';
 import { useMenu } from '../common/overlays';
 import { clearMarks, goToIn, goToOut, markIn, markOut } from '../export/actions';
 import { importViaDialog } from '../library/MediaTab';
@@ -45,8 +50,16 @@ export const SHORTCUTS: ShortcutInfo[] = [
   { group: 'Editing', keys: ['Alt', '←/→'], label: 'Nudge selection by one frame' },
   { group: 'Editing', keys: ['Ctrl', 'Z'], label: 'Undo' },
   { group: 'Editing', keys: ['Ctrl', 'Shift', 'Z'], label: 'Redo' },
+  { group: 'Editing', keys: ['Ctrl', 'H'], label: 'History' },
+  { group: 'Editing', keys: ['Ctrl', 'G'], label: 'Group (Ctrl+Shift+G ungroups)' },
+  { group: 'Editing', keys: ['Ctrl', 'L'], label: 'Link (Ctrl+Shift+L unlinks)' },
+  { group: 'Editing', keys: ['Alt', 'Click'], label: 'Select one clip of a group or link' },
   { group: 'Timeline', keys: ['V'], label: 'Select tool' },
   { group: 'Timeline', keys: ['C'], label: 'Blade tool' },
+  { group: 'Timeline', keys: ['E'], label: 'Ripple tool (or Shift-drag an edge)' },
+  { group: 'Timeline', keys: ['R'], label: 'Roll tool' },
+  { group: 'Timeline', keys: ['Y'], label: 'Slip tool' },
+  { group: 'Timeline', keys: ['U'], label: 'Slide tool' },
   { group: 'Timeline', keys: ['N'], label: 'Toggle snapping' },
   { group: 'Timeline', keys: ['M'], label: 'Add marker' },
   { group: 'Timeline', keys: ['I', 'O'], label: 'Mark In / Out at the playhead' },
@@ -156,6 +169,21 @@ export function handleEditorKey(e: KeyboardEvent): void {
         e.preventDefault();
         void importViaDialog();
         return;
+      // Timeline editing (commands in ui/commands/defs/editing.ts).
+      case 'g':
+        e.preventDefault();
+        if (e.shiftKey) ungroupSelection();
+        else groupSelection();
+        return;
+      case 'l':
+        e.preventDefault();
+        if (e.shiftKey) unlinkSelection();
+        else linkSelection();
+        return;
+      case 'h':
+        e.preventDefault();
+        runCommand('view.history');
+        return;
       case '=':
       case '+':
         e.preventDefault();
@@ -232,6 +260,18 @@ export function handleEditorKey(e: KeyboardEvent): void {
     case 'c':
     case 'b':
       ui.setTool('blade');
+      return;
+    case 'e':
+      runCommand('timeline.tool.ripple');
+      return;
+    case 'r':
+      runCommand('timeline.tool.roll');
+      return;
+    case 'y':
+      runCommand('timeline.tool.slip');
+      return;
+    case 'u':
+      runCommand('timeline.tool.slide');
       return;
     case 'n':
       ui.set({ snapping: !ui.snapping });

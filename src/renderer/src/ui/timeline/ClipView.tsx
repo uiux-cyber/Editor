@@ -1,4 +1,4 @@
-import { Film, Image as ImageIcon, Layers, Music, Shapes, Smile, Sparkles, Type, VolumeX } from 'lucide-react';
+import { Film, Image as ImageIcon, Layers, Link2, Music, Shapes, Smile, Sparkles, Type, VolumeX } from 'lucide-react';
 import { memo, useEffect, useRef, type ReactNode } from 'react';
 import { allKeyframeTimes } from '@/core/keyframes';
 import type { Clip, MediaAsset } from '@/core/types';
@@ -6,6 +6,7 @@ import { PEAKS_PER_SECOND, filmFrameAt, getFilmstrip, getWaveform, onAssetVisual
 import { getSticker } from '@/library';
 import { onAnimationFrames, paintAnimationStrip } from '../library/animatedThumb';
 import { LEFT_PAD } from './geometry';
+import { GroupBadgeIcon } from './icons';
 
 const ICONS: Record<Clip['type'], ReactNode> = {
   video: <Film size={11} />,
@@ -167,9 +168,13 @@ export interface ClipViewProps {
   /** Highlighted as the target of an effect / filter drop. */
   dropTarget: boolean;
   thumb: string | null;
+  /** Shared colour of the clip's group (grouped clips only). */
+  groupColor?: string;
+  /** The clip is linked to another one (e.g. a video and its detached sound). */
+  linked?: boolean;
 }
 
-export const ClipView = memo(function ClipView({ clip, asset, pps, viewLeft, viewWidth, height, selected, missing, locked, dimmed, dropTarget, thumb }: ClipViewProps): ReactNode {
+export const ClipView = memo(function ClipView({ clip, asset, pps, viewLeft, viewWidth, height, selected, missing, locked, dimmed, dropTarget, thumb, groupColor, linked }: ClipViewProps): ReactNode {
   const left = LEFT_PAD + clip.start * pps;
   const width = Math.max(2, clip.duration * pps);
   const keyframes = clip.keyframes ? allKeyframeTimes(clip) : [];
@@ -186,14 +191,25 @@ export const ClipView = memo(function ClipView({ clip, asset, pps, viewLeft, vie
 
   return (
     <div
-      className={`clip clip--${clip.type} ${selected ? 'is-selected' : ''} ${missing ? 'is-missing' : ''} ${locked ? 'is-locked' : ''} ${dimmed ? 'is-dimmed' : ''} ${dropTarget ? 'is-drop' : ''} ${slot ? 'is-slot' : ''}`}
-      style={{ left, width, height }}
+      className={`clip clip--${clip.type} ${selected ? 'is-selected' : ''} ${missing ? 'is-missing' : ''} ${locked ? 'is-locked' : ''} ${dimmed ? 'is-dimmed' : ''} ${dropTarget ? 'is-drop' : ''} ${slot ? 'is-slot' : ''} ${groupColor ? 'is-grouped' : ''} ${linked ? 'is-linked' : ''}`}
+      style={groupColor ? { left, width, height, ['--group' as string]: groupColor } : { left, width, height }}
       data-clip={clip.id}
     >
       {(clip.type === 'video' || clip.type === 'image' || clip.type === 'audio') && <ClipCanvas clip={clip} asset={asset} pps={pps} viewLeft={viewLeft} viewWidth={viewWidth} height={inner} thumb={thumb} />}
+      {groupColor && <span className="clip__group" />}
       {!compact && (
         <div className="clip__label" style={{ transform: `translateX(${labelShift}px)` }}>
           <span className="clip__icon">{emoji && emoji.kind === 'emoji' ? <span className="clip__emoji">{emoji.char}</span> : ICONS[clip.type]}</span>
+          {linked && (
+            <span className="clip__badge clip__badge--link" title="Linked — moves, trims, splits and deletes with its partner (Alt-click to pick it alone)">
+              <Link2 size={10} />
+            </span>
+          )}
+          {groupColor && (
+            <span className="clip__badge clip__badge--group" title="Grouped — selects and moves with its group (Alt-click to pick it alone)">
+              <GroupBadgeIcon size={10} />
+            </span>
+          )}
           <span className="clip__name truncate">{missing ? `Missing: ${clip.name}` : clip.type === 'text' ? clip.text.content.replace(/\s+/g, ' ') : clip.name}</span>
           {(clip.type === 'video' || clip.type === 'audio') && Math.abs(clip.speed - 1) > 0.001 && <span className="clip__tag mono">{clip.speed}×</span>}
           {muted && (

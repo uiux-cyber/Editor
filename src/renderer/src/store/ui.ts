@@ -3,8 +3,8 @@ import type { Clip, ID } from '@/core/types';
 
 export type Screen = 'home' | 'editor';
 export type LibraryTab = 'media' | 'templates' | 'text' | 'stickers' | 'transitions' | 'effects' | 'filters' | 'audio' | 'elements' | 'tools';
-/** `pen` draws bezier path shapes on the preview (ui/preview/pen). */
-export type Tool = 'select' | 'blade' | 'pen';
+/** Tools. ripple / roll / slip / slide are the timeline trim modes (ui/timeline/editGestures.ts); `pen` draws bezier path shapes on the preview (ui/preview/pen). */
+export type Tool = 'select' | 'blade' | 'ripple' | 'roll' | 'slip' | 'slide' | 'pen';
 export type ModalId = 'export' | 'newProject' | 'shortcuts' | 'settings' | 'projectSettings' | null;
 
 export interface Toast {

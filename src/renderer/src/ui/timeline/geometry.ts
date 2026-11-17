@@ -10,6 +10,21 @@ export const BOTTOM_ZONE = 40;
 export const TRACK_GAP = 4;
 export const TRACK_HEIGHT: Record<TrackKind, number> = { visual: 56, audio: 44 };
 
+/** View → Track size presets ("medium" is the default height). */
+export type TrackSize = 'small' | 'medium' | 'large';
+export const TRACK_SIZES: Record<TrackSize, Record<TrackKind, number>> = {
+  small: { visual: 38, audio: 32 },
+  medium: TRACK_HEIGHT,
+  large: { visual: 96, audio: 76 },
+};
+/** Limits for dragging a track's height. */
+export const TRACK_HEIGHT_LIMITS: Record<TrackKind, [number, number]> = { visual: [30, 180], audio: [26, 160] };
+
+export const clampTrackHeight = (kind: TrackKind, h: number): number => Math.round(Math.min(TRACK_HEIGHT_LIMITS[kind][1], Math.max(TRACK_HEIGHT_LIMITS[kind][0], h)));
+
+/** Row height of a track: its own (persisted) height or the default for its kind. */
+export const trackHeight = (track: Pick<Track, 'kind' | 'height'>): number => (track.height ? clampTrackHeight(track.kind, track.height) : TRACK_HEIGHT[track.kind]);
+
 export const MIN_PPS = 1.5;
 export const MAX_PPS = 900;
 
@@ -36,7 +51,7 @@ export function layoutTracks(tracks: Track[]): Layout {
   tracks.forEach((track, index) => {
     // A slightly larger gap separates the picture tracks from the sound tracks.
     if (prevKind && prevKind !== track.kind) y += 8;
-    const row: TrackRow = { id: track.id, kind: track.kind, top: y, height: TRACK_HEIGHT[track.kind], index };
+    const row: TrackRow = { id: track.id, kind: track.kind, top: y, height: trackHeight(track), index };
     rows.push(row);
     byId.set(track.id, row);
     y += row.height + TRACK_GAP;

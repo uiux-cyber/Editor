@@ -6,8 +6,11 @@ import { updateProject, useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { addMarker, copySelection, cutSelection, deleteSelection, duplicateSelection, paste, redo, selectAll, splitAtPlayhead, undo } from '../actions';
 import { ExportQueueButton } from '../export/QueueButton';
+import { groupSelection, linkSelection, setTrackSize, toggleMagneticMain, ungroupSelection, unlinkSelection } from '../actions';
 import { openMenuBelow, type MenuItem } from '../common/overlays';
 import { importViaDialog } from '../library/MediaTab';
+import { useHistoryPanel } from '../timeline/HistoryPanel';
+import { TRACK_HEIGHT, TRACK_SIZES } from '../timeline/geometry';
 import { closeProject, newProjectPrompt, openProject, saveProject } from './commands';
 
 export function Logo({ size = 20 }: { size?: number }): ReactNode {
@@ -47,6 +50,7 @@ function menus(): Record<string, MenuItem[]> {
     Edit: [
       { label: 'Undo', shortcut: 'Ctrl+Z', disabled: store.past.length === 0, run: undo },
       { label: 'Redo', shortcut: 'Ctrl+Shift+Z', disabled: store.future.length === 0, run: redo },
+      { label: 'History…', shortcut: 'Ctrl+H', run: () => useHistoryPanel.getState().toggle() },
       { type: 'separator' },
       { label: 'Cut', shortcut: 'Ctrl+X', disabled: !hasSelection, run: cutSelection },
       { label: 'Copy', shortcut: 'Ctrl+C', disabled: !hasSelection, run: () => void copySelection() },
@@ -58,6 +62,11 @@ function menus(): Record<string, MenuItem[]> {
       { label: 'Select all', shortcut: 'Ctrl+A', run: selectAll },
       { label: 'Split at playhead', shortcut: 'S', run: splitAtPlayhead },
       { label: 'Add marker', shortcut: 'M', run: addMarker },
+      { type: 'separator' },
+      { label: 'Group', shortcut: 'Ctrl+G', disabled: ui.selection.length < 2, run: groupSelection },
+      { label: 'Ungroup', shortcut: 'Ctrl+Shift+G', disabled: !ui.selection.some((id) => store.project.clips[id]?.groupId), run: ungroupSelection },
+      { label: 'Link', shortcut: 'Ctrl+L', disabled: ui.selection.length < 2, run: linkSelection },
+      { label: 'Unlink', shortcut: 'Ctrl+Shift+L', disabled: !ui.selection.some((id) => store.project.clips[id]?.linkId), run: unlinkSelection },
     ],
     View: [
       { label: 'Fit timeline to window', shortcut: 'Shift+Z', run: () => window.dispatchEvent(new CustomEvent('kinora:timeline-fit')) },
@@ -65,6 +74,7 @@ function menus(): Record<string, MenuItem[]> {
       { label: 'Zoom timeline out', shortcut: '−', run: () => window.dispatchEvent(new CustomEvent('kinora:timeline-zoom', { detail: 1 / 1.4 })) },
       { type: 'separator' },
       { label: 'Snapping', shortcut: 'N', checked: ui.snapping, run: () => ui.set({ snapping: !ui.snapping }) },
+      { label: 'Magnetic main track', checked: !!store.project.magneticMain, run: toggleMagneticMain },
       { label: 'Safe zones', checked: ui.safeZones, run: () => ui.set({ safeZones: !ui.safeZones }) },
       { label: 'Loop playback', checked: ui.loop, run: () => ui.set({ loop: !ui.loop }) },
       { type: 'separator' },
@@ -72,6 +82,14 @@ function menus(): Record<string, MenuItem[]> {
       { label: 'Full', checked: ui.previewQuality === 1, run: () => ui.set({ previewQuality: 1 }) },
       { label: 'Half', checked: ui.previewQuality === 0.5, run: () => ui.set({ previewQuality: 0.5 }) },
       { label: 'Quarter', checked: ui.previewQuality === 0.25, run: () => ui.set({ previewQuality: 0.25 }) },
+      { type: 'separator' },
+      { type: 'label', label: 'Track size' },
+      ...(['small', 'medium', 'large'] as const).map((size) => ({
+        label: size[0].toUpperCase() + size.slice(1),
+        // Checked when every track has that size.
+        checked: store.project.tracks.every((t) => (t.height ?? TRACK_HEIGHT[t.kind]) === TRACK_SIZES[size][t.kind]),
+        run: () => setTrackSize(size),
+      })),
     ],
     Help: [
       { label: 'Keyboard shortcuts', shortcut: '?', run: () => ui.openModal('shortcuts') },

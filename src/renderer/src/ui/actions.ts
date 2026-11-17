@@ -4,6 +4,7 @@
  */
 
 import { uid, makeAdjustment, makeAudio, makeEffect, makeGenerator, makeImage, makeShape, makeSticker, makeText, makeVideo, linear } from '@/core/factory';
+import { groupClips, insertOnMain, linkClips, splitClipsAt, ungroupClips, unlinkClips } from '@/core/editing';
 import {
   addTrack,
   areAdjacent,
@@ -18,6 +19,8 @@ import {
   insertClipsAt,
   insertTemplateLayers,
   isFree,
+  isMagneticTrack,
+  mainTrackId,
   maxDurationFromSource,
   nearestFreeStart,
   projectDuration,
@@ -25,7 +28,6 @@ import {
   removeClips,
   rippleDelete,
   setTransition,
-  splitClipAt,
   trackWithRoom,
 } from '@/core/project';
 import { defaultAnimationClipDuration } from '@/core/animTiming';
@@ -38,6 +40,7 @@ import { getEffect, getFilter, getGenerator, getSticker, getTextPreset, getTrans
 import { buildTemplate, type TemplateVariation } from '@/library/templateEngine';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { TRACK_SIZES, clampTrackHeight, type TrackSize } from './timeline/geometry';
 
 const DEFAULT_STILL_DURATION = 5;
 
@@ -80,7 +83,9 @@ export interface Placement {
  * everything already visible in that time range, so the new layer is never hidden.
  */
 function overlayTrack(p: Project, start: number, duration: number): Track {
-  const visual = p.tracks.filter((t) => t.kind === 'visual');
+  // Overlays never go on a magnetic main track: it holds the base sequence.
+  const main = p.magneticMain ? mainTrackId(p) : null;
+  const visual = p.tracks.filter((t) => t.kind === 'visual' && t.id !== main);
   let topBusy = visual.length; // index of the top-most track that has content in range
   for (let i = 0; i < visual.length; i++) {
     if (!isFree(p, visual[i].id, start, duration)) {
@@ -114,7 +119,7 @@ function place(p: Project, clip: Clip, where: Placement, mode: 'media' | 'overla
     const t = p.tracks.find((x) => x.id === where.trackId);
     if (t && t.kind === kind && !t.locked) {
       track = t;
-      start = nearestFreeStart(p, t.id, start, clip.duration);
+      if (!isMagneticTrack(p, t.id)) start = nearestFreeStart(p, t.id, start, clip.duration);
     }
   }
   if (!track) {
@@ -136,19 +141,29 @@ function place(p: Project, clip: Clip, where: Placement, mode: 'media' | 'overla
   clip.trackId = track.id;
   clip.start = start;
   p.clips[clip.id] = clip;
+  if (isMagneticTrack(p, track.id)) {
+    // Magnetic main track: insert at the nearest cut (click-to-add appends to the sequence).
+    const append = mode === 'media' && where.time === undefined && !where.trackId;
+    insertOnMain(p, [clip.id], append ? Number.MAX_SAFE_INTEGER : start);
+  }
   return clip;
 }
 
-function commitNew(build: (p: Project) => Clip | Clip[] | null): ID[] {
+function commitNew(build: (p: Project) => Clip | Clip[] | null, label: string): ID[] {
   let ids: ID[] = [];
-  updateProject((p) => {
-    const made = build(p);
-    if (!made) return;
-    ids = (Array.isArray(made) ? made : [made]).map((c) => c.id);
-  });
+  updateProject(
+    (p) => {
+      const made = build(p);
+      if (!made) return;
+      ids = (Array.isArray(made) ? made : [made]).map((c) => c.id);
+    },
+    { label },
+  );
   if (ids.length) useUI.getState().select(ids);
   return ids;
 }
+
+const KIND_NAMES: Record<MediaAsset['kind'], string> = { video: 'video', audio: 'audio', image: 'image', animation: 'animation' };
 
 // ---------------------------------------------------------------------------------------------
 // Adding content
@@ -161,7 +176,7 @@ export function addAsset(asset: MediaAsset, where: Placement = {}): ID[] {
     // Animated GIF / WebP / APNG / Lottie: an image clip one loop long (at least 3 s).
     if (asset.kind === 'animation') return place(p, makeImage(asset, { duration: defaultAnimationClipDuration(asset.duration) }), where, 'media');
     return place(p, makeVideo(asset), where, 'media');
-  });
+  }, `Add ${KIND_NAMES[asset.kind]}`);
 }
 
 export function addText(presetId: string | null, where: Placement = {}): ID[] {
@@ -180,7 +195,7 @@ export function addText(presetId: string | null, where: Placement = {}): ID[] {
     const maxSize = cw < 1300 ? 0.72 : 1;
     if (maxSize < 1) clip.text.fontSize = Math.round(clip.text.fontSize * maxSize);
     return place(p, clip, where, 'overlay');
-  });
+  }, 'Add text');
 }
 
 export function addSticker(stickerId: string, where: Placement = {}): ID[] {
@@ -192,7 +207,7 @@ export function addSticker(stickerId: string, where: Placement = {}): ID[] {
     const size = Math.min(360, (cw * 0.5) / aspect);
     const clip = makeSticker(stickerId, { duration: DEFAULT_STILL_DURATION, size: Math.round(size), name: def.name });
     return place(p, clip, where, 'overlay');
-  });
+  }, 'Add sticker');
 }
 
 export function addShape(kind: ShapeKind, where: Placement = {}): ID[] {
@@ -206,13 +221,13 @@ export function addShape(kind: ShapeKind, where: Placement = {}): ID[] {
       radius: kind === 'rect' || kind === 'frame' ? 28 : 0,
     });
     return place(p, clip, where, 'overlay');
-  });
+  }, 'Add shape');
 }
 
 export function addGenerator(generatorId: string, where: Placement = {}): ID[] {
   const def = getGenerator(generatorId);
   if (!def) return [];
-  return commitNew((p) => place(p, makeGenerator(generatorId, { duration: DEFAULT_STILL_DURATION, name: def.name }), where, 'media'));
+  return commitNew((p) => place(p, makeGenerator(generatorId, { duration: DEFAULT_STILL_DURATION, name: def.name }), where, 'media'), 'Add background');
 }
 
 export function addAdjustment(where: Placement = {}, init?: { effectId?: string; filterId?: string }): ID[] {
@@ -233,13 +248,13 @@ export function addAdjustment(where: Placement = {}, init?: { effectId?: string;
       }
     }
     return place(p, clip, where, 'overlay');
-  });
+  }, 'Add adjustment layer');
 }
 
 export async function addSound(soundId: string, where: Placement = {}): Promise<ID[]> {
   try {
     const asset = await addSoundAsset(soundId);
-    return commitNew((p) => place(p, makeAudio(p.assets[asset.id] ?? asset), where, 'audio'));
+    return commitNew((p) => place(p, makeAudio(p.assets[asset.id] ?? asset), where, 'audio'), 'Add sound');
   } catch (err) {
     toast('error', 'Could not add the sound', (err as Error).message);
     return [];
@@ -255,9 +270,12 @@ export function applyTemplate(v: TemplateVariation, time?: number): ID[] {
     return [];
   }
   let ids: ID[] = [];
-  updateProject((p) => {
-    ids = insertTemplateLayers(p, built.clips, snapToFrame(time ?? engine.time, p.settings.fps), p.settings.fps);
-  });
+  updateProject(
+    (p) => {
+      ids = insertTemplateLayers(p, built.clips, snapToFrame(time ?? engine.time, p.settings.fps), p.settings.fps);
+    },
+    { label: 'Apply template' },
+  );
   useUI.getState().select(ids);
   return ids;
 }
@@ -265,9 +283,12 @@ export function applyTemplate(v: TemplateVariation, time?: number): ID[] {
 /** Drop media on a template placeholder. */
 export function fillSlotWith(slotId: ID, asset: MediaAsset): void {
   let newId: ID | null = null;
-  updateProject((p) => {
-    newId = fillSlot(p, slotId, asset);
-  });
+  updateProject(
+    (p) => {
+      newId = fillSlot(p, slotId, asset);
+    },
+    { label: 'Fill placeholder' },
+  );
   if (newId) useUI.getState().select([newId]);
 }
 
@@ -313,18 +334,24 @@ export function addTransition(type: string, fromId?: ID, toId?: ID): boolean {
     return false;
   }
   let id: ID | null = null;
-  updateProject((p) => {
-    const tr = setTransition(p, pair!.from.id, pair!.to.id, def.id, def.duration ?? 0.6);
-    id = tr?.id ?? null;
-  });
+  updateProject(
+    (p) => {
+      const tr = setTransition(p, pair!.from.id, pair!.to.id, def.id, def.duration ?? 0.6);
+      id = tr?.id ?? null;
+    },
+    { label: 'Add transition' },
+  );
   if (id) useUI.getState().selectTransition(id);
   return !!id;
 }
 
 export function removeTransition(id: ID): void {
-  updateProject((p) => {
-    delete p.transitions[id];
-  });
+  updateProject(
+    (p) => {
+      delete p.transitions[id];
+    },
+    { label: 'Remove transition' },
+  );
   sanitizeSelection();
 }
 
@@ -337,12 +364,15 @@ export function applyEffect(effectId: string, clipId?: ID): void {
     toast('info', `${def.name} added as an adjustment layer`, 'It affects everything beneath it. Select a clip first to apply an effect to that clip only.');
     return;
   }
-  updateProject((p) => {
-    for (const id of targets) {
-      const clip = p.clips[id];
-      if (clip && clip.type !== 'audio') clip.effects.push(makeEffect(def.id));
-    }
-  });
+  updateProject(
+    (p) => {
+      for (const id of targets) {
+        const clip = p.clips[id];
+        if (clip && clip.type !== 'audio') clip.effects.push(makeEffect(def.id));
+      }
+    },
+    { label: `Apply ${def.name}` },
+  );
 }
 
 export function applyFilter(filterId: string | null, clipId?: ID): void {
@@ -354,14 +384,17 @@ export function applyFilter(filterId: string | null, clipId?: ID): void {
     if (def) toast('info', `${def.name} added as an adjustment layer`, 'It grades everything beneath it. Select a clip first to filter that clip only.');
     return;
   }
-  updateProject((p) => {
-    for (const id of targets) {
-      const clip = p.clips[id];
-      if (!clip || clip.type === 'audio') continue;
-      if (filterId) clip.filter = { id: filterId, intensity: clip.filter?.intensity ?? 1 };
-      else delete clip.filter;
-    }
-  });
+  updateProject(
+    (p) => {
+      for (const id of targets) {
+        const clip = p.clips[id];
+        if (!clip || clip.type === 'audio') continue;
+        if (filterId) clip.filter = { id: filterId, intensity: clip.filter?.intensity ?? 1 };
+        else delete clip.filter;
+      }
+    },
+    { label: filterId ? `Apply ${getFilter(filterId)?.name ?? 'filter'}` : 'Remove filter' },
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -404,20 +437,25 @@ export function splitAtPlayhead(): void {
     toast('info', 'Nothing to split here', 'Move the playhead over a clip first.');
     return;
   }
-  const created: ID[] = [];
-  updateProject((p) => {
-    for (const c of candidates) {
-      const id = splitClipAt(p, c.id, time, p.settings.fps);
-      if (id) created.push(id);
-    }
-  });
+  let created: ID[] = [];
+  updateProject(
+    (p) => {
+      // Linked partners (a video and its detached sound) are split with it.
+      created = splitClipsAt(p, candidates.map((c) => c.id), time, p.settings.fps, true);
+    },
+    { label: 'Split' },
+  );
   if (created.length) useUI.getState().select(created);
 }
 
-export function splitClip(clipId: ID, time: number): void {
-  updateProject((p) => {
-    splitClipAt(p, clipId, time, p.settings.fps);
-  });
+/** Split one clip (blade tool). With `linked`, its linked partners are split at the same time. */
+export function splitClip(clipId: ID, time: number, linked = true): void {
+  updateProject(
+    (p) => {
+      splitClipsAt(p, [clipId], time, p.settings.fps, linked);
+    },
+    { label: 'Split' },
+  );
 }
 
 export function deleteSelection(ripple = false): void {
@@ -428,13 +466,22 @@ export function deleteSelection(ripple = false): void {
   }
   const ids = ui.selection.filter((id) => getProject().clips[id]);
   if (ids.length === 0) return;
-  updateProject((p) => {
-    const locked = new Set(p.tracks.filter((t) => t.locked).map((t) => t.id));
-    const deletable = ids.filter((id) => p.clips[id] && !locked.has(p.clips[id].trackId));
-    if (ripple) rippleDelete(p, deletable);
-    else removeClips(p, deletable);
-  });
+  updateProject(
+    (p) => {
+      const locked = new Set(p.tracks.filter((t) => t.locked).map((t) => t.id));
+      const deletable = ids.filter((id) => p.clips[id] && !locked.has(p.clips[id].trackId));
+      if (ripple) rippleDelete(p, deletable);
+      else removeClips(p, deletable);
+    },
+    { label: ripple ? 'Ripple delete' : ids.length > 1 ? 'Delete clips' : 'Delete clip' },
+  );
   sanitizeSelection();
+}
+
+/** How paste / duplicate treat a magnetic main track: copies of its clips insert at a cut. */
+function magneticMain(p: Project): { id: ID; insert: (p: Project, ids: ID[], time: number) => void } | undefined {
+  const id = p.magneticMain ? mainTrackId(p) : null;
+  return id ? { id, insert: (d, ids, time) => void insertOnMain(d, ids, time) } : undefined;
 }
 
 export function copySelection(): boolean {
@@ -458,9 +505,12 @@ export function paste(): void {
   const usable = data.clips.filter((c) => !('assetId' in c) || project.assets[c.assetId]);
   if (usable.length === 0) return;
   let ids: ID[] = [];
-  updateProject((p) => {
-    ids = insertClipsAt(p, usable, playhead(), data.trackOrder);
-  });
+  updateProject(
+    (p) => {
+      ids = insertClipsAt(p, usable, playhead(), data.trackOrder, magneticMain(p));
+    },
+    { label: 'Paste' },
+  );
   useUI.getState().select(ids);
 }
 
@@ -470,9 +520,12 @@ export function duplicateSelection(): void {
   const project = getProject();
   const end = Math.max(...clips.map(clipEnd));
   let ids: ID[] = [];
-  updateProject((p) => {
-    ids = insertClipsAt(p, clips, end, project.tracks.map((t) => t.id));
-  });
+  updateProject(
+    (p) => {
+      ids = insertClipsAt(p, clips, end, project.tracks.map((t) => t.id), magneticMain(p));
+    },
+    { label: 'Duplicate' },
+  );
   useUI.getState().select(ids);
 }
 
@@ -495,7 +548,7 @@ export function nudgeSelection(frames: number): void {
       for (const c of clips) p.clips[c.id].start = snapToFrame(Math.max(0, c.start + delta), f);
       cleanupTransitions(p);
     },
-    { coalesce: 'nudge' },
+    { coalesce: 'nudge', label: 'Nudge' },
   );
 }
 
@@ -506,31 +559,43 @@ export function trimToPlayhead(edge: 'start' | 'end'): void {
   const sel = selectedClips();
   const targets = (sel.length ? sel : Object.values(project.clips)).filter((c) => time > c.start + 1e-6 && time < clipEnd(c) - 1e-6);
   if (targets.length === 0) return;
-  updateProject((p) => {
-    for (const t of targets) {
-      const clip = p.clips[t.id];
-      if (edge === 'start') {
-        const cut = time - clip.start;
-        if (clip.type === 'video' || clip.type === 'audio') clip.trimIn += cut * clip.speed;
-        if (clip.keyframes) {
-          for (const frames of Object.values(clip.keyframes)) frames?.forEach((k) => (k.t = Math.max(0, k.t - cut)));
+  updateProject(
+    (p) => {
+      for (const t of targets) {
+        const clip = p.clips[t.id];
+        if (edge === 'start') {
+          const cut = time - clip.start;
+          if (clip.type === 'video' || clip.type === 'audio') clip.trimIn += cut * clip.speed;
+          if (clip.keyframes) {
+            for (const frames of Object.values(clip.keyframes)) frames?.forEach((k) => (k.t = Math.max(0, k.t - cut)));
+          }
+          clip.duration -= cut;
+          clip.start = time;
+        } else {
+          clip.duration = time - clip.start;
         }
-        clip.duration -= cut;
-        clip.start = time;
-      } else {
-        clip.duration = time - clip.start;
       }
-    }
-    cleanupTransitions(p);
-  });
+      cleanupTransitions(p);
+    },
+    { label: edge === 'start' ? 'Trim start to playhead' : 'Trim end to playhead' },
+  );
 }
 
 export function detachAudioFromSelection(): void {
   const clips = selectedClips().filter((c) => c.type === 'video');
   if (clips.length === 0) return;
-  updateProject((p) => {
-    for (const c of clips) detachAudio(p, c.id);
-  });
+  const made: ID[] = [];
+  updateProject(
+    (p) => {
+      for (const c of clips) {
+        const id = detachAudio(p, c.id);
+        if (id) made.push(id);
+      }
+    },
+    { label: 'Detach audio' },
+  );
+  if (made.length) useUI.getState().select([...clips.map((c) => c.id), ...made]);
+  else toast('info', 'Nothing to detach', 'The selected clips have no sound, or it is already on its own clip.');
 }
 
 /** Change clip speed, keeping the in-point and clamping to the available media. */
@@ -546,34 +611,119 @@ export function setSpeed(ids: ID[], speed: number): void {
         clip.speed = s;
         let duration = Math.max(1 / f, snapToFrame(sourceSpan / s, f));
         duration = Math.min(duration, maxDurationFromSource(clip, p.assets));
-        // Do not run into the next clip on the track when slowing down.
+        // Do not run into the next clip on the track when slowing down (the magnetic main
+        // track pushes later clips instead).
         const next = clipsOnTrack(p, clip.trackId).find((c) => c.start >= clip.start + 1e-6 && c.id !== clip.id);
-        if (next) duration = Math.min(duration, next.start - clip.start);
+        if (next && !isMagneticTrack(p, clip.trackId)) duration = Math.min(duration, next.start - clip.start);
         clip.duration = Math.max(1 / f, duration);
       }
       cleanupTransitions(p);
     },
-    { coalesce: 'speed' },
+    { coalesce: 'speed', label: 'Change speed' },
   );
 }
 
 export function addMarker(): void {
   const time = playhead();
-  updateProject((p) => {
-    if (p.markers.some((m) => Math.abs(m.time - time) < 1e-4)) return;
-    p.markers.push({ id: uid('mk_'), time, label: '', color: '#fbbf24' });
-    p.markers.sort((a, b) => a.time - b.time);
-  });
+  updateProject(
+    (p) => {
+      if (p.markers.some((m) => Math.abs(m.time - time) < 1e-4)) return;
+      p.markers.push({ id: uid('mk_'), time, label: '', color: '#fbbf24' });
+      p.markers.sort((a, b) => a.time - b.time);
+    },
+    { label: 'Add marker' },
+  );
 }
 
 export function addTrackOfKind(kind: 'visual' | 'audio'): void {
-  updateProject((p) => {
-    addTrack(p, kind);
-  });
+  updateProject(
+    (p) => {
+      addTrack(p, kind);
+    },
+    { label: kind === 'visual' ? 'Add video track' : 'Add audio track' },
+  );
 }
 
 export function tidyTracks(): void {
-  updateProject((p) => pruneEmptyTracks(p));
+  updateProject((p) => pruneEmptyTracks(p), { label: 'Remove empty tracks' });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Groups, links, magnetic main track, track sizes, history
+// ---------------------------------------------------------------------------------------------
+
+export function groupSelection(): void {
+  const ids = useUI.getState().selection.filter((id) => getProject().clips[id]);
+  if (ids.length < 2) {
+    toast('info', 'Select two or more clips to group them', 'Shift-click the clips or drag a box around them first.');
+    return;
+  }
+  updateProject((p) => void groupClips(p, ids), { label: 'Group clips' });
+}
+
+export function ungroupSelection(): void {
+  const ids = useUI.getState().selection;
+  if (!ids.some((id) => getProject().clips[id]?.groupId)) return;
+  updateProject((p) => void ungroupClips(p, ids), { label: 'Ungroup clips' });
+}
+
+export function linkSelection(): void {
+  const ids = useUI.getState().selection.filter((id) => getProject().clips[id]);
+  if (ids.length < 2) {
+    toast('info', 'Select two or more clips to link them', 'Linked clips select, move, trim, split and delete together.');
+    return;
+  }
+  updateProject((p) => void linkClips(p, ids), { label: 'Link clips' });
+}
+
+export function unlinkSelection(): void {
+  const ids = useUI.getState().selection;
+  if (!ids.some((id) => getProject().clips[id]?.linkId)) return;
+  updateProject((p) => void unlinkClips(p, ids), { label: 'Unlink clips' });
+}
+
+/** Turn the magnetic main track on or off (turning it on closes the gaps on it). */
+export function toggleMagneticMain(): void {
+  const on = !getProject().magneticMain;
+  updateProject(
+    (p) => {
+      if (on) p.magneticMain = true;
+      else delete p.magneticMain;
+    },
+    { label: on ? 'Magnetic main track on' : 'Magnetic main track off' },
+  );
+}
+
+/** Set every track to one of the preset heights. */
+export function setTrackSize(size: TrackSize): void {
+  updateProject(
+    (p) => {
+      for (const t of p.tracks) {
+        if (size === 'medium') delete t.height;
+        else t.height = TRACK_SIZES[size][t.kind];
+      }
+    },
+    { label: `Track size: ${size[0].toUpperCase()}${size.slice(1)}` },
+  );
+}
+
+/** Set (or with `undefined`, reset) the height of one track. */
+export function setTrackHeight(trackId: ID, height: number | undefined): void {
+  updateProject(
+    (p) => {
+      const t = p.tracks.find((x) => x.id === trackId);
+      if (!t) return;
+      if (height === undefined) delete t.height;
+      else t.height = clampTrackHeight(t.kind, height);
+    },
+    { label: height === undefined ? 'Reset track height' : 'Resize track' },
+  );
+}
+
+/** Jump to a state listed in the History panel (0 = oldest kept state). */
+export function goToHistory(index: number): void {
+  useProjectStore.getState().goTo(index);
+  sanitizeSelection();
 }
 
 /** Jump to the previous / next edit point (clip boundary or marker). */
