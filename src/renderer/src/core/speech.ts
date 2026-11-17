@@ -81,6 +81,8 @@ export function cleanWords(words: TranscriptWord[]): TranscriptWord[] {
       prev.end = Math.max(prev.end, end);
       continue;
     }
+    // Symbol-only tokens ("♪", "…", "-") are not words (Whisper emits them over music).
+    if (!/[\p{L}\p{N}]/u.test(text)) continue;
     out.push({ text, start, end });
   }
   return out;

@@ -7,9 +7,10 @@ import { BEAT_COLOR, DOWNBEAT_COLOR, isBeatMarker } from './beats';
 import { getCaptionPreset, presetTextStyle, captionY, captionMetrics, type CaptionPosition } from '@/core/captionStyles';
 import { captionClips, collectCaptionCues, ensureCaptionTrack, parseSubtitles, placeCaptions, toSrt, toVtt } from '@/core/captions';
 import { DEFAULT_TEXT_STYLE, uid } from '@/core/factory';
-import { addTrack, clipsOnTrack, isFree, maxDurationFromSource, projectDuration, splitClipAt } from '@/core/project';
+import { addTrack, clipsOnTrack, isFree, maxDurationFromSource, projectDuration, pruneEmptyTracks, splitClipAt } from '@/core/project';
 import { getAudioClips } from '@/core/scene';
 import {
+  cleanWords,
   detectFillers,
   duckingKeyframes,
   groupCaptions,
@@ -129,8 +130,9 @@ interface ScopeWords {
 }
 
 function scopeSignature(p: Project, clips: SoundClip[] | null): string {
+  // getAudioClips already leaves out muted clips and clips on muted tracks.
   const list = clips ?? getAudioClips(p);
-  return list.map((c) => `${c.id}:${c.assetId}:${c.start.toFixed(3)}:${c.duration.toFixed(3)}:${c.trimIn.toFixed(3)}:${c.speed}:${c.muted ? 1 : 0}`).join('|') + (clips ? '' : `|${p.tracks.map((t) => (t.muted ? 1 : 0)).join('')}`);
+  return list.map((c) => `${c.id}:${c.assetId}:${c.start.toFixed(3)}:${c.duration.toFixed(3)}:${c.trimIn.toFixed(3)}:${c.speed}:${c.volume}:${c.muted ? 1 : 0}`).join('|');
 }
 
 /** Words (timeline seconds) spoken in the scope. Reuses a cached transcript when nothing changed. */
@@ -168,7 +170,8 @@ export async function transcribeScope(scope: Scope, ctl: JobControl, share = 1, 
       onLoading: (r) => ctl.progress(base + share * done, `Loading the speech model… ${Math.round(r * 100)}%`),
       onProgress: (r) => ctl.progress(base + share * (done + w * (0.1 + 0.9 * r)), 'Transcribing…'),
     });
-    for (const word of res.words) words.push({ text: word.text, start: piece.start + word.start, end: piece.start + word.end });
+    // Trimmed tokens with punctuation attached to its word ("Um," not " Um" + ",").
+    for (const word of cleanWords(res.words)) words.push({ text: word.text, start: piece.start + word.start, end: piece.start + word.end });
     language = res.language;
     audioSeconds += res.audioSeconds;
     device = res.device;
@@ -591,6 +594,7 @@ export function sequenceOnBeats(unit: 'beat' | 'bar', every = 1): number {
       const want = Math.max(1 / fps, snapToFrame(s.end, fps) - c.start);
       c.duration = Math.min(want, maxDurationFromSource(c, draft.assets));
     });
+    pruneEmptyTracks(draft);
     if (draft.tracks.some((t) => t.role === 'captions')) ensureCaptionTrack(draft);
   });
   useUI.getState().select(ids);

@@ -85,6 +85,7 @@ describe('caption grouping', () => {
       { text: '[Music]', start: 0.5, end: 1 },
       { text: ' world', start: 1, end: 1.4 },
       { text: '.', start: 1.4, end: 1.41 },
+      { text: ' ♪', start: 2, end: 3 },
     ]);
     expect(cleaned.map((w) => w.text)).toEqual(['Hello,', 'world.']);
   });
