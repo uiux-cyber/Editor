@@ -87,6 +87,6 @@ function LutLibrarySettings(): ReactNode {
   );
 }
 
-const sections: SettingsSectionDef[] = [{ id: 'color-luts', title: 'Colour LUTs', icon: <Palette size={15} />, order: 60, Component: LutLibrarySettings }];
+const sections: SettingsSectionDef[] = [{ id: 'color-luts', title: 'Color LUTs', icon: <Palette size={15} />, order: 60, Component: LutLibrarySettings }];
 
 export default sections;

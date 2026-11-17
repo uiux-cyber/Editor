@@ -44,7 +44,12 @@ export interface LayerExtContext {
   px: number;
   /** True while shading an adjustment layer (the input is the whole frame beneath it). */
   identity: boolean;
-  /** Reserve a texture unit for this draw (units 0..3 are taken by the core shader). */
+  /**
+   * Reserve a texture unit for this draw (units 0..3 are taken by the core shader).
+   * Sampler uniforms keep their value between draws: when your extension is inactive, point its
+   * sampler2D uniforms back at unit 0, and give non-2D samplers (sampler3D…) a unit of their own
+   * on every draw — WebGL rejects draws where samplers of different types share a unit.
+   */
   unit: () => number;
 }
 

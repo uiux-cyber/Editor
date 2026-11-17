@@ -65,7 +65,7 @@ export default async function colorAudio(ctx) {
   const clipState = (id) => run((id) => JSON.parse(JSON.stringify(window.__kinora.useProjectStore.getState().project.clips[id])), id);
   const undoDepth = () => run(() => window.__kinora.useProjectStore.getState().past.length);
   const inspectorTab = async (name) => {
-    await win.locator('.inspector .tabs__tab', { hasText: name }).click();
+    await win.locator('.inspector .tabs__tab', { hasText: new RegExp(`^${name}$`) }).click();
     await sleep(400);
   };
   const section = (id) => win.locator(`[data-section="${id}"]`);
@@ -420,6 +420,38 @@ export default async function colorAudio(ctx) {
   console.log(`  preview ${preview.w}×${preview.h} mean ${preview.mean.map((v) => v.toFixed(1))} | png ${png.w}×${png.h} mean ${png.mean.map((v) => v.toFixed(1))} | ungraded ${ungraded.mean.map((v) => v.toFixed(1))}`);
   expect(diff(preview, ungraded) > 8, `the grade changes the picture (Δmean ${diff(preview, ungraded).toFixed(1)})`);
   expect(diff(preview, png) < 2 && Math.abs(preview.p50 - png.p50) <= 3 && Math.abs(preview.p90 - png.p90) <= 3, `exported PNG matches the preview (Δmean ${diff(preview, png).toFixed(2)}, p50 ${preview.p50}/${png.p50}, p90 ${preview.p90}/${png.p90})`);
+
+  // ---- Adjustment layer: LUT + curve applied to everything beneath ---------------------------
+  const adjId = await run(() => {
+    const k = window.__kinora;
+    const [id] = k.actions.addAdjustment({ time: 0 });
+    k.useProjectStore.getState().update((p) => void (p.clips[id].duration = 6));
+    k.engine.seek(1);
+    return id;
+  });
+  await sleep(300);
+  await win.locator(`.clip[data-clip="${adjId}"]`).click({ position: { x: 30, y: 20 } });
+  await inspectorTab('Adjust');
+  const adjLut = section('color-lut');
+  await adjLut.locator('.lut-tile[data-lut="builtin:noir"]').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await adjLut.locator('.lut-tile[data-lut="builtin:noir"]').click();
+  const adjSvg = section('color-curves').locator('[data-curve-editor]');
+  await adjSvg.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await sleep(200);
+  g = (await center(adjSvg)).box;
+  await section('color-curves').locator('[data-channel="master"]').click();
+  await drag(at(0.5, 0.5), at(0.5, 0.62));
+  expect((await clipState(adjId)).adjust?.curves?.master?.length === 3 && (await clipState(adjId)).lut?.id === 'builtin:noir', 'the adjustment layer takes a LUT and a curve point');
+  await run(() => window.__kinora.useUI.getState().clearSelection());
+  await sleep(800);
+  const adjPreview = await run(() => window.__e2e.previewStats());
+  const adjPng = await run(async (f) => window.__e2e.fileStats(await window.__e2e.exportTo(f, { container: 'png', start: 1, end: 1 })), path.join(outDir, 'ca-frame-adjustment.png'));
+  const chroma = Math.max(...adjPreview.mean) - Math.min(...adjPreview.mean);
+  expect(chroma < 8 && adjPreview.p50 > preview.p50 - 40, `the adjustment layer's noir LUT turns the frame black-and-white (channel spread ${chroma.toFixed(1)})`);
+  expect(diff(adjPreview, adjPng) < 2 && Math.abs(adjPreview.p50 - adjPng.p50) <= 3, `exported adjustment-layer frame matches the preview (Δmean ${diff(adjPreview, adjPng).toFixed(2)})`);
+  await shot('ca-04b-adjustment-layer');
+  await run((id) => window.__kinora.useProjectStore.getState().update((p) => void delete p.clips[id]), adjId);
+  await sleep(300);
 
   // ---- Scopes ----------------------------------------------------------------------------
   await win.locator('[data-action="toggle-scopes"]').click();

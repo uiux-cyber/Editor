@@ -6,6 +6,7 @@
 
 import { X } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
+import { engine } from '@/engine/engine';
 import { computeScopes, DEFAULT_VECTOR_RANGE, type ScopeData } from '@/engine/scopes/analyze';
 import { frameTap } from '@/engine/scopes/frameTap';
 import { Segmented } from '../common/controls';
@@ -94,11 +95,16 @@ export function ScopesPanel(): ReactNode {
     return frameTap.subscribe((f) => {
       data.current = computeScopes(f.data, f.width, f.height, { columns: Math.min(f.width, 320), vectorRange: range }, data.current);
       for (const draw of drawers.current.values()) draw(data.current);
-      frames++;
       const now = performance.now();
-      if (statsRef.current && (now - since > 500 || statsRef.current.textContent === '—')) {
-        const hz = now - since > 50 ? Math.round((frames * 1000) / (now - since)) : 0;
-        statsRef.current.textContent = `${f.width}×${f.height} · ${hz} Hz`;
+      const el = statsRef.current;
+      if (!el) return;
+      if (!engine.playing) {
+        // Paused: scopes refresh on every edit; show the analysed size only.
+        frames = 0;
+        since = now;
+        el.textContent = `${f.width}×${f.height}`;
+      } else if (++frames && now - since > 500) {
+        el.textContent = `${f.width}×${f.height} · ${Math.round((frames * 1000) / (now - since))} Hz`;
         frames = 0;
         since = now;
       }

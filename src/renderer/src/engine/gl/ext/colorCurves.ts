@@ -35,14 +35,21 @@ const ext: LayerExtension = {
       texture(ext_color_curves_lut, vec2(ccu.g, 0.5)).g,
       texture(ext_color_curves_lut, vec2(ccu.b, 0.5)).b);`,
   apply: ({ gl, prog, clip, unit }) => {
+    // Sampler uniforms keep their value between draws: when inactive, point this 2D sampler back
+    // at unit 0 (a 2D texture) so it can never share a unit with another extension's sampler3D.
+    const loc = prog.loc('ext_color_curves_lut');
+    const off = (): boolean => {
+      if (loc) gl.uniform1i(loc, 0);
+      return false;
+    };
     const curves = clip.adjust?.curves;
-    if (!curves || typeof curves !== 'object') return false;
+    if (!curves || typeof curves !== 'object') return off();
     const m = info(curves);
-    if (m.identity) return false;
+    if (m.identity) return off();
     const u = unit();
     const tex = cache.get(gl, m.key, () => createRowTexture(gl, curvesLut(m.curves), CURVE_LUT_SIZE, u));
-    if (!tex) return false;
-    bindSampler(gl, prog.loc('ext_color_curves_lut'), u, gl.TEXTURE_2D, tex);
+    if (!tex) return off();
+    bindSampler(gl, loc, u, gl.TEXTURE_2D, tex);
     return true;
   },
 };

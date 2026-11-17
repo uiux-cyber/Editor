@@ -31,7 +31,7 @@ function Badge({ on }: { on: boolean }): ReactNode {
 function WheelsSection({ clip, ids }: InspectorSectionProps): ReactNode {
   const v = clip as VisualClip;
   return (
-    <Section title={<>Colour wheels <Badge on={!isNeutralWheels(clipWheels(v))} /></>} id="color-wheels">
+    <Section title={<>Color wheels <Badge on={!isNeutralWheels(clipWheels(v))} /></>} id="color-wheels">
       <ColorWheels clip={v} ids={ids} />
     </Section>
   );

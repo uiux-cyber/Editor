@@ -66,8 +66,12 @@ uniform vec3 ext_color_lut_dmax;`,
   apply: ({ gl, prog, clip, unit }) => {
     // The 3D sampler must never share a texture unit with the 2D samplers (WebGL forbids it),
     // so it always gets its own unit, bound to a placeholder when no 3D LUT is active.
+    // Sampler uniforms also keep their value between draws, so the 1D sampler is pointed back at
+    // unit 0 (a 2D texture) whenever it is not in use.
     const u3 = unit();
     const loc3 = prog.loc('ext_color_lut_tex3');
+    const loc1 = prog.loc('ext_color_lut_tex1');
+    if (loc1) gl.uniform1i(loc1, 0);
     const ref = activeLut(clip);
     const lut = ref ? getLutData(ref.id) : null;
     if (!ref || !lut) {
@@ -77,7 +81,10 @@ uniform vec3 ext_color_lut_dmax;`,
     const key = `${ref.id}#${lutVersion(ref.id)}`;
     if (lut.kind === '3d') {
       const tex = cache.get(gl, key, () => create3DTexture(gl, lut.data, lut.size, u3));
-      if (!tex) return false;
+      if (!tex) {
+        bindSampler(gl, loc3, u3, gl.TEXTURE_3D, dummy3d(gl, u3));
+        return false;
+      }
       bindSampler(gl, loc3, u3, gl.TEXTURE_3D, tex);
     } else {
       bindSampler(gl, loc3, u3, gl.TEXTURE_3D, dummy3d(gl, u3));

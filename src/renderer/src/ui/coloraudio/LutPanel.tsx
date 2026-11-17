@@ -9,7 +9,7 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { sampleCube } from '@shared/cube';
 import type { ID, VisualClip } from '@/core/types';
-import { allLuts, deleteLut, getLutData, importLutFiles, lutDisplayName, lutStatus, lutVersion, refreshLutLibrary, renameLut, useLutLibrary, type LutInfo } from '@/engine/color/lutStore';
+import { allLuts, deleteLut, getLutData, importLutFiles, lutDisplayName, lutInfo, lutStatus, lutVersion, refreshLutLibrary, renameLut, useLutLibrary, type LutInfo } from '@/engine/color/lutStore';
 import { toast, useUI } from '@/store/ui';
 import { SliderField } from '../common/controls';
 import { Modal, openContextMenu } from '../common/overlays';
@@ -189,11 +189,18 @@ export function LutGrid({ activeId, onPick, showNone = true }: { activeId: strin
     if (!loaded) void refreshLutLibrary().catch((err) => console.warn('[lut] library unavailable', err));
   }, [loaded]);
   const luts = useMemo(() => allLuts(), [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  const firstImported = luts.find((l) => !l.builtin)?.id;
   return (
     <>
       <div className="lut-grid">
+        <span className="lut-grid__label">Built-in looks</span>
         {showNone && <LutTile info={null} active={!activeId} onPick={() => onPick(null)} />}
-        {luts.map((l) =>
+        {luts.map((l) => [
+          l.id === firstImported ? (
+            <span key="label-imported" className="lut-grid__label">
+              Imported
+            </span>
+          ) : null,
           renaming === l.id ? (
             <div key={l.id} className="lut-tile is-renaming">
               <span className="lut-tile__img">{lutThumb(l.id) && <img src={lutThumb(l.id)!} alt="" />}</span>
@@ -216,7 +223,7 @@ export function LutGrid({ activeId, onPick, showNone = true }: { activeId: strin
           ) : (
             <LutTile key={l.id} info={l} owner={owner} active={activeId === l.id} onPick={() => onPick(l.id)} onRename={() => setRenaming(l.id)} />
           ),
-        )}
+        ])}
       </div>
       <DeleteDialog owner={owner} />
     </>
@@ -236,7 +243,14 @@ export function LutPanel({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactN
         <div className="lut-missing" data-lut-missing>
           <AlertTriangle size={14} />
           <span>
-            <strong>{lutDisplayName(ref.id)}</strong> is not available on this computer. The clip is shown without it.
+            {lutInfo(ref.id) ? (
+              <>
+                <strong>{lutDisplayName(ref.id)}</strong> could not be read.
+              </>
+            ) : (
+              <>This clip's LUT is not in your library (deleted, or imported on another computer).</>
+            )}{' '}
+            The clip is shown without it.
           </span>
           <button type="button" className="btn btn--sm btn--outline" onClick={() => setLut(ids, null)}>
             Remove

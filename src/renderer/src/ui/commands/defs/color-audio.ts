@@ -73,7 +73,7 @@ const commands: Command[] = [
   },
   {
     id: 'color.resetWheels',
-    title: 'Reset colour wheels',
+    title: 'Reset color wheels',
     group: 'Color',
     keywords: ['lift', 'gamma', 'gain', 'offset', 'wheels'],
     when: hasVisual,
