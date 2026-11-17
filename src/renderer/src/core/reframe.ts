@@ -9,13 +9,15 @@
  */
 
 import { designSize, fitContain } from './project';
-import type { Clip, ImageClip, Keyframe, Project, VideoClip, VisualClip } from './types';
+import type { Clip, EaseId, ImageClip, Keyframe, Project, VideoClip, VisualClip } from './types';
 
 /** Subject position inside the source picture over time: x / y in 0..1, t in clip-local seconds. */
 export interface FocusPoint {
   t: number;
   x: number;
   y: number;
+  /** Easing from this point to the next (default easeInOut). */
+  ease?: EaseId;
 }
 
 export type FocusProvider = (clip: VideoClip | ImageClip, project: Project) => FocusPoint[] | null;
@@ -75,14 +77,45 @@ export function reframeProject(project: Project, width: number, height: number, 
         const layerH = fitNew.h * Math.abs(v.transform.scaleY);
         const maxX = Math.max(0, (layerW - to.cw) / 2);
         const maxY = Math.max(0, (layerH - to.ch) / 2);
-        const focus = opts.focus !== false && focusProvider ? focusProvider(media, project) : null;
+        // The provider may be slow or fail (analysis is optional): fall back to proportional moves.
+        let focus: FocusPoint[] | null = null;
+        if (opts.focus !== false && focusProvider && (maxX > 0.5 || maxY > 0.5)) {
+          try {
+            focus = focusProvider(media, project);
+          } catch (err) {
+            console.warn('[reframe] focus provider failed', err);
+          }
+        }
         if (focus && focus.length) {
           // Pan so the subject sits in the middle, never revealing the frame edge.
-          const xs = focus.map((f) => ({ t: f.t, v: Math.max(-maxX, Math.min(maxX, (0.5 - f.x) * layerW)) }));
-          const ys = focus.map((f) => ({ t: f.t, v: Math.max(-maxY, Math.min(maxY, (0.5 - f.y) * layerH)) }));
-          v.keyframes = { ...(v.keyframes ?? {}), x: xs.map((p) => ({ t: p.t, v: p.v, ease: 'easeInOut' as const })), y: ys.map((p) => ({ t: p.t, v: p.v, ease: 'easeInOut' as const })) };
-          v.transform.x = xs[0].v;
-          v.transform.y = ys[0].v;
+          const pts = focus.filter((f) => Number.isFinite(f.t) && Number.isFinite(f.x) && Number.isFinite(f.y)).sort((a, b) => a.t - b.t);
+          // Focus is in source-picture coordinates: map it into the (cropped, flipped) layer.
+          const keepW = Math.max(0.01, 1 - crop.l - crop.r);
+          const keepH = Math.max(0.01, 1 - crop.t - crop.b);
+          const lx = (fx: number): number => {
+            const u = (fx - crop.l) / keepW;
+            return (v.flipH ? 1 - u : u) * Math.sign(v.transform.scaleX || 1) + (v.transform.scaleX < 0 ? 1 : 0);
+          };
+          const ly = (fy: number): number => {
+            const u = (fy - crop.t) / keepH;
+            return (v.flipV ? 1 - u : u) * Math.sign(v.transform.scaleY || 1) + (v.transform.scaleY < 0 ? 1 : 0);
+          };
+          const xs = pts.map((f) => Math.max(-maxX, Math.min(maxX, (0.5 - lx(f.x)) * layerW)));
+          const ys = pts.map((f) => Math.max(-maxY, Math.min(maxY, (0.5 - ly(f.y)) * layerH)));
+          const track = (vals: number[]): Keyframe[] | undefined => {
+            // A constant track is just a static value.
+            if (vals.every((val) => Math.abs(val - vals[0]) < 0.05)) return undefined;
+            return vals.map((val, i) => ({ t: pts[i].t, v: Math.round(val * 100) / 100, ease: pts[i].ease ?? 'easeInOut' }));
+          };
+          const kx = track(xs);
+          const ky = track(ys);
+          v.keyframes = { ...(v.keyframes ?? {}) };
+          if (kx) v.keyframes.x = kx;
+          else delete v.keyframes.x;
+          if (ky) v.keyframes.y = ky;
+          else delete v.keyframes.y;
+          v.transform.x = xs[0];
+          v.transform.y = ys[0];
         } else {
           v.transform.x = Math.max(-maxX, Math.min(maxX, v.transform.x * kx));
           v.transform.y = Math.max(-maxY, Math.min(maxY, v.transform.y * ky));

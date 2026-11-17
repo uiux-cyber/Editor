@@ -13,6 +13,7 @@ import { Compositor, type LayerBox, type MediaProvider } from './compositor';
 import { getImage, onImageLoaded, useAssetRuntime } from './media/assets';
 import { MediaPool } from './preview/mediaPool';
 import { onFontsChanged } from './sources/text';
+import { previewMatte } from '@/vision/cutout';
 
 interface PlaybackState {
   playing: boolean;
@@ -50,6 +51,13 @@ class Engine {
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
     },
+    // Background removal (vision feature): person matte of the picture on screen.
+    matte: (clip) =>
+      previewMatte(clip, this.project, {
+        playing: this.playing,
+        frame: () => (clip.type === 'video' ? this.provider.videoFrame(clip, 0) : clip.type === 'image' ? this.provider.image(clip.assetId) : null),
+        invalidate: () => this.invalidate(),
+      }),
   };
 
   private get project(): Project {

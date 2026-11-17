@@ -37,6 +37,7 @@ import { buildChain } from '../audio/chain';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
+import { endExportMattes, exportMatte, isCutoutClip, prepareExportMatte } from '@/vision/cutout';
 
 export type ExportContainer = 'mp4' | 'webm' | 'mov' | 'gif' | 'mp3' | 'wav' | 'png';
 export type QualityLevel = 'low' | 'medium' | 'high' | 'best';
@@ -444,6 +445,8 @@ export async function exportProject(
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
     },
+    // Background removal (vision feature): mattes computed per frame in prepareFrame.
+    matte: (clip) => exportMatte(clip),
   };
 
   /** Decode every video frame needed at timeline time `t`, and free decoders of finished clips. */
@@ -452,6 +455,8 @@ export async function exportProject(
     for (const item of getSceneItems(project, t)) {
       const refs = item.kind === 'layer' ? [item.layer] : [item.from, item.to];
       for (const ref of refs) {
+        // Background removal: stills need their (cached) matte before the frame renders.
+        if (ref.clip.type === 'image' && isCutoutClip(ref.clip)) await prepareExportMatte(ref.clip, project, provider.image(ref.clip.assetId), 0);
         if (ref.clip.type !== 'video') continue;
         const asset = project.assets[ref.clip.assetId];
         if (!asset) continue;
@@ -459,7 +464,10 @@ export async function exportProject(
         const decoder = await decoderFor(ref.clip);
         if (!decoder) continue;
         const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
-        await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
+        const sourceTime = Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT);
+        await decoder.seek(sourceTime);
+        // Background removal: segment exactly the decoded frame (deterministic per frame).
+        if (isCutoutClip(ref.clip)) await prepareExportMatte(ref.clip, project, decoder.frame(), sourceTime);
       }
     }
     for (const [id, decoder] of decoders) {
@@ -475,6 +483,7 @@ export async function exportProject(
   };
 
   const cleanup = async (): Promise<void> => {
+    endExportMattes();
     for (const d of decoders.values()) await d?.dispose();
     decoders.clear();
     for (const input of inputs.values()) {

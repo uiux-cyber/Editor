@@ -14,6 +14,7 @@ import { addAdjustment, addAsset, addGenerator, addShape, addSound, addSticker, 
 import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { writeProp } from '../keyframeOps';
+import { VisionOverlay } from '../vision/VisionOverlay';
 
 const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type HandleId = (typeof HANDLE_IDS)[number];
@@ -530,6 +531,8 @@ export function Preview(): ReactNode {
               return <div key={id} className="gizmo gizmo--passive" style={{ width: w, height: h, transform: `translate(${stage.w / 2 + box.cx * stage.k - w / 2}px, ${stage.h / 2 + box.cy * stage.k - h / 2}px) rotate(${box.rotation}deg)` }} />;
             })}
             {primary && <Gizmo clipId={primary} k={stage.k} stageW={stage.w} stageH={stage.h} setGuides={setGuides} />}
+            {/* Vision features: tracking box / path and analysis progress (ui/vision). */}
+            <VisionOverlay stageW={stage.w} stageH={stage.h} k={stage.k} />
             {!hasContent && (
               <div className="stage__hint">
                 <strong>Your canvas is ready</strong>
