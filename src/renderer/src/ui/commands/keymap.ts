@@ -95,8 +95,8 @@ export function canonicalKey(token: string): string | null {
   return NAMED_LOOKUP.get(lower) ?? null;
 }
 
-/** Keys that are written as the character they produce (Shift is implied). */
-const isSymbolKey = (key: string): boolean => key.length === 1 && !/[A-Z]/.test(key);
+/** Keys that are written as the character they produce (Shift is implied). Letters and digits keep Shift. */
+const isSymbolKey = (key: string): boolean => key.length === 1 && !/[A-Z0-9]/.test(key);
 
 function finish(combo: KeyCombo): KeyCombo {
   return isSymbolKey(combo.key) ? { ...combo, shift: false } : combo;
