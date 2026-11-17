@@ -8,6 +8,7 @@ import { getAudioClips, getSceneItems } from '@/core/scene';
 import type { Clip, CompoundClip, Keyframe, MediaAsset, Project, VideoClip } from '@/core/types';
 import { Ease } from '@/core/easing';
 import { Wsola, resample, stretchConstant } from '@/engine/audio/stretch';
+import { useProjectStore } from '@/store/project';
 
 const asset = (over: Partial<MediaAsset> = {}): MediaAsset => ({
   id: 'as_video',
@@ -383,5 +384,41 @@ describe('compound clips', () => {
     // Splitting a compound keeps both halves showing the right nested time.
     const right = splitClipAt(back, outer, 3, 30)!;
     expect((back.clips[right] as CompoundClip).trimIn).toBeCloseTo(2, 6);
+  });
+});
+
+describe('compound editing context', () => {
+  it('edits a nested sequence through the store with one shared undo history', () => {
+    const { p, v1, v2, t, au } = editProject();
+    const id = createCompound(p, [v1, v2, t, au])!;
+    const store = useProjectStore.getState();
+    store.load(p, null, true);
+    useProjectStore.getState().setEditPath([id]);
+    let s = useProjectStore.getState();
+    expect(s.editPath).toEqual([id]);
+    expect(Object.keys(s.project.clips).sort()).toEqual([v1, v2, t, au].sort());
+    // An edit inside writes into the document and is one undo step.
+    s.update((d) => void (d.clips[t].transform.opacity = 0.25));
+    s = useProjectStore.getState();
+    expect((s.root.clips[id] as CompoundClip).sequence.clips[t].type).toBe('text');
+    expect(((s.root.clips[id] as CompoundClip).sequence.clips[t] as Clip & { transform: { opacity: number } }).transform.opacity).toBe(0.25);
+    expect(s.past).toHaveLength(1);
+    expect(s.root).not.toBe(s.savedRef);
+    s.undo();
+    s = useProjectStore.getState();
+    expect(s.editPath).toEqual([id]);
+    expect((s.project.clips[t] as Clip & { transform: { opacity: number } }).transform.opacity).toBe(1);
+    s.redo();
+    expect((useProjectStore.getState().project.clips[t] as Clip & { transform: { opacity: number } }).transform.opacity).toBe(0.25);
+    // A gesture inside the compound is one step and can be cancelled.
+    useProjectStore.getState().begin();
+    useProjectStore.getState().update((d) => void (d.clips[t].start = 2));
+    useProjectStore.getState().cancel();
+    expect(useProjectStore.getState().project.clips[t].start).toBeCloseTo(1, 6);
+    // Closing returns to the document, which kept the edit.
+    useProjectStore.getState().setEditPath([]);
+    s = useProjectStore.getState();
+    expect(s.project).toBe(s.root);
+    expect(s.project.clips[id].type).toBe('compound');
   });
 });

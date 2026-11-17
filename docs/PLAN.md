@@ -160,7 +160,9 @@ folder registers it automatically.
 - Source formats are limited to what WebCodecs can decode on the PC (H.264, HEVC with the Windows
   HEVC extension or a supporting GPU, VP8 / VP9, AV1, AAC, MP3, Opus, FLAC, PCM). ProRes / DNxHD
   sources must be converted first.
-- Changing clip speed also changes the pitch of its sound.
+- Changing clip speed changes the pitch of its sound unless "Keep pitch" is on (WSOLA time-stretch,
+  also through speed ramps; above ~4× the stretched sound becomes choppy). Reversed clips longer than
+  5 minutes play silently in the preview (they export with sound).
 - The installer is unsigned, so Windows SmartScreen shows a warning on first run.
 - Templates cannot contain sounds yet; add music from the Audio tab after applying one.
 - Projects that use fonts installed on one PC fall back to a default font on PCs without them.
