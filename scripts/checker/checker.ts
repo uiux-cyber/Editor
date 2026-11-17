@@ -10,9 +10,10 @@ import { FULLSCREEN_VERT, createProgram, setParamUniforms, validateParams, wrapE
 import '@/styles/fonts';
 import { preloadBundledFonts } from '@/engine/sources/text';
 import { NEUTRAL_GRADE } from '@/core/factory';
-import { seededRandom } from '@/core/easing';
+import { Ease, seededRandom } from '@/core/easing';
+import { MAX_COUNTER_DECIMALS, formatCounter } from '@/core/counter';
 import type { Clip, ClipAnimations } from '@/core/types';
-import type { AnimMod, AspectId, FontPair, GlyphMod, Palette, TemplateEnv } from '@/library/types';
+import type { AnimMod, AspectId, FontPair, GlyphMod, Palette, TemplateEnv, TextPresetDef } from '@/library/types';
 
 type Level = 'error' | 'warn';
 interface Issue {
@@ -413,6 +414,16 @@ function checkFont(pack: string, id: string, family: string | undefined, weight:
   }
 }
 
+/** Count-up presets: valid numbers and easing, and the sample is the final value as formatted. */
+function checkCounter(def: TextPresetDef): void {
+  const c = def.counter!;
+  if (![c.from, c.to].every(Number.isFinite)) report('textPresets', def.id, 'error', 'counter from / to must be finite numbers');
+  if (!(Number.isInteger(c.decimals) && c.decimals >= 0 && c.decimals <= MAX_COUNTER_DECIMALS)) report('textPresets', def.id, 'error', `counter decimals must be 0..${MAX_COUNTER_DECIMALS}`);
+  if (!(c.ease in Ease)) report('textPresets', def.id, 'error', `unknown counter easing "${c.ease}"`);
+  if (c.duration !== undefined && !(c.duration > 0)) report('textPresets', def.id, 'error', 'counter duration must be > 0');
+  if (formatCounter(c, c.to) !== def.sample) report('textPresets', def.id, 'error', `sample "${def.sample}" differs from the final counter value "${formatCounter(c, c.to)}"`);
+}
+
 function checkTextPresets(): void {
   for (const def of L.TEXT_PRESETS) {
     if (!def.sample || !def.sample.trim()) report('textPresets', def.id, 'error', 'empty sample');
@@ -421,6 +432,7 @@ function checkTextPresets(): void {
     if (def.style.fontSize !== undefined && !(def.style.fontSize >= 12 && def.style.fontSize <= 600)) report('textPresets', def.id, 'error', 'fontSize out of range (12..600)');
     checkAnimRefs('textPresets', def.id, def.anim, false);
     checkAnimRefs('textPresets', def.id, def.textAnim, true);
+    if (def.counter) checkCounter(def);
   }
   counts.textPresets = L.TEXT_PRESETS.length;
 }

@@ -407,7 +407,8 @@ export function ShapeSection({ clip, ids }: { clip: ShapeClip; ids: ID[] }): Rea
     <>
       <Section title={s.slot ? 'Media placeholder' : 'Shape'} id="shape">
         {s.slot && <p className="hint">Drag a photo or video from the Media tab onto this placeholder to fill it.</p>}
-        {!s.slot && (
+        {/* Pen paths (kind 'path') are edited on the canvas and in the Path section. */}
+        {!s.slot && s.kind !== 'path' && (
           <Field label="Shape">
             <Select value={s.kind} options={SHAPE_KINDS.map((k) => ({ value: k, label: labelOf(k === 'rect' ? 'rectangle' : k === 'cross' ? 'plus' : k) }))} onChange={(k) => edit((c) => void (c.shape.kind = k))} />
           </Field>

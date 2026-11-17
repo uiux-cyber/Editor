@@ -4,6 +4,7 @@ import { allKeyframeTimes } from '@/core/keyframes';
 import type { Clip, MediaAsset } from '@/core/types';
 import { PEAKS_PER_SECOND, filmFrameAt, getFilmstrip, getWaveform, onAssetVisuals } from '@/engine/media/peaks';
 import { getSticker } from '@/library';
+import { onAnimationFrames, paintAnimationStrip } from '../library/animatedThumb';
 import { LEFT_PAD } from './geometry';
 
 const ICONS: Record<Clip['type'], ReactNode> = {
@@ -83,6 +84,9 @@ const ClipCanvas = memo(function ClipCanvas({ clip, asset, pps, viewLeft, viewWi
             if (frame) ctx.drawImage(frame as CanvasImageSource, x - from, 0, tileW, filmH);
           }
         }
+      } else if (clip.type === 'image' && asset.kind === 'animation' && filmH > 4) {
+        // Animated GIF / Lottie: every tile shows the frame at its own time.
+        paintAnimationStrip(ctx, asset, from, width, filmH, pps, dpr);
       } else if (clip.type === 'image' && filmH > 4) {
         const img = imgRef.current;
         if (img && img.complete && img.naturalWidth > 0) {
@@ -137,8 +141,10 @@ const ClipCanvas = memo(function ClipCanvas({ clip, asset, pps, viewLeft, viewWi
     }
     request();
     const off = onAssetVisuals(asset.id, request);
+    const offAnim = asset.kind === 'animation' ? onAnimationFrames(request) : () => undefined;
     return () => {
       off();
+      offAnim();
       cancelAnimationFrame(raf);
     };
   }, [asset, clip.type, clip.id, from, width, height, pps, trimIn, speed, muted, thumb]);

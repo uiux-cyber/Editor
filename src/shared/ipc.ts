@@ -9,8 +9,13 @@ export const MEDIA_SCHEME = 'kinora';
 
 export const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'ts', 'mts', 'm2ts', '3gp'];
 export const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'weba'];
-export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'svg'];
-export const MEDIA_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS];
+export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'svg', 'apng'];
+/**
+ * Lottie animations: Bodymovin JSON or dotLottie archives. The main process serves these only
+ * after checking that the file really is a Lottie animation (any other JSON stays unreadable).
+ */
+export const LOTTIE_EXTS = ['json', 'lottie'];
+export const MEDIA_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS, ...LOTTIE_EXTS];
 
 export interface FileInfo {
   path: string;

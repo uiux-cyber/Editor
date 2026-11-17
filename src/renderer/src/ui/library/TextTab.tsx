@@ -30,6 +30,7 @@ function PresetTile({ preset }: { preset: TextPresetDef }): ReactNode {
     const scale = Math.min(2.2, (1920 * 0.8) / Math.max(1, size.width), (1080 * 0.62) / Math.max(1, size.height));
     const duration = 3.2;
     const clip = makeText(preset.sample, { duration, style: preset.style, anim: preset.anim, textAnim: preset.textAnim, scale });
+    if (preset.counter) clip.counter = { ...preset.counter, duration: Math.min(preset.counter.duration ?? duration, duration * 0.55) };
     // Dark text without a box needs a light backdrop to be readable.
     const dark = style.fill.type === 'solid' && !style.background && !style.stroke && !style.glow && luminance(style.fill.color) < 0.3;
     const project = projectFromLayers([clip], THUMB_W, THUMB_H, dark ? '#e8e9ee' : '#14161c');
@@ -42,7 +43,7 @@ function PresetTile({ preset }: { preset: TextPresetDef }): ReactNode {
       onPointerDown={(e) => startDrag(e, { kind: 'text', presetId: preset.id }, preset.name, () => addText(preset.id))}
     >
       <div className="tile__thumb" style={{ aspectRatio: `${THUMB_W} / ${THUMB_H}` }}>
-        <LiveThumb id={`txt:${preset.id}`} width={THUMB_W} height={THUMB_H} build={build} animate={!!(preset.anim || preset.textAnim)} />
+        <LiveThumb id={`txt:${preset.id}`} width={THUMB_W} height={THUMB_H} build={build} animate={!!(preset.anim || preset.textAnim || preset.counter)} />
       </div>
       <div className="tile__label truncate">{preset.name}</div>
     </div>

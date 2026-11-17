@@ -1,9 +1,10 @@
-import { Layers } from 'lucide-react';
+import { Layers, PenTool } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { makeGenerator } from '@/core/factory';
 import type { ShapeKind } from '@/core/types';
 import { shapePath } from '@/engine/sources/shape';
 import { GENERATORS } from '@/library';
+import { useUI } from '@/store/ui';
 import type { GeneratorDef } from '@/library/types';
 import { addAdjustment, addGenerator, addShape } from '../actions';
 import { startDrag } from '../dnd';
@@ -98,6 +99,15 @@ export function ElementsTab(): ReactNode {
           <span>
             <strong>Adjustment layer</strong>
             <small>Grade and stylise every layer below it</small>
+          </span>
+        </button>
+        <button type="button" className="feature-row" title="Draw your own shape or line on the canvas (P)" data-pen-row onClick={() => useUI.getState().setTool('pen')}>
+          <span className="feature-row__icon">
+            <PenTool size={16} />
+          </span>
+          <span>
+            <strong>Draw with the pen</strong>
+            <small>Click points on the canvas, drag for curves (P)</small>
           </span>
         </button>
 

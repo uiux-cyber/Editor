@@ -10,6 +10,7 @@ import type { ID, Project } from '@/core/types';
 import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { Compositor, type LayerBox, type MediaProvider } from './compositor';
+import { animationFrame, onAnimationUpdate } from './media/animated';
 import { getImage, onImageLoaded, useAssetRuntime } from './media/assets';
 import { MediaPool } from './preview/mediaPool';
 import { onFontsChanged } from './sources/text';
@@ -46,7 +47,10 @@ class Engine {
 
   private provider: MediaProvider = {
     videoFrame: (clip) => this.pool?.videoFrame(clip) ?? null,
-    image: (assetId) => {
+    image: (assetId, time, hint) => {
+      // Animated GIF / WebP / APNG / Lottie: the frame at this clip time (media/animated.ts).
+      const asset = this.project.assets[assetId];
+      if (asset?.kind === 'animation') return animationFrame(asset, time ?? 0, hint);
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
     },
@@ -112,6 +116,7 @@ class Engine {
       }),
       onFontsChanged(() => this.invalidate()),
       onImageLoaded(() => this.invalidate()),
+      onAnimationUpdate(() => this.invalidate()),
     );
     this.updateSize();
     this.syncMedia();

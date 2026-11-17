@@ -17,7 +17,7 @@
  *     mat2 rot2(float radians), const float PI, const float TAU
  */
 
-import type { ClipAnimations, Clip, Grade, ParamValue, TextStyle } from '@/core/types';
+import type { ClipAnimations, Clip, CounterSettings, Grade, ParamValue, TextStyle } from '@/core/types';
 import type { BundledFontFamily } from './fonts';
 
 // ---------------------------------------------------------------------------------------------
@@ -239,7 +239,7 @@ export interface TextAnimDef {
 // Text presets
 // ---------------------------------------------------------------------------------------------
 
-export type TextPresetCategory = 'basic' | 'title' | 'subtitle' | 'caption' | 'social' | 'neon' | 'retro' | 'elegant' | 'bold' | 'handwritten' | 'lower-third';
+export type TextPresetCategory = 'basic' | 'title' | 'subtitle' | 'caption' | 'social' | 'neon' | 'retro' | 'elegant' | 'bold' | 'handwritten' | 'lower-third' | 'counter';
 
 export interface TextPresetDef {
   id: string;
@@ -253,6 +253,8 @@ export interface TextPresetDef {
   anim?: ClipAnimations;
   /** Optional per-character animation presets (ids from the text animation pack). */
   textAnim?: ClipAnimations;
+  /** Count-up number: the text counts from → to while the clip plays (`sample` = final value). */
+  counter?: CounterSettings;
 }
 
 // ---------------------------------------------------------------------------------------------

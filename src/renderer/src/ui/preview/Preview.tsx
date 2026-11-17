@@ -14,6 +14,7 @@ import { addAdjustment, addAsset, addGenerator, addShape, addSound, addSticker, 
 import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { writeProp } from '../keyframeOps';
+import { PenOverlay, PenToolButton } from './pen/PenOverlay';
 
 const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type HandleId = (typeof HANDLE_IDS)[number];
@@ -354,6 +355,7 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
           onChange={(e) => set({ masterVolume: parseFloat(e.target.value) })}
         />
         <span className="vdivider" />
+        <PenToolButton />
         <button type="button" className={`icon-btn ${loop ? 'is-active' : ''}`} title="Loop playback" onClick={() => set({ loop: !loop })}>
           <Repeat size={15} />
         </button>
@@ -530,6 +532,8 @@ export function Preview(): ReactNode {
               return <div key={id} className="gizmo gizmo--passive" style={{ width: w, height: h, transform: `translate(${stage.w / 2 + box.cx * stage.k - w / 2}px, ${stage.h / 2 + box.cy * stage.k - h / 2}px) rotate(${box.rotation}deg)` }} />;
             })}
             {primary && <Gizmo clipId={primary} k={stage.k} stageW={stage.w} stageH={stage.h} setGuides={setGuides} />}
+            {/* Pen tool and path point editing (ui/preview/pen). */}
+            <PenOverlay k={stage.k} stageW={stage.w} stageH={stage.h} />
             {!hasContent && (
               <div className="stage__hint">
                 <strong>Your canvas is ready</strong>

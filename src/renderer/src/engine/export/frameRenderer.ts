@@ -10,6 +10,7 @@ import { getSceneItems } from '@/core/scene';
 import { clipEnd } from '@/core/time';
 import type { ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
+import { animationFrame, ensureAnimationFrame, preloadAnimations } from '../media/animated';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
 
@@ -96,11 +97,13 @@ class ClipDecoder {
 export async function prepareResources(project: Project): Promise<void> {
   const fonts: Promise<void>[] = [];
   const images = new Set<ID>();
+  const animations = new Set<ID>();
   for (const clip of Object.values(project.clips)) {
     if (clip.type === 'text') fonts.push(ensureFont(clip.text));
-    if (clip.type === 'image') images.add(clip.assetId);
+    if (clip.type === 'image') (project.assets[clip.assetId]?.kind === 'animation' ? animations : images).add(clip.assetId);
   }
-  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images])]);
+  const animated = [...animations].map((id) => project.assets[id]).filter(Boolean);
+  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images]), preloadAnimations(animated)]);
 }
 
 export interface FrameRendererOptions {
@@ -117,10 +120,14 @@ export class FrameRenderer {
   compositor: Compositor | null = null;
   private inputs = new Map<ID, Input>();
   private decoders = new Map<ID, ClipDecoder | null>();
+  /** Project of the frame being prepared (animated assets need their asset record). */
+  private project: Project | null = null;
 
   readonly provider: MediaProvider = {
     videoFrame: (clip) => this.decoders.get(clip.id)?.frame() ?? null,
-    image: (assetId) => {
+    image: (assetId, time, hint) => {
+      const asset = this.project?.assets[assetId];
+      if (asset?.kind === 'animation') return animationFrame(asset, time ?? 0, hint);
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
     },
@@ -172,10 +179,17 @@ export class FrameRenderer {
 
   /** Decode every video frame needed at timeline time `t`, and free decoders of finished clips. */
   async prepare(project: Project, t: number): Promise<void> {
+    this.project = project;
     const active = new Set<ID>();
     for (const item of getSceneItems(project, t)) {
       const refs = item.kind === 'layer' ? [item.layer] : [item.from, item.to];
       for (const ref of refs) {
+        // Animated images: decode the exact frame before rendering (media/animated.ts).
+        if (ref.clip.type === 'image') {
+          const anim = project.assets[ref.clip.assetId];
+          if (anim?.kind === 'animation') await ensureAnimationFrame(anim, Math.min(Math.max(ref.localTime, 0), ref.clip.duration));
+          continue;
+        }
         if (ref.clip.type !== 'video') continue;
         const asset = project.assets[ref.clip.assetId];
         if (!asset) continue;
