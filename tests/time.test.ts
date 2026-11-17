@@ -5,7 +5,7 @@ import { kf, makeAudio, makeImage, makeText, makeVideo } from '@/core/factory';
 import { pictureRefsAt, soundsAt, mediaInstances } from '@/core/nested';
 import { addTrack, createProject, parseProjectFile, serializeProject, setTransition, splitClipAt } from '@/core/project';
 import { getAudioClips, getSceneItems } from '@/core/scene';
-import type { Clip, CompoundClip, Keyframe, MediaAsset, Project, VideoClip } from '@/core/types';
+import type { Clip, CompoundClip, Keyframe, MediaAsset, Project, TextClip, VideoClip } from '@/core/types';
 import { Ease } from '@/core/easing';
 import { Wsola, resample, stretchConstant } from '@/engine/audio/stretch';
 import { useProjectStore } from '@/store/project';
@@ -398,7 +398,7 @@ describe('compound editing context', () => {
     expect(s.editPath).toEqual([id]);
     expect(Object.keys(s.project.clips).sort()).toEqual([v1, v2, t, au].sort());
     // An edit inside writes into the document and is one undo step.
-    s.update((d) => void (d.clips[t].transform.opacity = 0.25));
+    s.update((d) => void ((d.clips[t] as TextClip).transform.opacity = 0.25));
     s = useProjectStore.getState();
     expect((s.root.clips[id] as CompoundClip).sequence.clips[t].type).toBe('text');
     expect(((s.root.clips[id] as CompoundClip).sequence.clips[t] as Clip & { transform: { opacity: number } }).transform.opacity).toBe(0.25);
