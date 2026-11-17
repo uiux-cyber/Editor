@@ -16,7 +16,7 @@
 import type { FrameImage } from '@/engine/compositor';
 import type { ID, ImageClip, MediaAsset, Project, VideoClip, VisualClip } from '@/core/types';
 import { toast } from '@/store/ui';
-import { isCancelled, segmentFrame, type SegmentResult } from './client';
+import { finalDelegateReady, isCancelled, onFinalDelegateReady, segmentFrame, type SegmentResult } from './client';
 import { useVision, type CutoutStatus } from './store';
 
 /** Longest side of the analysed picture (the GPU filter refines edges at full resolution). */
@@ -79,8 +79,8 @@ export function clearMaskCache(): void {
 }
 
 const frameIndex = (asset: MediaAsset, sourceTime: number): number => Math.floor(Math.max(0, sourceTime) * (asset.fps > 0 ? asset.fps : 30) + 1e-3);
-const videoKey = (assetId: ID, path: 'p' | 'x', idx: number): string => `${assetId}|${path}|${idx}`;
-const stillKey = (assetId: ID, path: 'p' | 'x'): string => `${assetId}|still|${path}`;
+const videoKey = (assetId: ID, path: 'p' | 'f' | 'x', idx: number): string => `${assetId}|${path}|${idx}`;
+const stillKey = (assetId: ID, path: 'p' | 'f' | 'x'): string => `${assetId}|still|${path}`;
 
 function maskSize(w: number, h: number): { w: number; h: number } {
   const k = Math.min(1, MASK_SIDE / Math.max(1, w, h));
@@ -175,28 +175,49 @@ function show(clipId: ID, key: string, idx: number, mask: Mask, blend: boolean):
   return frame;
 }
 
-function previewStill(clip: ImageClip, asset: MediaAsset, env: PreviewMatteEnv): FrameImage | null {
-  const exportKey = stillKey(asset.id, 'x');
-  const key = stillKey(asset.id, 'p');
-  const m = cacheGet(exportKey) ?? cacheGet(key);
-  if (m) {
-    setStatus(clip.id, { state: 'ready' });
-    return show(clip.id, cache.has(exportKey) ? exportKey : key, 0, m, false);
+let lastInvalidate: (() => void) | null = null;
+// When the final (export) delegate becomes ready, repaint so paused frames upgrade to it.
+onFinalDelegateReady(() => lastInvalidate?.());
+
+/**
+ * Which cached mask to show and what to compute. Cache paths: `x` = export (final delegate, the
+ * exporter's own decoded frame — only the exporter writes these, so exports never depend on
+ * what was previewed), `f` = final delegate on the preview's picture, `p` = whatever segmenter
+ * was ready. Paused frames upgrade to `f` once the final delegate is ready, so a paused preview
+ * shows the same matte an export computes (up to decoder differences).
+ */
+function pick(keyOf: (path: 'p' | 'f' | 'x') => string, playing: boolean): { key: string; mask: Mask | undefined; compute: 'f' | 'p' | null } {
+  for (const path of ['x', 'f'] as const) {
+    const m = cacheGet(keyOf(path));
+    if (m) return { key: keyOf(path), mask: m, compute: null };
   }
-  if (!stillsPending.has(asset.id)) {
+  const p = cacheGet(keyOf('p'));
+  const final = finalDelegateReady();
+  if (p) return { key: keyOf('p'), mask: p, compute: !playing && final ? 'f' : null };
+  return { key: keyOf('p'), mask: undefined, compute: final ? 'f' : 'p' };
+}
+
+function previewStill(clip: ImageClip, asset: MediaAsset, env: PreviewMatteEnv): FrameImage | null {
+  const choice = pick((path) => stillKey(asset.id, path), false);
+  if (choice.compute && !stillsPending.has(asset.id)) {
     const frame = env.frame();
     if (frame) {
+      const target = stillKey(asset.id, choice.compute);
       stillsPending.add(asset.id);
-      setStatus(clip.id, { state: 'loading' }, true);
-      segmentSource(frame.source as CanvasImageSource, frame.width, frame.height, false)
+      if (!choice.mask) setStatus(clip.id, { state: 'loading' }, true);
+      segmentSource(frame.source as CanvasImageSource, frame.width, frame.height, choice.compute === 'f')
         .then((r) => {
-          cacheSet(key, { data: r.mask, w: r.w, h: r.h });
+          cacheSet(target, { data: r.mask, w: r.w, h: r.h });
           setStatus(clip.id, { state: 'ready', ms: r.ms, delegate: r.delegate }, true);
           env.invalidate();
         })
         .catch((err) => reportError(clip.id, err))
         .finally(() => stillsPending.delete(asset.id));
     }
+  }
+  if (choice.mask) {
+    if (useVision.getState().cutout[clip.id]?.state !== 'ready') setStatus(clip.id, { state: 'ready' }, true);
+    return show(clip.id, choice.key, 0, choice.mask, false);
   }
   return display.get(clip.id)?.frame ?? null;
 }
@@ -206,29 +227,29 @@ export function previewMatte(clip: VisualClip, project: Project, env: PreviewMat
   if ((clip.type !== 'video' && clip.type !== 'image') || !clip.cutout?.enabled) return null;
   const asset = project.assets[clip.assetId];
   if (!asset) return null;
+  lastInvalidate = env.invalidate;
   if (clip.type === 'image') return previewStill(clip, asset, env);
 
   const frame = env.frame();
   const el = frame?.source;
   if (!frame || !(el instanceof HTMLVideoElement)) return display.get(clip.id)?.frame ?? null;
   const idx = frameIndex(asset, el.currentTime);
-  const exportKey = videoKey(asset.id, 'x', idx);
-  const previewKey = videoKey(asset.id, 'p', idx);
-  const exact = cacheGet(exportKey) ?? cacheGet(previewKey);
-  if (exact) return show(clip.id, cache.has(exportKey) ? exportKey : previewKey, idx, exact, env.playing);
+  const choice = pick((path) => videoKey(asset.id, path, idx), env.playing);
 
-  if (!inflight.has(clip.id)) {
+  if (choice.compute && !inflight.has(clip.id)) {
+    const target = videoKey(asset.id, choice.compute, idx);
     inflight.add(clip.id);
     if (!display.has(clip.id)) setStatus(clip.id, { state: 'loading' }, true);
-    segmentSource(el, frame.width, frame.height, false)
+    segmentSource(el, frame.width, frame.height, choice.compute === 'f')
       .then((r) => {
-        cacheSet(previewKey, { data: r.mask, w: r.w, h: r.h });
+        cacheSet(target, { data: r.mask, w: r.w, h: r.h });
         setStatus(clip.id, { state: 'ready', ms: r.ms, delegate: r.delegate });
         env.invalidate();
       })
       .catch((err) => reportError(clip.id, err))
       .finally(() => inflight.delete(clip.id));
   }
+  if (choice.mask) return show(clip.id, choice.key, idx, choice.mask, env.playing);
   return display.get(clip.id)?.frame ?? null;
 }
 

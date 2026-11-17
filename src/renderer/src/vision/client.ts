@@ -151,12 +151,14 @@ export function warmGpuSegmenter(): Promise<boolean> {
       const bmp = await createImageBitmap(probe);
       await post<MaskResult>('gpu', { type: 'segment', bitmap: bmp }, { transfer: [bmp] });
       gpuState = 'ready';
+      finalListeners.forEach((cb) => cb());
       return true;
     } catch (err) {
       console.debug('[vision] GPU segmentation unavailable; using the CPU', err);
       gpuState = 'failed';
       slots.gpu.worker?.terminate();
       slots.gpu.worker = null;
+      finalListeners.forEach((cb) => cb());
       return false;
     }
   })();
@@ -194,7 +196,18 @@ export async function segmentFrame(makeBitmap: () => Promise<ImageBitmap>, final
   return { ...r, delegate: 'CPU' };
 }
 
-/** Which delegate final (export) segmentation uses right now. */
+const finalListeners = new Set<() => void>();
+
+/** True when final (export-grade) segmentation can run without waiting for a warm-up. */
+export const finalDelegateReady = (): boolean => !gpuPreference || gpuState === 'ready' || gpuState === 'failed';
+
+/** Called when the final delegate becomes ready (GPU warmed up, or found unusable). */
+export function onFinalDelegateReady(cb: () => void): () => void {
+  finalListeners.add(cb);
+  return () => finalListeners.delete(cb);
+}
+
+/** State of the GPU segmenter: idle / warming / ready / failed, or cpu-only when disabled. */
 export const segmentationDelegate = (): string => (gpuPreference ? gpuState : 'cpu-only');
 
 /** Use the GPU delegate for segmentation (takes effect after `resetVision`). */

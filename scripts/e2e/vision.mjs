@@ -387,7 +387,11 @@ export default async function vision(ctx) {
     await sleep(200);
     expect(Math.abs(await run((id) => window.__kinora.useProjectStore.getState().project.clips[id].cutout.choke, ids.img)) < 1e-6, 'Ctrl+Z reverts the choke');
 
-    // Still export: same matte in the file.
+    // Still export: same matte in the file. (The paused preview switches to the export-grade
+    // segmenter once its GPU warm-up has finished.)
+    await win.waitForFunction(() => window.__kinoraVision.client.segmentationDelegate() !== 'warming', null, { timeout: 30000 });
+    perf.gpuSegmenter = await run(() => window.__kinoraVision.client.segmentationDelegate());
+    await sleep(800);
     const previewNow = await keyed('preview', null, 0, STILL.backdrop.concat(STILL.person), 'green');
     const png = await exportTo('vision-cutout-still.png', { container: 'png', start: 1.5, end: 1.5 });
     const pngK = await keyed('png', png.file, 0, STILL.backdrop.concat(STILL.person), 'green');
@@ -430,7 +434,9 @@ export default async function vision(ctx) {
     const vK = await keyed('video', mp4.file, 1.5, VIDEO.backdrop.concat(VIDEO.person), 'yellow');
     console.log(`  mp4 frame yellow share: ${fmt(vK)}`);
     expect(vK.slice(0, 3).every((v) => v > 0.9), 'exported video: background removed, the layer below shows');
-    // Determinism: exporting the same range twice gives the same pixels.
+    // Determinism: exporting the same range again, with every cached mask dropped, recomputes
+    // the same mattes.
+    await run(() => window.__kinoraVision.cutout.clearMaskCache());
     const mp4b = await exportTo('vision-cutout-video-2.mp4', { start: 4, end: 6 });
     const vK2 = await keyed('video', mp4b.file, 1.5, VIDEO.backdrop.concat(VIDEO.person), 'yellow');
     expect(vK.every((v, i) => Math.abs(v - vK2[i]) < 0.01), 'two exports of the cutout are identical');
