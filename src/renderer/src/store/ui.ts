@@ -4,7 +4,7 @@ import type { Clip, ID } from '@/core/types';
 export type Screen = 'home' | 'editor';
 export type LibraryTab = 'media' | 'templates' | 'text' | 'stickers' | 'transitions' | 'effects' | 'filters' | 'audio' | 'elements' | 'tools';
 export type Tool = 'select' | 'blade';
-export type ModalId = 'export' | 'newProject' | 'shortcuts' | 'settings' | 'projectSettings' | null;
+export type ModalId = 'export' | 'newProject' | 'shortcuts' | 'settings' | 'projectSettings' | 'collect' | null;
 
 export interface Toast {
   id: number;

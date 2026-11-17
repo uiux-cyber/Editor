@@ -6,11 +6,14 @@ import { ASPECT_SIZES, sortCategories, buildTemplate, supportsAspect, variationP
 import type { AspectId, TemplateCategory } from '@/library/types';
 import { api } from '@/platform/api';
 import type { AutosaveEntry, RecentProject } from '@shared/ipc';
+import { formatNumber, formatRelative, useT } from '../i18n';
 import { Chips, labelOf, unique } from '../library/common';
 import { LiveThumb, templateThumbProject, type ThumbSpec } from '../library/thumbs';
 import { newProject, openProject, recoverAutosave } from '../projectIO';
+import { useSetting } from '../settings/store';
 import { Logo } from './TitleBar';
 
+/** `hint` is an English source string (translated where shown). */
 export const PROJECT_FORMATS: { id: AspectId | '21:9'; label: string; hint: string; w: number; h: number }[] = [
   { id: '16:9', label: '16:9', hint: 'YouTube · landscape', w: 1920, h: 1080 },
   { id: '9:16', label: '9:16', hint: 'Reels · Shorts · stories', w: 1080, h: 1920 },
@@ -19,19 +22,8 @@ export const PROJECT_FORMATS: { id: AspectId | '21:9'; label: string; hint: stri
   { id: '21:9', label: '21:9', hint: 'Cinematic', w: 2560, h: 1080 },
 ];
 
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const min = Math.round(diff / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min} min ago`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h} h ago`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d} day${d === 1 ? '' : 's'} ago`;
-  return new Date(ts).toLocaleDateString();
-}
-
 function HomeTemplate({ variation, aspect, onPick }: { variation: TemplateVariation; aspect: AspectId; onPick: () => void }): ReactNode {
+  const t = useT();
   const def = getTemplate(variation.templateId);
   const size = ASPECT_SIZES[aspect];
   const w = size.ch > size.cw ? 216 : 384;
@@ -43,7 +35,7 @@ function HomeTemplate({ variation, aspect, onPick }: { variation: TemplateVariat
   }, [variation, size.cw, size.ch, w, h]);
   if (!def) return null;
   return (
-    <button type="button" className="home-tpl" onClick={onPick} title={`Start a project from “${def.name}”`}>
+    <button type="button" className="home-tpl" onClick={onPick} title={t('Start a project from “{name}”', { name: def.name })}>
       <span className="home-tpl__thumb" style={{ aspectRatio: `${w} / ${h}` }}>
         <LiveThumb id={`home:${variation.key}:${aspect}`} width={w} height={h} build={build} />
       </span>
@@ -53,11 +45,14 @@ function HomeTemplate({ variation, aspect, onPick }: { variation: TemplateVariat
 }
 
 export function Home(): ReactNode {
+  const t = useT();
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [autosaves, setAutosaves] = useState<AutosaveEntry[]>([]);
   const [aspect, setAspect] = useState<AspectId>('16:9');
   const [category, setCategory] = useState<TemplateCategory | 'all'>('all');
   const [pages, setPages] = useState(1);
+  // Settings → General → frame rate for new projects.
+  const [fps] = useSetting<number>('general.defaultFps', 30);
   const sentinel = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -71,7 +66,7 @@ export function Home(): ReactNode {
     void refresh();
   }, [refresh]);
 
-  const categories = useMemo(() => sortCategories(unique(TEMPLATES.filter((t) => supportsAspect(t, aspect)).map((t) => t.category))), [aspect]);
+  const categories = useMemo(() => sortCategories(unique(TEMPLATES.filter((tp) => supportsAspect(tp, aspect)).map((tp) => tp.category))), [aspect]);
   const variations = useMemo(() => {
     const out: TemplateVariation[] = [];
     for (let p = 0; p < pages; p++) out.push(...variationPage({ aspect, category }, p));
@@ -99,45 +94,51 @@ export function Home(): ReactNode {
             <Logo size={44} />
             <div>
               <h1>Kinora</h1>
-              <p>Edit, animate and export — all on your GPU.</p>
+              <p>{t('Edit, animate and export — all on your GPU.')}</p>
             </div>
           </div>
           <div className="home__stats">
             <span>
-              <strong>{LIBRARY_COUNTS.transitions}</strong> transitions
+              <strong>{formatNumber(LIBRARY_COUNTS.transitions)}</strong> {t('transitions')}
             </span>
             <span>
-              <strong>{LIBRARY_COUNTS.effects + LIBRARY_COUNTS.filters}</strong> effects & filters
+              <strong>{formatNumber(LIBRARY_COUNTS.effects + LIBRARY_COUNTS.filters)}</strong> {t('effects & filters')}
             </span>
             <span>
-              <strong>{LIBRARY_COUNTS.stickers.toLocaleString()}</strong> stickers
+              <strong>{formatNumber(LIBRARY_COUNTS.stickers)}</strong> {t('stickers')}
             </span>
             <span>
-              <strong>{LIBRARY_COUNTS.textPresets}</strong> text styles
+              <strong>{formatNumber(LIBRARY_COUNTS.textPresets)}</strong> {t('text styles')}
             </span>
             <span>
-              <strong>∞</strong> templates
+              <strong>∞</strong> {t('templates')}
             </span>
           </div>
         </section>
 
-        <section className="home__section">
+        <section className="home__section" aria-labelledby="home-new">
           <header className="home__head">
-            <h2>Start a new project</h2>
+            <h2 id="home-new">{t('Start a new project')}</h2>
             <button type="button" className="btn btn--outline" onClick={() => void openProject()}>
-              <FolderOpen size={14} /> Open project…
+              <FolderOpen size={14} /> {t('Open project…')}
             </button>
           </header>
           <div className="home__formats">
             {PROJECT_FORMATS.map((f) => (
-              <button key={f.id} type="button" className="format-card" onClick={() => void newProject({ width: f.w, height: f.h, fps: 30 })}>
-                <span className="format-card__art">
+              <button
+                key={f.id}
+                type="button"
+                className="format-card"
+                aria-label={t('New {format} project, {width} × {height}', { format: f.label, width: f.w, height: f.h })}
+                onClick={() => void newProject({ width: f.w, height: f.h, fps })}
+              >
+                <span className="format-card__art" aria-hidden="true">
                   <span className="format-card__shape" style={{ width: Math.round(Math.min(150, (86 * f.w) / f.h)), height: Math.round(Math.min(86, (150 * f.h) / f.w)) }}>
                     <Plus size={16} />
                   </span>
                 </span>
                 <strong>{f.label}</strong>
-                <small>{f.hint}</small>
+                <small>{t(f.hint)}</small>
                 <small className="mono">
                   {f.w} × {f.h}
                 </small>
@@ -147,10 +148,10 @@ export function Home(): ReactNode {
         </section>
 
         {autosaves.length > 0 && (
-          <section className="home__section">
+          <section className="home__section" aria-labelledby="home-recover">
             <header className="home__head">
-              <h2>
-                <History size={16} /> Recover unsaved work
+              <h2 id="home-recover">
+                <History size={16} aria-hidden="true" /> {t('Recover unsaved work')}
               </h2>
             </header>
             <div className="home__recover">
@@ -158,15 +159,16 @@ export function Home(): ReactNode {
                 <div key={a.id} className="recover-row">
                   <div className="truncate">
                     <strong>{a.name}</strong>
-                    <small>Autosaved {relativeTime(a.savedAt)}</small>
+                    <small>{t('Autosaved {when}', { when: formatRelative(a.savedAt) })}</small>
                   </div>
                   <button type="button" className="btn btn--sm btn--primary" onClick={() => void recoverAutosave(a)}>
-                    Recover
+                    {t('Recover')}
                   </button>
                   <button
                     type="button"
                     className="icon-btn icon-btn--sm"
-                    title="Discard this recovery copy"
+                    title={t('Discard this recovery copy')}
+                    aria-label={t('Discard the recovery copy of “{name}”', { name: a.name })}
                     onClick={() => void api.autosave.remove(a.id).then(refresh)}
                   >
                     <X size={13} />
@@ -178,20 +180,35 @@ export function Home(): ReactNode {
         )}
 
         {recent.length > 0 && (
-          <section className="home__section">
+          <section className="home__section" aria-labelledby="home-recent">
             <header className="home__head">
-              <h2>
-                <Clock size={16} /> Recent projects
+              <h2 id="home-recent">
+                <Clock size={16} aria-hidden="true" /> {t('Recent projects')}
               </h2>
             </header>
             <div className="home__recent">
               {recent.slice(0, 10).map((r) => (
-                <div key={r.path} className="recent-card" onClick={() => void openProject(r.path)} title={r.path} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && void openProject(r.path)}>
+                <div
+                  key={r.path}
+                  className="recent-card"
+                  onClick={() => void openProject(r.path)}
+                  title={r.path}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={t('Open {name}', { name: r.name })}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      void openProject(r.path);
+                    }
+                  }}
+                >
                   <span className="recent-card__thumb">{r.thumbnail ? <img src={r.thumbnail} alt="" draggable={false} /> : <Logo size={26} />}</span>
                   <span className="recent-card__body">
                     <strong className="truncate">{r.name}</strong>
                     <small>
-                      {relativeTime(r.openedAt)}
+                      {formatRelative(r.openedAt)}
                       {r.duration ? ` · ${formatDuration(r.duration)}` : ''}
                       {r.width && r.height ? ` · ${r.width}×${r.height}` : ''}
                     </small>
@@ -199,7 +216,8 @@ export function Home(): ReactNode {
                   <button
                     type="button"
                     className="icon-btn icon-btn--sm recent-card__remove"
-                    title="Remove from this list"
+                    title={t('Remove from this list')}
+                    aria-label={t('Remove “{name}” from recent projects', { name: r.name })}
                     onClick={(e) => {
                       e.stopPropagation();
                       void api.app.removeRecent(r.path).then(refresh);
@@ -213,32 +231,32 @@ export function Home(): ReactNode {
           </section>
         )}
 
-        <section className="home__section">
+        <section className="home__section" aria-labelledby="home-templates">
           <header className="home__head">
-            <h2>Start from a template</h2>
-            <div className="segmented">
+            <h2 id="home-templates">{t('Start from a template')}</h2>
+            <div className="segmented" role="group" aria-label={t('Format')}>
               {(['16:9', '9:16', '1:1', '4:5'] as AspectId[]).map((a) => (
-                <button key={a} type="button" className={aspect === a ? 'is-active' : ''} onClick={() => setAspect(a)}>
+                <button key={a} type="button" className={aspect === a ? 'is-active' : ''} aria-pressed={aspect === a} onClick={() => setAspect(a)}>
                   {a}
                 </button>
               ))}
             </div>
           </header>
           <div style={{ margin: '0 -12px 4px' }}>
-            <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: 'All' }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
+            <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: t('All') }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
           </div>
           <div className={`home__templates ${portrait ? 'is-portrait' : aspect === '1:1' || aspect === '4:5' ? 'is-square' : ''}`}>
             {variations.map((v, i) => (
-              <HomeTemplate key={`${i}:${v.key}`} variation={v} aspect={aspect} onPick={() => void newProject({ width: format.w, height: format.h, fps: 30 }, v)} />
+              <HomeTemplate key={`${i}:${v.key}`} variation={v} aspect={aspect} onPick={() => void newProject({ width: format.w, height: format.h, fps }, v)} />
             ))}
           </div>
           {variations.length > 0 ? (
             <div ref={sentinel} className="lib__more">
-              <span className="spinner" /> Generating more styles…
+              <span className="spinner" aria-hidden="true" /> {t('Generating more styles…')}
             </div>
           ) : (
             <div className="empty">
-              <p>No templates for this format yet.</p>
+              <p>{t('No templates for this format yet.')}</p>
             </div>
           )}
         </section>
