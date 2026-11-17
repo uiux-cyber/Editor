@@ -117,7 +117,11 @@ points, track roles and heights) — implement against them rather than inventin
 - `core/captions.ts` — caption clips (text clips on a `role: 'captions'` track) → cues, SRT / WebVTT
   writing and parsing.
 - `core/reframe.ts` — `reframeProject(project, w, h)` adapts a project to another aspect ratio;
-  `setFocusProvider()` lets subject tracking steer the pan.
+  `setFocusProvider()` lets subject tracking steer the pan. The vision feature registers the
+  provider; call `analyseProjectFocus(project, { signal, onProgress })` from `vision/reframe.ts`
+  first so every clip has a subject analysis (results are cached per file).
+- `vision/client.ts` — the on-device vision workers (MediaPipe models, Mediabunny decoding);
+  `visionRequest()` runs analysis jobs with progress / cancellation off the UI thread.
 
 ## Time remapping and compound clips
 

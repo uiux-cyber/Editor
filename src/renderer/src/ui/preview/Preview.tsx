@@ -15,6 +15,7 @@ import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { writeProp } from '../keyframeOps';
 import { PenOverlay, PenToolButton } from './pen/PenOverlay';
+import { VisionOverlay } from '../vision/VisionOverlay';
 
 const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type HandleId = (typeof HANDLE_IDS)[number];
@@ -534,6 +535,8 @@ export function Preview(): ReactNode {
             {primary && <Gizmo clipId={primary} k={stage.k} stageW={stage.w} stageH={stage.h} setGuides={setGuides} />}
             {/* Pen tool and path point editing (ui/preview/pen). */}
             <PenOverlay k={stage.k} stageW={stage.w} stageH={stage.h} />
+            {/* Vision features: tracking box / path and analysis progress (ui/vision). */}
+            <VisionOverlay stageW={stage.w} stageH={stage.h} k={stage.k} />
             {!hasContent && (
               <div className="stage__hint">
                 <strong>Your canvas is ready</strong>

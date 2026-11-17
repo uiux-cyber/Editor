@@ -14,6 +14,7 @@ import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { animationFrame, ensureAnimationFrame, preloadAnimations } from '../media/animated';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
+import { endExportMattes, exportMatte, isCutoutClip, prepareExportMatte } from '@/vision/cutout';
 
 /** Hands out the frame shown at a source time for one video clip instance. */
 interface FrameDecoder {
@@ -202,6 +203,8 @@ export class FrameRenderer {
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
     },
+    // Background removal (vision feature): mattes computed per frame in prepare().
+    matte: (clip) => exportMatte(clip),
   };
 
   constructor(opts: FrameRendererOptions) {
@@ -264,6 +267,8 @@ export class FrameRenderer {
         if (ref.clip.type === 'image') {
           const anim = project.assets[ref.clip.assetId];
           if (anim?.kind === 'animation') await ensureAnimationFrame(anim, Math.min(Math.max(ref.localTime, 0), ref.clip.duration));
+          // Background removal: stills need their (cached) matte before the frame renders.
+          else if (isCutoutClip(ref.clip)) await prepareExportMatte(ref.clip, project, this.provider.image(ref.clip.assetId), 0);
         } else if (ref.clip.type === 'compound' && depth < MAX_NESTING) {
           await this.prepareAnimations(instanceView(project, ref.clip), ref.clip.trimIn + ref.localTime, depth + 1);
         }
@@ -285,7 +290,10 @@ export class FrameRenderer {
       const decoder = await this.decoderFor(project, ref.clip);
       if (!decoder) continue;
       const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
-      await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
+      const sourceTime = Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT);
+      await decoder.seek(sourceTime);
+      // Background removal: segment exactly the decoded frame (deterministic per frame).
+      if (isCutoutClip(ref.clip)) await prepareExportMatte(ref.clip, project, decoder.frame(), sourceTime);
     }
     const byId = this.instances.byId;
     for (const [id, decoder] of this.decoders) {
@@ -305,6 +313,7 @@ export class FrameRenderer {
   }
 
   async dispose(): Promise<void> {
+    if (this.compositor) endExportMattes();
     for (const d of this.decoders.values()) await d?.dispose();
     this.decoders.clear();
     for (const input of this.inputs.values()) {
