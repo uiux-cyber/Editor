@@ -80,7 +80,7 @@ export function CutoutControls({ clip, ids }: { clip: VideoClip | ImageClip; ids
     );
   return (
     <div className="vision-cutout" data-cutout={c.enabled ? 'on' : 'off'}>
-      <Field label="Remove background">
+      <Field label="Enabled" title="Remove the background behind people">
         <Toggle value={c.enabled} onChange={(v) => set({ enabled: v })} title="Cut out people and remove the background" />
         {label}
       </Field>
