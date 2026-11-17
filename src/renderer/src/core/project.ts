@@ -6,6 +6,7 @@
 import { makeTrack, uid } from './factory';
 import { splitKeyframes, baseProp } from './keyframes';
 import { EPS, clipEnd, snapToFrame } from './time';
+import { dirnamePath, isAbsolutePath, relativeInside, resolveFrom } from './paths';
 import {
   DESIGN_SHORT_SIDE,
   PROJECT_FILE_VERSION,
@@ -606,16 +607,47 @@ export function fillSlot(p: Project, slotId: ID, asset: MediaAsset): ID | null {
 // Serialisation
 // ---------------------------------------------------------------------------------------------
 
-export function serializeProject(project: Project): string {
-  const file: ProjectFile = { app: 'kinora', version: PROJECT_FILE_VERSION, project: { ...project, updatedAt: Date.now() } };
-  return JSON.stringify(file);
-}
-
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
+export interface ProjectPathOptions {
+  /**
+   * Absolute path of the project file. When given, media inside the project's folder is stored
+   * relative to it on save (`Media/clip.mp4`) and relative paths are resolved against it on load.
+   * Paths outside the folder stay absolute, so older projects keep working unchanged.
+   */
+  projectPath?: string | null;
+}
+
+/** Map every file path an asset refers to (source, proxy, transcode original). */
+function mapAssetPaths(assets: Record<ID, MediaAsset>, fn: (p: string) => string): Record<ID, MediaAsset> {
+  const out: Record<ID, MediaAsset> = {};
+  for (const [id, asset] of Object.entries(assets)) {
+    if (!isObj(asset)) continue;
+    let next = asset;
+    if (asset.source?.type === 'file' && typeof asset.source.path === 'string') next = { ...next, source: { ...asset.source, path: fn(asset.source.path) } };
+    if (isObj(asset.proxy) && typeof asset.proxy.path === 'string') next = { ...next, proxy: { ...asset.proxy, path: fn(asset.proxy.path) } };
+    if (typeof asset.transcodedFrom === 'string') next = { ...next, transcodedFrom: fn(asset.transcodedFrom) };
+    out[id] = next;
+  }
+  return out;
+}
+
+function resolveAssetPaths(assets: Record<ID, MediaAsset>, projectPath: string | null | undefined): Record<ID, MediaAsset> {
+  const dir = projectPath && isAbsolutePath(projectPath) ? dirnamePath(projectPath) : null;
+  return dir ? mapAssetPaths(assets, (p) => resolveFrom(dir, p)) : assets;
+}
+
+export function serializeProject(project: Project, opts: ProjectPathOptions = {}): string {
+  // Media under the project's folder is written relative to the project file (see core/paths.ts).
+  const dir = opts.projectPath && isAbsolutePath(opts.projectPath) ? dirnamePath(opts.projectPath) : null;
+  const assets = dir ? mapAssetPaths(project.assets, (p) => relativeInside(dir, p) ?? p) : project.assets;
+  const file: ProjectFile = { app: 'kinora', version: PROJECT_FILE_VERSION, project: { ...project, assets, updatedAt: Date.now() } };
+  return JSON.stringify(file);
+}
+
 /** Parse and sanitise a project file. Throws a readable error when the file is not usable. */
-export function parseProjectFile(text: string): Project {
+export function parseProjectFile(text: string, opts: ProjectPathOptions = {}): Project {
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -637,7 +669,8 @@ export function parseProjectFile(text: string): Project {
       fps: Math.min(240, Math.max(1, num(settings.fps, 30))),
       background: typeof settings.background === 'string' ? settings.background : '#000000',
     },
-    assets: isObj(src.assets) ? (src.assets as Project['assets']) : {},
+    // Relative media paths (media inside the project folder) resolve against the project file.
+    assets: isObj(src.assets) ? resolveAssetPaths(src.assets as Project['assets'], opts.projectPath) : {},
     tracks: Array.isArray(src.tracks) ? src.tracks.filter((t) => isObj(t) && typeof t.id === 'string' && (t.kind === 'visual' || t.kind === 'audio')) : [],
     clips: {},
     transitions: {},

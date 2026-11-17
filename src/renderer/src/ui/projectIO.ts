@@ -10,6 +10,8 @@ import { buildTemplate, type TemplateVariation } from '@/library/templateEngine'
 import { api } from '@/platform/api';
 import { isDirty, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { t } from './i18n';
+import { getSetting } from './settings/store';
 import type { AutosaveEntry } from '@shared/ipc';
 
 const baseName = (path: string): string => path.replace(/^.*[\\/]/, '').replace(/\.kinora$/i, '');
@@ -58,10 +60,10 @@ export async function confirmDiscard(): Promise<boolean> {
   const { project } = useProjectStore.getState();
   const choice = await api.dialog.message({
     type: 'question',
-    title: 'Unsaved changes',
-    message: `Save changes to “${project.name}”?`,
-    detail: 'Your changes will be lost if you don’t save them.',
-    buttons: ['Save', 'Don’t save', 'Cancel'],
+    title: t('Unsaved changes'),
+    message: t('Save changes to “{name}”?', { name: project.name }),
+    detail: t('Your changes will be lost if you don’t save them.'),
+    buttons: [t('Save'), t('Don’t save'), t('Cancel')],
   });
   if (choice === 2) return false;
   if (choice === 0) return saveProject();
@@ -77,8 +79,8 @@ async function load(project: Project, path: string | null, saved: boolean): Prom
   if (missing.length > 0) {
     useUI.getState().toast({
       kind: 'warning',
-      message: missing.length === 1 ? `“${missing[0].name}” could not be found` : `${missing.length} media files could not be found`,
-      detail: 'Right-click the file in the Media tab and choose Relink to point Kinora at its new location.',
+      message: missing.length === 1 ? t('“{name}” could not be found', { name: missing[0].name }) : t('{count, plural, one {# media file could not be found} other {# media files could not be found}}', { count: missing.length }),
+      detail: t('Right-click the file in the Media tab and choose Relink to point Kinora at its new location.'),
       timeout: 12000,
     });
     useUI.getState().setLibraryTab('media');
@@ -100,17 +102,22 @@ export async function newProject(opts: NewProjectOptions, template?: TemplateVar
   return true;
 }
 
-export async function openProject(path?: string): Promise<boolean> {
-  if (!(await confirmDiscard())) return false;
+/**
+ * Open a project file (asks for one when `path` is omitted). `force` skips the unsaved-changes
+ * prompt — used after Collect project, whose copy already contains the current state.
+ */
+export async function openProject(path?: string, opts: { force?: boolean } = {}): Promise<boolean> {
+  if (!opts.force && !(await confirmDiscard())) return false;
   const target = path ?? (await api.dialog.openProject());
   if (!target) return false;
   try {
-    const project = parseProjectFile(await api.fs.readProject(target));
+    // Media inside the project's folder is stored relative to the project file.
+    const project = parseProjectFile(await api.fs.readProject(target), { projectPath: target });
     await load(project, target, true);
     void remember(target, project);
     return true;
   } catch (err) {
-    toast('error', 'Could not open the project', (err as Error).message);
+    toast('error', t('Could not open the project'), (err as Error).message);
     return false;
   }
 }
@@ -128,14 +135,14 @@ export async function saveProject(saveAs = false): Promise<boolean> {
       store.update((p) => void (p.name = baseName(path!)), { history: false });
     }
     const project = useProjectStore.getState().project;
-    await api.fs.writeProject(path, serializeProject(project));
+    await api.fs.writeProject(path, serializeProject(project, { projectPath: path }));
     useProjectStore.getState().markSaved(path);
     await api.autosave.remove(project.id).catch(() => undefined);
     void remember(path, project);
-    toast('success', 'Project saved');
+    toast('success', t('Project saved'));
     return true;
   } catch (err) {
-    toast('error', 'Could not save the project', (err as Error).message);
+    toast('error', t('Could not save the project'), (err as Error).message);
     return false;
   }
 }
@@ -150,16 +157,16 @@ export async function closeProject(): Promise<boolean> {
 export async function recoverAutosave(entry: AutosaveEntry): Promise<boolean> {
   const data = await api.autosave.read(entry.id);
   if (!data) {
-    toast('error', 'This recovery file is no longer available');
+    toast('error', t('This recovery file is no longer available'));
     return false;
   }
   try {
-    const project = parseProjectFile(data);
+    const project = parseProjectFile(data, { projectPath: entry.path });
     await load(project, entry.path, false);
-    toast('info', 'Recovered unsaved work', 'Save the project to keep these changes.');
+    toast('info', t('Recovered unsaved work'), t('Save the project to keep these changes.'));
     return true;
   } catch (err) {
-    toast('error', 'The recovery file is damaged', (err as Error).message);
+    toast('error', t('The recovery file is damaged'), (err as Error).message);
     return false;
   }
 }
@@ -181,12 +188,19 @@ export function startDocumentSync(): () => void {
   const unsubB = useUI.subscribe((s, prev) => s.screen !== prev.screen && sync());
   sync();
 
+  // Settings → General → Autosave interval (seconds; 0 = off). Checked every 5 s so a change
+  // applies without a restart.
+  let lastWrite = Date.now();
   const timer = window.setInterval(() => {
-    const { project, filePath, txnBase } = useProjectStore.getState();
-    if (useUI.getState().screen !== 'editor' || txnBase || !isDirty() || project === lastAutosaved) return;
-    lastAutosaved = project;
-    void api.autosave.write(project.id, project.name, filePath, serializeProject(project)).catch((err) => console.warn('[autosave] failed', err));
-  }, 15000);
+    void getSetting<number>('general.autosaveSeconds', 15).then((seconds) => {
+      const { project, filePath, txnBase } = useProjectStore.getState();
+      if (!(seconds > 0) || Date.now() - lastWrite < seconds * 1000 - 500) return;
+      if (useUI.getState().screen !== 'editor' || txnBase || !isDirty() || project === lastAutosaved) return;
+      lastAutosaved = project;
+      lastWrite = Date.now();
+      void api.autosave.write(project.id, project.name, filePath, serializeProject(project)).catch((err) => console.warn('[autosave] failed', err));
+    });
+  }, 5000);
 
   return () => {
     unsubA();
