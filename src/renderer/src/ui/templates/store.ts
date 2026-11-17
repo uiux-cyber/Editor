@@ -154,7 +154,9 @@ export function updateBrand(recipe: (kit: BrandKit) => BrandKit | void): void {
   const current = get().brand;
   const draft = JSON.parse(JSON.stringify(current)) as BrandKit;
   const next = sanitizeBrandKit(recipe(draft) ?? draft);
-  next.revision = current.revision + 1;
+  // Only changes that alter how templates look invalidate thumbnails (not e.g. the brand name).
+  const looks = (k: BrandKit): string => JSON.stringify([k.colors, k.heading, k.body, k.logos, k.primaryLogo]);
+  next.revision = looks(next) === looks(current) ? current.revision : current.revision + 1;
   set({ brand: next, brandSet: true });
   installBrand(next);
   window.clearTimeout(saveTimer);

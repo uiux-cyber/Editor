@@ -4,7 +4,7 @@
  *   node scripts/check-library.mjs                 # every pack
  *   node scripts/check-library.mjs transitions     # one or more packs
  * Packs: transitions effects generators filters animations textAnimations textPresets stickers
- *        sounds templates
+ *        sounds templates packs (bundled resources/packs/*.kinorapack)
  * Exit code 1 when any error is reported. Add --quiet-warnings to hide warnings.
  */
 import { spawn } from 'node:child_process';
