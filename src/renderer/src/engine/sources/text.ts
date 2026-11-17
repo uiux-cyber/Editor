@@ -11,6 +11,7 @@ import type { ID, TextClip, TextStyle } from '@/core/types';
 import { getTextAnimation } from '@/library';
 import { BUNDLED_FONTS } from '@/library/fonts';
 import type { GlyphMod, TextAnimDef } from '@/library/types';
+import { captionHighlightState, highlightPad, karaokeFraction, paintUnderline, paintWordBox, wordFill, wordScale, type CaptionHighlightState, type WordBox } from './captionHighlight';
 import { MAX_RASTER, ctx2d, hashKey, makeCanvas, nextVersion, paintStyle, roundRectPath, type AnyCanvas, type Ctx2D, type Raster } from './raster';
 import { applyFont, fontString, getMeasureCtx, layoutText, type Layout } from './textLayout';
 
@@ -222,6 +223,8 @@ export class TextRenderer {
       }
     }
     const animating = active.length > 0;
+    // Caption clips: word-by-word highlight (speech feature). Not combined with per-unit animation.
+    const hl = !animating && clip.caption ? captionHighlightState(clip, t) : null;
 
     // Padding around the text block (design px) so strokes, shadows and motion are not clipped.
     const strokePad = style.stroke ? style.stroke.width / 2 : 0;
@@ -229,7 +232,7 @@ export class TextRenderer {
     const shadowPad = style.shadow ? Math.max(Math.abs(style.shadow.x), Math.abs(style.shadow.y)) + style.shadow.blur * 1.2 : 0;
     const fxPad = Math.max(strokePad, glowPad, shadowPad) + 4;
     const bg = style.background && style.background.opacity > 0 ? style.background : null;
-    const animPad = animating ? style.fontSize * 2 : 0;
+    const animPad = animating ? style.fontSize * 2 : highlightPad(hl, style.fontSize);
     const padXd = Math.max(fxPad, bg ? bg.padX + 2 : 0) + animPad;
     const padYd = Math.max(fxPad, bg ? bg.padY + 2 : 0) + animPad;
 
@@ -244,7 +247,7 @@ export class TextRenderer {
       layout = layoutText(style, rs);
     }
 
-    const key = hashKey(`${JSON.stringify(style)}|${JSON.stringify(ta ?? null)}|${rs.toFixed(4)}|${fontsEpoch}|${animating ? `t${Math.round(t * 240)}` : 's'}`);
+    const key = hashKey(`${JSON.stringify(style)}|${JSON.stringify(ta ?? null)}|${rs.toFixed(4)}|${fontsEpoch}|${animating ? `t${Math.round(t * 240)}` : 's'}|${hl?.key ?? ''}`);
     let entry = this.cache.get(clip.id);
     if (entry && entry.key === key) return entry.raster;
 
@@ -262,7 +265,7 @@ export class TextRenderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
-    this.paint(ctx, clip, style, layout, rs, padX, padY, W, H, active, t, entry);
+    this.paint(ctx, clip, style, layout, rs, padX, padY, W, H, active, t, entry, hl);
 
     const bgW = bg ? layout.inkRight - layout.inkLeft + bg.padX * 2 * rs : 0;
     const raster: Raster = {
@@ -272,7 +275,7 @@ export class TextRenderer {
       contentW: Math.max(layout.blockW, bgW) / rs,
       contentH: (layout.blockH + (bg ? bg.padY * 2 * rs : 0)) / rs,
       version: nextVersion(),
-      static: !animating,
+      static: !animating && !hl,
     };
     entry = { key, raster, scratch: entry?.scratch };
     this.cache.set(clip.id, entry);
@@ -292,6 +295,7 @@ export class TextRenderer {
     active: ActiveAnim[],
     time: number,
     entry: CacheEntry | undefined,
+    hl: CaptionHighlightState | null = null,
   ): void {
     const em = layout.fontPx;
     const seed = hashString(clip.id);
@@ -306,8 +310,37 @@ export class TextRenderer {
     const blockCx = padX + layout.blockW / 2;
     const blockCy = padY + layout.blockH / 2;
 
+    // Caption highlight: static text drawn word by word so each word can be styled on its own.
+    const capWords = hl && !animating ? splitUnits(layout, style, false).units : null;
+    const wordBoxes = new Map<number, WordBox>();
+    for (const u of capWords ?? []) {
+      const line = layout.lines[u.line];
+      wordBoxes.set(u.word, { x: padX + line.x + u.x, y: padY + line.y - layout.ascent, w: u.w, h: layout.ascent + layout.descent, line: u.line });
+    }
+
     /** Run `draw` once per drawable unit with that unit's animated transform applied. */
-    const forEachUnit = (target: Ctx2D, draw: (text: string, x: number, y: number) => void): void => {
+    const forEachUnit = (target: Ctx2D, draw: (text: string, x: number, y: number, word?: number) => void): void => {
+      if (!animating && capWords) {
+        for (const u of capWords) {
+          const line = layout.lines[u.line];
+          const x = padX + line.x + u.x;
+          const y = padY + line.y;
+          const s = wordScale(hl, u.word);
+          if (s === 1) {
+            draw(u.text, x, y, u.word);
+            continue;
+          }
+          const cx = x + u.w / 2;
+          const cy = y - (layout.ascent - layout.descent) / 2;
+          target.save();
+          target.translate(cx, cy);
+          target.scale(s, s);
+          target.translate(-cx, -cy);
+          draw(u.text, x, y, u.word);
+          target.restore();
+        }
+        return;
+      }
       if (!animating) {
         for (const line of layout.lines) if (line.text) draw(line.text, padX + line.x, padY + line.y);
         return;
@@ -403,6 +436,9 @@ export class TextRenderer {
       ctx.restore();
     }
 
+    // 1b. Caption highlight box behind the active word.
+    if (hl && capWords) paintWordBox(ctx, hl, wordBoxes, em);
+
     applyFont(ctx, style, em);
     ctx.lineJoin = 'round';
     ctx.miterLimit = 2;
@@ -456,8 +492,32 @@ export class TextRenderer {
     }
 
     // 4. Fill
-    ctx.fillStyle = paintStyle(ctx, style.fill, padX + layout.inkLeft, padY, Math.max(1, layout.inkRight - layout.inkLeft), layout.blockH);
-    forEachUnit(ctx, (text, x, y) => ctx.fillText(text, x, y));
+    const baseFill = paintStyle(ctx, style.fill, padX + layout.inkLeft, padY, Math.max(1, layout.inkRight - layout.inkLeft), layout.blockH);
+    ctx.fillStyle = baseFill;
+    if (hl && capWords) {
+      // Per-word colours (active / spoken words) and the karaoke sweep through the current word.
+      forEachUnit(ctx, (text, x, y, word = -1) => {
+        ctx.fillStyle = wordFill(hl, word) ?? baseFill;
+        ctx.fillText(text, x, y);
+        const k = karaokeFraction(hl, word);
+        const box = wordBoxes.get(word);
+        if (k > 0 && box) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x - em, y - em * 2, em + box.w * k, em * 4);
+          ctx.clip();
+          ctx.fillStyle = hl.color;
+          ctx.fillText(text, x, y);
+          ctx.restore();
+        }
+      });
+      ctx.fillStyle = baseFill;
+    } else {
+      forEachUnit(ctx, (text, x, y) => ctx.fillText(text, x, y));
+    }
+
+    // 4b. Caption underline under the active word.
+    if (hl && capWords) paintUnderline(ctx, hl, wordBoxes, em, (line) => padY + layout.lines[line].y);
 
     // 5. Underline
     if (style.underline) {

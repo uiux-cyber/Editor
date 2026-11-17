@@ -64,6 +64,13 @@ describe('caption grouping', () => {
     expect(last.end - last.start).toBeGreaterThanOrEqual(0.8 - 1e-9);
   });
 
+  it('does not leave a single orphan word on its own', () => {
+    const ws = words('Welcome to Kinora, the video editor that runs on your own computer.', 0, 0.25, 0.05);
+    const groups = groupCaptions(ws, { maxCharsPerLine: 18, maxLines: 2 });
+    expect(groups.every((g) => g.words.length >= 2)).toBe(true);
+    expect(groups[groups.length - 1].text.replace('\n', ' ')).toMatch(/own computer\.$/);
+  });
+
   it('respects a one-line limit and long pauses', () => {
     const ws = [...words('one two three four five six seven eight', 0), ...words('nine ten', 10)];
     const groups = groupCaptions(ws, { maxCharsPerLine: 14, maxLines: 1 });

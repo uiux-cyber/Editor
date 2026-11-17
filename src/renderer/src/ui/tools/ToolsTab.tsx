@@ -1,11 +1,36 @@
 import { ChevronDown, WandSparkles } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useUI } from '@/store/ui';
 import { SearchBox } from '../library/common';
 import { TOOLS, toolGroups } from './index';
 
+// Commands (palette, shortcuts) can open a tool card: `openTool(id)` switches to the Smart tab
+// and expands that card, even when the tab was not showing yet.
+let pendingTool: string | null = null;
+export function openTool(id: string): void {
+  pendingTool = id;
+  useUI.getState().setLibraryTab('tools');
+  window.dispatchEvent(new CustomEvent('kinora:open-tool', { detail: id }));
+}
+
 /** Library tab listing the smart tools; each card expands into its own panel. */
 export function ToolsTab(): ReactNode {
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(() => {
+    const id = pendingTool;
+    pendingTool = null;
+    return id;
+  });
+  useEffect(() => {
+    const onOpen = (e: Event): void => {
+      pendingTool = null;
+      setOpen((e as CustomEvent<string>).detail);
+    };
+    window.addEventListener('kinora:open-tool', onOpen);
+    return () => window.removeEventListener('kinora:open-tool', onOpen);
+  }, []);
+  useEffect(() => {
+    if (open) document.querySelector(`[data-tool="${CSS.escape(open)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [open]);
   const [search, setSearch] = useState('');
   const groups = useMemo(() => {
     const term = search.trim().toLowerCase();

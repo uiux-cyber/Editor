@@ -175,14 +175,21 @@ export function groupCaptions(input: TranscriptWord[], options: Partial<CaptionG
   }
   flush();
 
-  // Merge a dangling one-word caption into its neighbour when it fits and is close in time.
+  // Avoid orphans: a dangling one-word caption is merged into its neighbour when it fits, or
+  // takes the last words of the previous caption ("…your own" + "computer." → "your own computer.").
   for (let i = groups.length - 1; i > 0; i--) {
     const g = groups[i];
     const prev = groups[i - 1];
-    if (g.length !== 1 || endsSentence(prev[prev.length - 1])) continue;
+    if (g.length !== 1 || endsSentence(prev[prev.length - 1]) || g[0].start - prev[prev.length - 1].end > 0.35) continue;
     const merged = [...prev, ...g];
-    if (g[0].start - prev[prev.length - 1].end <= 0.35 && merged[merged.length - 1].end - merged[0].start <= o.maxDuration && splitLines(merged, o.maxCharsPerLine, o.maxLines)) {
+    if (merged[merged.length - 1].end - merged[0].start <= o.maxDuration && splitLines(merged, o.maxCharsPerLine, o.maxLines)) {
       groups.splice(i - 1, 2, merged);
+      continue;
+    }
+    while (prev.length > 3 && (g.length < 3 && joinLen(g) < 14) && !endsClause(prev[prev.length - 1])) {
+      const moved = [prev[prev.length - 1], ...g];
+      if (!splitLines(moved, o.maxCharsPerLine, o.maxLines) || moved[moved.length - 1].end - moved[0].start > o.maxDuration) break;
+      g.unshift(prev.pop()!);
     }
   }
 

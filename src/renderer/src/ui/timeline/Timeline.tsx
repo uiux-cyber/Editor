@@ -71,6 +71,7 @@ import {
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
+import { SpeechTimelineOverlay } from '../speech/TimelineOverlay';
 import { ClipView } from './ClipView';
 import { HEADER_W, LEFT_PAD, MAX_PPS, MIN_PPS, RIGHT_PAD, RULER_H, TOP_ZONE, TRACK_HEIGHT, layoutTracks, rowAt, rulerStep, timeToX, xToTime, type Layout, type TrackRow } from './geometry';
 
@@ -1015,7 +1016,7 @@ export function Timeline(): ReactNode {
               return (
                 <div
                   key={row.id}
-                  className={`tl-header tl-header--${row.kind} ${track.locked ? 'is-locked' : ''}`}
+                  className={`tl-header tl-header--${row.kind} ${track.role === 'captions' ? 'tl-header--captions' : ''} ${track.locked ? 'is-locked' : ''}`}
                   style={{ top: row.top, height: row.height }}
                   onContextMenu={(e) =>
                     openContextMenu(e, [
@@ -1076,7 +1077,7 @@ export function Timeline(): ReactNode {
               if (!track) return null;
               const clips = idx.byTrack.get(row.id) ?? [];
               return (
-                <div key={row.id} className={`tl-track tl-track--${row.kind} ${track.locked ? 'is-locked' : ''} ${track.hidden ? 'is-hidden' : ''}`} style={{ top: RULER_H + row.top, height: row.height }}>
+                <div key={row.id} className={`tl-track tl-track--${row.kind} ${track.role === 'captions' ? 'tl-track--captions' : ''} ${track.locked ? 'is-locked' : ''} ${track.hidden ? 'is-hidden' : ''}`} style={{ top: RULER_H + row.top, height: row.height }}>
                   {clips.map((clip) => {
                     const x0 = timeToX(clip.start, pps);
                     const x1 = timeToX(clipEnd(clip), pps);
@@ -1116,6 +1117,9 @@ export function Timeline(): ReactNode {
                 </div>
               );
             })}
+
+            {/* Speech & audio tools: silences under review, filler words and the beat grid. */}
+            <SpeechTimelineOverlay pps={pps} top={RULER_H} height={layout.height} viewLeft={view.left} viewWidth={view.width} />
 
             {hint.ghost && (
               <div className="tl-ghost" style={{ left: hint.ghost.left, width: Math.max(4, hint.ghost.width), top: hint.ghost.top, height: hint.ghost.height }}>
