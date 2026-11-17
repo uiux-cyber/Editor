@@ -578,6 +578,15 @@
 
 /* ---- Timeline In / Out marks -------------------------------------------------------------- */
 
+.io-guides {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 4;
+  pointer-events: none;
+}
 .io-layer {
   position: absolute;
   left: 0;

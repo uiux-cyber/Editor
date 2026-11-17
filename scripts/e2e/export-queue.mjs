@@ -292,7 +292,13 @@ export default async function exportQueue(ctx) {
   const lastPath = list.find((j) => j.label === 'Instagram feed 1:1').path;
   await sleep(300);
   expect(!existsSync(lastPath), 'cancelling a running export removes its unfinished file');
+  // "Paused (faster)" suspends the live preview while the queue runs.
+  await win.locator('.xq-pop__foot .segmented button', { hasText: 'Paused' }).click();
   await lastRow.locator('[data-action="retry"]').click();
+  await run(() => window.__kinora.engine.play());
+  const suspended = await run(() => window.__kinora.engine.playing);
+  expect(!suspended, 'with "Paused (faster)" the preview does not play while exporting');
+  await win.locator('.xq-pop__foot .segmented button', { hasText: 'Live' }).click();
   await waitFor('the queue to finish', async () => (await jobs()).every((j) => j.status === 'done' || j.status === 'failed'), 240000);
   list = await jobs();
   const failed = list.filter((j) => j.status !== 'done');
@@ -435,6 +441,7 @@ export default async function exportQueue(ctx) {
     expect(c.capLuma > 180, `…captions are burned in (caption brightness ${c.capLuma.toFixed(0)})`);
     const bytes = readFileSync(file).toString('latin1');
     expect(bytes.includes('wvtt') && bytes.includes('Thanks for watching'), '…an embedded WebVTT (wvtt) track holds the captions');
+    expect(bytes.indexOf('moov') > 0 && bytes.indexOf('moov') < bytes.indexOf('mdat'), '…and the index (moov) comes first for fast start');
     const side = parseCues(readFileSync(file.replace(/\.mp4$/, '.srt'), 'utf8'));
     expect(sameCues(side, timeline), '…and the SRT sidecar has the timeline cues');
     expect(!existsSync(file.replace(/\.mp4$/, '.vtt')), '…without a VTT (not requested)');
@@ -455,6 +462,10 @@ export default async function exportQueue(ctx) {
   expect(sel.includes('00:06:00') && sel.includes('00:09:00'), `"Selected clips" uses the selection's span (${sel.replace(/\s+/g, ' ')})`);
   await win.keyboard.press('Escape');
   await win.waitForSelector('.modal', { state: 'detached' });
+
+  // Dialog choices are stored in the user settings for the next session.
+  const prefs = await run(() => window.kinora.settings.get('export.prefs'));
+  expect(JSON.stringify(prefs?.selected) === JSON.stringify(['youtube-1080p', 'tiktok', 'instagram-square', 'instagram-portrait']) && prefs?.burnInCaptions === true && JSON.stringify(prefs?.sidecars) === '["srt"]', `export choices are remembered in the settings (${JSON.stringify(prefs?.selected)})`);
 
   // Saved projects keep their marks.
   const saved = await run(async () => {

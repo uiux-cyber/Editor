@@ -83,7 +83,15 @@ export const clearFinished = (): void => dispatch({ type: 'clearFinished' });
 export function setPreviewMode(mode: PreviewMode): void {
   useExportQueue.setState({ previewMode: mode });
   void api.settings.set('export.previewMode', mode);
-  if (running) engine.setSuspended(mode === 'paused');
+  if (running) suspendPreview(mode === 'paused');
+}
+
+/** Whether the queue (not someone else) suspended the live preview. */
+let suspendedByQueue = false;
+function suspendPreview(on: boolean): void {
+  if (on === suspendedByQueue) return;
+  suspendedByQueue = on;
+  engine.setSuspended(on);
 }
 
 export const openOutput = (job: ExportJob): void => void api.app.openPath(job.output.path);
@@ -156,8 +164,7 @@ async function pump(): Promise<void> {
   const first = nextJob(useExportQueue.getState());
   if (!first) return;
   running = true;
-  const pausePreview = useExportQueue.getState().previewMode === 'paused';
-  if (pausePreview) engine.setSuspended(true);
+  if (useExportQueue.getState().previewMode === 'paused') suspendPreview(true);
   void api.app.keepAwake(true);
   try {
     for (let job = nextJob(useExportQueue.getState()); job; job = nextJob(useExportQueue.getState())) {
@@ -165,7 +172,7 @@ async function pump(): Promise<void> {
     }
   } finally {
     running = false;
-    engine.setSuspended(false);
+    suspendPreview(false);
     void api.app.keepAwake(false);
     void api.app.setProgress(-1);
     const done = announce;

@@ -8,7 +8,7 @@ import { engine } from '@/engine/engine';
 import { canEncodeSize, estimateSize, exportCaptionCues, exportWarnings, getCapabilities, supportsEmbeddedSubtitles, supportsSidecars, withoutBurnedCaptions, type Capabilities, type SubtitleFormat } from '@/engine/export/exporter';
 import { FramingPreview } from '@/engine/export/framingPreview';
 import { ASPECTS, PLATFORM_PRESETS, PRESET_GROUPS, frameFor, presetFrame, presetSpec, type AspectId, type PlatformPreset } from '@/engine/export/presets';
-import { cancelJob, enqueue, jobCanvas, setPreviewMode, unwatch, useExportQueue } from '@/engine/export/queue';
+import { cancelJob, enqueue, jobCanvas, setPreviewMode, unwatch, useExportQueue, watch } from '@/engine/export/queue';
 import { isFinished } from '@/engine/export/queueState';
 import { defaultRangeMode, resolveRange, type RangeMode } from '@/engine/export/range';
 import { ALPHA_FORMATS, FORMATS, customFormat, defaultCustom, outputName, planTarget, type CustomSettings, type PlannedTarget } from '@/engine/export/targets';
@@ -61,7 +61,7 @@ function presetSpecLines(p: PlatformPreset, settings: { width: number; height: n
 // Framing previews
 // ---------------------------------------------------------------------------------------------
 
-function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; time: number; renderer: FramingPreview; box: { w: number; h: number } }): ReactNode {
+function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; time: number; renderer: FramingPreview | null; box: { w: number; h: number } }): ReactNode {
   const canvas = useRef<HTMLCanvasElement>(null);
   const { width, height } = plan.settings;
   const k = Math.min(box.w / width, box.h / height);
@@ -73,7 +73,7 @@ function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; tim
   const scene = useMemo(() => (plan.settings.burnInCaptions === false ? withoutBurnedCaptions(plan.project) : plan.project), [plan.project, plan.settings.burnInCaptions]);
 
   useEffect(() => {
-    if (audioOnly) return;
+    if (audioOnly || !renderer) return;
     const el = canvas.current;
     if (!el) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -119,7 +119,10 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
   const ahead = all.filter((j) => !ids.includes(j.id) && (j.status === 'running' || j.status === 'queued')).length;
 
   // Leaving the dialog: further completions are announced with toasts again.
-  useEffect(() => () => unwatch(ids), [ids]);
+  useEffect(() => {
+    watch(ids);
+    return () => unwatch(ids);
+  }, [ids]);
 
   useEffect(() => {
     if (jobs.length === 0) onClose();
@@ -298,13 +301,14 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
   const [view, setView] = useState<{ name: 'setup' } | { name: 'watch'; ids: string[] }>({ name: 'setup' });
   const [previewAt, setPreviewAt] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const previewRef = useRef<FramingPreview | null>(null);
-  previewRef.current ??= new FramingPreview();
+  // Throwaway renderer for the framing previews; created per mount (StrictMode-safe).
+  const [renderer, setRenderer] = useState<FramingPreview | null>(null);
 
   useEffect(() => {
     void getCapabilities().then(setCaps);
-    const preview = previewRef.current;
-    return () => void preview?.dispose();
+    const preview = new FramingPreview();
+    setRenderer(preview);
+    return () => void preview.dispose();
   }, []);
 
   const hasAudio = useMemo(() => getAudioClips(project).length > 0, [project]);
@@ -605,7 +609,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
                       />
                     </Field>
                     {fmt.container !== 'webm' && (
-                      <Field label="Web optimised" labelWidth={LABEL_W} title="Places the index at the start of the file so it starts playing sooner when streamed. Uses more memory while exporting.">
+                      <Field label="Web optimised" labelWidth={LABEL_W} title="Places the index at the start of the file so it starts playing sooner when streamed.">
                         <Toggle value={custom.fastStart} onChange={(v) => setC({ fastStart: v })} />
                         <span className="xd-row__hint">Fast start for streaming</span>
                       </Field>
@@ -714,7 +718,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           ) : (
             <div className="xd-previews">
               {plans.map((t) => (
-                <TargetPreview key={t.key} plan={t} time={t.settings.container === 'png' ? engine.time : previewTime} renderer={previewRef.current!} box={box} />
+                <TargetPreview key={t.key} plan={t} time={t.settings.container === 'png' ? engine.time : previewTime} renderer={renderer} box={box} />
               ))}
             </div>
           )}

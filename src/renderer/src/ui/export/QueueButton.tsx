@@ -6,6 +6,7 @@ import { cancelAll, clearFinished, initExportQueue, setPreviewMode, useExportQue
 import { isBusy, isFinished, totalProgress } from '@/engine/export/queueState';
 import { Segmented } from '../common/controls';
 import { JobRow } from './JobRow';
+import { loadExportPrefs } from './prefs';
 import './export.css';
 
 const R = 9;
@@ -125,6 +126,8 @@ export function ExportQueueButton(): ReactNode {
 
   useEffect(() => {
     initExportQueue();
+    // Remembered export dialog choices (read once at startup).
+    void loadExportPrefs();
     const onOpen = (): void => setOpen(true);
     window.addEventListener('kinora:export-queue', onOpen);
     return () => window.removeEventListener('kinora:export-queue', onOpen);

@@ -115,23 +115,28 @@ export function InOutMarks({ pps, scrollEl, height }: { pps: number; scrollEl: R
 
   const len = b - a;
   return (
-    <div className="io-layer" ref={layer} data-inout>
-      <div className="io-band" style={{ left: x0, width: Math.max(1, x1 - x0) }}>
-        <div className="io-bar" title={`In–Out ${formatTimecode(len, fps)} — drag to move, right-click for options`} onPointerDown={(e) => startDrag(e, 'both')} onContextMenu={menu} />
+    <>
+      {/* Guides through the tracks scroll with the content; the band follows the sticky ruler. */}
+      <div className="io-guides">
+        <div className="io-line" style={{ left: x0, height: Math.max(0, height - RULER_H) }} />
+        <div className="io-line" style={{ left: x1, height: Math.max(0, height - RULER_H) }} />
       </div>
-      <div className="io-line" style={{ left: x0, height: Math.max(0, height - RULER_H) }} />
-      <div className="io-line" style={{ left: x1, height: Math.max(0, height - RULER_H) }} />
-      {inPoint !== undefined && (
-        <div className={`io-handle io-handle--in ${drag === 'in' ? 'is-dragging' : ''}`} style={{ left: x0 }} data-handle="in" title={`In ${formatTimecode(a, fps)} (I)`} onPointerDown={(e) => startDrag(e, 'in')} onContextMenu={menu} />
-      )}
-      {outPoint !== undefined && (
-        <div className={`io-handle io-handle--out ${drag === 'out' ? 'is-dragging' : ''}`} style={{ left: x1 }} data-handle="out" title={`Out ${formatTimecode(b, fps)} (O)`} onPointerDown={(e) => startDrag(e, 'out')} onContextMenu={menu} />
-      )}
-      {drag && (
-        <div className="io-tip" style={{ left: drag === 'out' ? x1 : x0, top: RULER_H + 4 }}>
-          {drag === 'both' ? `${formatTimecode(a, fps)} → ${formatTimecode(b, fps)}` : formatTimecode(drag === 'in' ? a : b, fps)}
+      <div className="io-layer" ref={layer} data-inout>
+        <div className="io-band" style={{ left: x0, width: Math.max(1, x1 - x0) }}>
+          <div className="io-bar" title={`In–Out ${formatTimecode(len, fps)} — drag to move, right-click for options`} onPointerDown={(e) => startDrag(e, 'both')} onContextMenu={menu} />
         </div>
-      )}
-    </div>
+        {inPoint !== undefined && (
+          <div className={`io-handle io-handle--in ${drag === 'in' ? 'is-dragging' : ''}`} style={{ left: x0 }} data-handle="in" title={`In ${formatTimecode(a, fps)} (I)`} onPointerDown={(e) => startDrag(e, 'in')} onContextMenu={menu} />
+        )}
+        {outPoint !== undefined && (
+          <div className={`io-handle io-handle--out ${drag === 'out' ? 'is-dragging' : ''}`} style={{ left: x1 }} data-handle="out" title={`Out ${formatTimecode(b, fps)} (O)`} onPointerDown={(e) => startDrag(e, 'out')} onContextMenu={menu} />
+        )}
+        {drag && (
+          <div className="io-tip" style={{ left: drag === 'out' ? x1 : x0, top: RULER_H + 4 }}>
+            {drag === 'both' ? `${formatTimecode(a, fps)} → ${formatTimecode(b, fps)}` : formatTimecode(drag === 'in' ? a : b, fps)}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

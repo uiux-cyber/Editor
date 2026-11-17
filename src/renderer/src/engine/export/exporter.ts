@@ -501,11 +501,17 @@ export async function exportProject(
     }
 
     writer = await openDiskWriter(path);
+    // Fast start reserves room for the index at the front of the file (sized from the packet
+    // counts below) instead of buffering the whole movie in memory.
+    const fastStart = settings.fastStart ? ('reserve' as const) : false;
+    const duration = end - start;
+    // Packet maxima are only needed (and only enforced) when space is reserved for the index.
+    const packetLimit = (n: number): number | undefined => (fastStart ? Math.ceil(n * 1.35) + 16 : undefined);
     const format =
       container === 'mp4'
-        ? new Mp4OutputFormat({ fastStart: settings.fastStart ? 'in-memory' : false })
+        ? new Mp4OutputFormat({ fastStart })
         : container === 'mov'
-          ? new MovOutputFormat({ fastStart: settings.fastStart ? 'in-memory' : false })
+          ? new MovOutputFormat({ fastStart })
           : container === 'webm'
             ? new WebMOutputFormat()
             : container === 'mp3'
@@ -524,17 +530,19 @@ export async function exportProject(
         // VP9 with alpha: Mediabunny encodes the alpha plane as WebM BlockAdditional side data.
         ...(transparent ? { alpha: 'keep' as const } : {}),
       });
-      output.addVideoTrack(videoSource, { frameRate: fps });
+      output.addVideoTrack(videoSource, { frameRate: fps, maximumPacketCount: packetLimit(totalFrames) });
     }
     let audioSource: AudioBufferSource | null = null;
     if (wantAudio) {
       audioSource = new AudioBufferSource(audioCodec === 'pcm-s16' ? { codec: audioCodec } : { codec: audioCodec, quality: new Quality({ bitrate: audioRate(settings) }) });
-      output.addAudioTrack(audioSource);
+      // Audio packets are at most ~10 ms long.
+      output.addAudioTrack(audioSource, { maximumPacketCount: packetLimit(duration * 100) });
     }
     let subtitleSource: TextSubtitleSource | null = null;
     if (wantEmbedded && cues.length > 0) {
       subtitleSource = new TextSubtitleSource('webvtt');
-      output.addSubtitleTrack(subtitleSource, { name: 'Captions', languageCode: 'und' });
+      // Every cue and every gap is one packet.
+      output.addSubtitleTrack(subtitleSource, { name: 'Captions', languageCode: 'und', maximumPacketCount: packetLimit(cues.length * 2 + 2) });
     }
     await output.start();
     checkAbort();
@@ -543,7 +551,6 @@ export async function exportProject(
       subtitleSource.close();
     }
 
-    const duration = end - start;
     let audioDone = 0; // seconds of audio already submitted
     const feedAudio = async (upTo: number): Promise<void> => {
       if (!audioSource) return;
