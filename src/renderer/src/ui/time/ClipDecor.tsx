@@ -80,18 +80,21 @@ export const CompoundMini = memo(function CompoundMini({ clip, pps, from, to, he
   const used = new Set(Object.values(seq.clips).map((c) => c.trackId));
   const rows = seq.tracks.filter((t) => used.has(t.id));
   if (!rows.length || height < 36) return <span className="clip__stack" />;
+  // Rows (one per nested track, top track first) centred in the space under the label.
   const area = height - 26;
-  const gap = Math.max(5, Math.min(9, area / rows.length));
+  const shown = Math.max(1, Math.min(rows.length, Math.floor(area / 6)));
+  const gap = Math.min(9, area / shown);
+  const offset = Math.max(0, (area - gap * shown) / 2);
   const bars: ReactNode[] = [];
   const t0 = clip.trimIn;
   const t1 = clip.trimIn + clip.duration;
-  rows.slice(0, Math.max(1, Math.floor(area / 5))).forEach((track, r) => {
+  rows.slice(0, shown).forEach((track, r) => {
     for (const c of Object.values(seq.clips)) {
       if (c.trackId !== track.id || clipEnd(c) <= t0 || c.start >= t1) continue;
       const x0 = (Math.max(c.start, t0) - t0) * pps;
       const x1 = (Math.min(clipEnd(c), t1) - t0) * pps;
       if (x1 < from || x0 > to || bars.length > 300) continue;
-      bars.push(<i key={c.id} style={{ left: x0 + 1, width: Math.max(2, x1 - x0 - 2), top: r * gap, ['--k' as string]: TYPE_COLORS[c.type] }} />);
+      bars.push(<i key={c.id} style={{ left: x0 + 1, width: Math.max(2, x1 - x0 - 2), top: offset + r * gap + (gap - 5) / 2, ['--k' as string]: TYPE_COLORS[c.type] }} />);
     }
   });
   return (

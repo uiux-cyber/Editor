@@ -27,7 +27,7 @@ const TYPE_META: Record<Clip['type'], { label: string; icon: ReactNode }> = {
   shape: { label: 'Shape', icon: <Shapes size={14} /> },
   generator: { label: 'Background', icon: <Sparkles size={14} /> },
   adjustment: { label: 'Adjustment', icon: <Layers size={14} /> },
-  compound: { label: 'Compound clip', icon: <Layers size={14} /> },
+  compound: { label: 'Compound', icon: <Layers size={14} /> },
 };
 
 // ---------------------------------------------------------------------------------------------

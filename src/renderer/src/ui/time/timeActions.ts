@@ -260,3 +260,9 @@ export function breakApartSelection(): void {
   useUI.getState().select(ids);
   if (lost) toast('warning', 'Compound clip broken apart', "Its own transform, effects and grade applied to the whole compound and were not copied to its clips.");
 }
+
+// Export always renders the whole project: leave open compound clips when the dialog opens
+// (the dialog then sees the document and maps "current frame" to the project timeline).
+useUI.subscribe((s, prev) => {
+  if (s.modal === 'export' && prev.modal !== 'export' && inCompound()) closeCompound(0);
+});
