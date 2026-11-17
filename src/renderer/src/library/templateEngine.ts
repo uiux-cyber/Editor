@@ -244,7 +244,17 @@ function matching(q: VariationQuery): TemplateDef[] {
  * combination. Page 0 shows the designs in their library order; later pages are shuffled so the
  * feed keeps feeling fresh.
  */
+/**
+ * Pages shown in brand mode: with the palette and fonts fixed, later pages would only differ by
+ * layout seed, so the feed stops after a few looks per design.
+ */
+export const BRAND_PAGES = 3;
+
+/** False once the endless feed has nothing new to show for this query. */
+export const hasMorePages = (q: VariationQuery, pages: number): boolean => !(q.brand && brand && pages >= BRAND_PAGES) && q.category !== 'mine';
+
 export function variationPage(q: VariationQuery, page: number): TemplateVariation[] {
+  if (q.brand && brand && page >= BRAND_PAGES) return [];
   // Fixed designs (saved user templates…) have a single look: they only appear on the first page.
   const defs = matching(q).filter((def) => page === 0 || !def.fixed);
   if (defs.length === 0) return [];

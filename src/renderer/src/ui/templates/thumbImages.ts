@@ -1,13 +1,14 @@
 /**
  * Pictures that template thumbnails need besides the built-in demo images: brand logos and media
  * embedded in user templates. They are decoded once into bitmaps and served to the thumbnail
- * compositor (see `extraThumbImage` in ui/library/thumbs.tsx).
+ * compositor (registered with `setExtraThumbImages` from ui/library/thumbs.tsx).
  */
 
 import type { FrameImage } from '@/engine/compositor';
 import type { ID, MediaAsset } from '@/core/types';
 import { loadImageBitmap } from '@/engine/media/assets';
 import { api } from '@/platform/api';
+import { setExtraThumbImages } from '../library/thumbs';
 
 interface Entry {
   image: FrameImage | null;
@@ -63,6 +64,9 @@ export function ensureThumbImages(assets: MediaAsset[], timeoutMs = 4000): Promi
 
 /** The decoded picture of an asset, if ready. */
 export const thumbImage = (assetId: ID): FrameImage | null => entries.get(assetId)?.image ?? null;
+
+// Serve these pictures to the library's thumbnail compositor.
+setExtraThumbImages(thumbImage);
 
 /** Forget a picture (e.g. a removed logo). */
 export function forgetThumbImage(assetId: ID): void {

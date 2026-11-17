@@ -37,7 +37,7 @@
     },
     {
       "id": "kinora-sample-neon-night",
-      "name": "Neon Night",
+      "name": "Midnight Neon",
       "dark": true,
       "bg": "#07070f",
       "bg2": "#12122a",
@@ -53,7 +53,7 @@
   "fontPairs": [
     {
       "id": "kinora-sample-editorial",
-      "name": "Editorial",
+      "name": "Serif Editorial",
       "heading": {
         "family": "Playfair Display",
         "weight": 700
@@ -67,8 +67,8 @@
   ],
   "filters": [
     {
-      "id": "kinora-sample-golden-hour",
-      "name": "Golden Hour",
+      "id": "kinora-sample-amber-glow",
+      "name": "Amber Glow",
       "category": "cinematic",
       "grade": {
         "temperature": 0.32,
@@ -183,7 +183,7 @@
   "effects": [
     {
       "id": "kinora-sample-duotone",
-      "name": "Duotone",
+      "name": "Twilight Duotone",
       "category": "color",
       "params": [
         {

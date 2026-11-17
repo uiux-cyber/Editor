@@ -2,7 +2,7 @@ import { Clock, FolderOpen, History, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatDuration } from '@/core/time';
 import { LIBRARY_COUNTS, TEMPLATES, getTemplate } from '@/library';
-import { ASPECT_SIZES, isUserTemplate, sortCategories, supportsAspect, variationPage, type TemplateVariation } from '@/library/templateEngine';
+import { ASPECT_SIZES, hasMorePages, isUserTemplate, sortCategories, supportsAspect, variationPage, type TemplateVariation } from '@/library/templateEngine';
 import type { AspectId, TemplateCategory } from '@/library/types';
 import { api } from '@/platform/api';
 import type { AutosaveEntry, RecentProject } from '@shared/ipc';
@@ -251,14 +251,16 @@ export function Home(): ReactNode {
                 <HomeTemplate key={`${i}:${v.key}`} variation={v} aspect={aspect} epoch={g.epoch} onPick={() => void startProjectFromTemplate({ width: format.w, height: format.h, fps: 30 }, v)} />
               ))}
           </div>
-          {variations.length > 0 && category !== 'mine' ? (
-            <div ref={sentinel} className="lib__more">
-              <span className="spinner" /> Generating more styles…
-            </div>
-          ) : (
+          {variations.length === 0 ? (
             <div className="empty">
               <p>No templates for this format yet.</p>
             </div>
+          ) : (
+            hasMorePages({ aspect, category, brand: g.brand }, pages) && (
+              <div ref={sentinel} className="lib__more">
+                <span className="spinner" /> Generating more styles…
+              </div>
+            )
           )}
         </section>
       </div>

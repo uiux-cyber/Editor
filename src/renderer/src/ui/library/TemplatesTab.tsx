@@ -2,7 +2,7 @@ import { Infinity as InfinityIcon, MoreHorizontal, Shuffle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { designSize } from '@/core/project';
 import { TEMPLATES, getTemplate } from '@/library';
-import { ASPECT_SIZES, sortCategories, aspectIdFor, isUserTemplate, looksPerDesign, shuffleVariation, supportsAspect, templateCount, variationPage, type TemplateVariation } from '@/library/templateEngine';
+import { ASPECT_SIZES, sortCategories, aspectIdFor, hasMorePages, isUserTemplate, looksPerDesign, shuffleVariation, supportsAspect, templateCount, variationPage, type TemplateVariation } from '@/library/templateEngine';
 import { useProjectStore } from '@/store/project';
 import { applyTemplate } from '../actions';
 import { startDrag } from '../dnd';
@@ -80,7 +80,7 @@ export function TemplatesTab(): ReactNode {
   // Endless feed: every time the end comes into view, generate another page of variations.
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || count === 0 || category === 'mine') return;
+    if (!el || count === 0 || !hasMorePages(query, pages)) return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) setPages((p) => Math.min(p + 1, 400));
@@ -89,7 +89,7 @@ export function TemplatesTab(): ReactNode {
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [count, pages, category]);
+  }, [count, pages, query]);
 
   // Thumbnails are rendered for the project's own aspect ratio so they show the real layout.
   const size = ASPECT_SIZES[aspect];
@@ -146,7 +146,7 @@ export function TemplatesTab(): ReactNode {
                 );
               })}
             </div>
-            {category !== 'mine' && (
+            {hasMorePages(query, pages) && (
               <div ref={sentinel} className="lib__more">
                 <span className="spinner" /> Generating more styles…
               </div>

@@ -50,7 +50,7 @@ export class BrandColorMapper {
   private hues: number[] = [];
   private readonly light: string;
   private readonly dark: string;
-  constructor(private readonly palette: Palette) {
+  constructor(readonly palette: Palette) {
     const textL = luminance(palette.text);
     const bgL = luminance(palette.bg);
     this.light = textL >= bgL ? palette.text : palette.bg;
@@ -97,10 +97,16 @@ function restyleText(clip: TextClip, m: BrandColorMapper, fonts: FontPair, headi
   t.fontWeight = role.weight;
   if (role.uppercase !== undefined) t.uppercase = role.uppercase;
   if (role.letterSpacing !== undefined) t.letterSpacing = role.letterSpacing;
-  t.fill = m.paint(t.fill);
+  if (t.background && t.background.opacity >= 0.3) {
+    // Text on a box: the box takes the primary colour and the text the colour that reads on it.
+    t.background = { ...t.background, color: m.palette.primary };
+    t.fill = { type: 'solid', color: m.palette.onPrimary };
+  } else {
+    t.fill = m.paint(t.fill);
+    if (t.background) t.background = { ...t.background, color: m.map(t.background.color) };
+  }
   if (t.stroke) t.stroke = { ...t.stroke, color: m.map(t.stroke.color) };
   if (t.glow) t.glow = { ...t.glow, color: m.map(t.glow.color) };
-  if (t.background) t.background = { ...t.background, color: m.map(t.background.color) };
 }
 
 function restyleShape(clip: ShapeClip, m: BrandColorMapper): void {

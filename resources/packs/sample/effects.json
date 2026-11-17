@@ -1,7 +1,7 @@
 [
   {
     "id": "kinora-sample-duotone",
-    "name": "Duotone",
+    "name": "Twilight Duotone",
     "category": "color",
     "glslFile": "duotone.glsl",
     "params": [

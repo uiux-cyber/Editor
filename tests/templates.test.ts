@@ -300,6 +300,11 @@ describe('brand kit', () => {
     // The same source hue maps to the same brand colour; a new hue gets the secondary.
     expect(bar.shape.fill.type === 'linear' && bar.shape.fill.stops.map((s) => s.color)).toEqual(['#ff0055', '#00aaff']);
     expect(slot.shape.fill).toEqual({ type: 'solid', color: '#333333' });
+    // Text on a box: box = primary, text = the colour that reads on the primary.
+    const boxed = makeText('Sale', { style: { fontSize: 90, fill: { type: 'solid', color: '#ffee00' }, background: { color: '#7a1010', opacity: 0.9, padX: 20, padY: 8, radius: 4 } } });
+    applyBrandStyle([boxed], p, fonts);
+    expect(boxed.text.background?.color).toBe(p.primary);
+    expect(boxed.text.fill).toEqual({ type: 'solid', color: p.onPrimary });
   });
 });
 
