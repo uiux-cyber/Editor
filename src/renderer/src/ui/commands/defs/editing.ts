@@ -11,17 +11,21 @@ import {
   unlinkSelection,
 } from '../../actions';
 import { useHistoryPanel } from '../../timeline/HistoryPanel';
+import { TRACK_HEIGHT, TRACK_SIZES, type TrackSize } from '../../timeline/geometry';
 import type { Command } from '../index';
 
 const inEditor = (): boolean => useUI.getState().screen === 'editor';
+/** Every track has the height of a size preset. */
+const tracksAre = (size: TrackSize): boolean => getProject().tracks.every((t) => (t.height ?? TRACK_HEIGHT[t.kind]) === TRACK_SIZES[size][t.kind]);
 const selected = (): string[] => useUI.getState().selection.filter((id) => getProject().clips[id]);
 const tool = (id: Tool, title: string, shortcut: string, keywords: string[]): Command => ({
   id: `timeline.tool.${id}`,
   title,
-  group: 'Timeline',
+  group: 'Tools',
   shortcut,
   keywords,
   when: inEditor,
+  checked: () => useUI.getState().tool === id,
   run: () => useUI.getState().setTool(id),
 });
 
@@ -32,6 +36,8 @@ const commands: Command[] = [
   tool('slide', 'Slide tool', 'U', ['trim', 'slide edit']),
   {
     id: 'clip.group',
+    menu: 'Edit',
+    menuSection: 'Groups and links',
     title: 'Group clips',
     group: 'Clip',
     shortcut: 'Ctrl+G',
@@ -41,6 +47,8 @@ const commands: Command[] = [
   },
   {
     id: 'clip.ungroup',
+    menu: 'Edit',
+    menuSection: 'Groups and links',
     title: 'Ungroup clips',
     group: 'Clip',
     shortcut: 'Ctrl+Shift+G',
@@ -50,6 +58,8 @@ const commands: Command[] = [
   },
   {
     id: 'clip.link',
+    menu: 'Edit',
+    menuSection: 'Groups and links',
     title: 'Link clips',
     group: 'Clip',
     shortcut: 'Ctrl+L',
@@ -59,6 +69,8 @@ const commands: Command[] = [
   },
   {
     id: 'clip.unlink',
+    menu: 'Edit',
+    menuSection: 'Groups and links',
     title: 'Unlink clips',
     group: 'Clip',
     shortcut: 'Ctrl+Shift+L',
@@ -68,6 +80,9 @@ const commands: Command[] = [
   },
   {
     id: 'timeline.magneticMain',
+    menu: 'View',
+    menuSection: 'Timeline',
+    checked: () => !!getProject().magneticMain,
     title: 'Magnetic main track',
     group: 'Timeline',
     keywords: ['magnet', 'main track', 'gaps', 'ripple'],
@@ -76,6 +91,8 @@ const commands: Command[] = [
   },
   {
     id: 'view.history',
+    menu: 'Edit',
+    menuSection: 'History',
     title: 'Show history',
     group: 'View',
     shortcut: 'Ctrl+H',
@@ -83,9 +100,9 @@ const commands: Command[] = [
     when: inEditor,
     run: () => useHistoryPanel.getState().toggle(),
   },
-  { id: 'view.trackSize.small', title: 'Track size: Small', group: 'View', keywords: ['track height'], when: inEditor, run: () => setTrackSize('small') },
-  { id: 'view.trackSize.medium', title: 'Track size: Medium', group: 'View', keywords: ['track height'], when: inEditor, run: () => setTrackSize('medium') },
-  { id: 'view.trackSize.large', title: 'Track size: Large', group: 'View', keywords: ['track height'], when: inEditor, run: () => setTrackSize('large') },
+  { id: 'view.trackSize.small', title: 'Track size: Small', group: 'View', menuSection: 'Track size', menuTitle: 'Small', checked: () => tracksAre('small'), keywords: ['track height'], when: inEditor, run: () => setTrackSize('small') },
+  { id: 'view.trackSize.medium', title: 'Track size: Medium', group: 'View', menuSection: 'Track size', menuTitle: 'Medium', checked: () => tracksAre('medium'), keywords: ['track height'], when: inEditor, run: () => setTrackSize('medium') },
+  { id: 'view.trackSize.large', title: 'Track size: Large', group: 'View', menuSection: 'Track size', menuTitle: 'Large', checked: () => tracksAre('large'), keywords: ['track height'], when: inEditor, run: () => setTrackSize('large') },
 ];
 
 export default commands;

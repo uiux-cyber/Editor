@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, powerSaveBlocker, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerSaveBlocker, protocol, session, shell } from 'electron';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
@@ -313,7 +313,7 @@ interface WindowState {
 
 function createWindow(): void {
   const state = store.get<WindowState>('windowState', { width: 1600, height: 960, maximized: true })!;
-  nativeTheme.themeSource = 'dark';
+  // nativeTheme.themeSource and the title-bar colours follow the user's theme: see handlers/theme.ts.
 
   const win = new BrowserWindow({
     x: state.x,

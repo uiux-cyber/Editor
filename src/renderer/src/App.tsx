@@ -18,39 +18,48 @@ import { handleEditorKey } from './ui/shell/shortcuts';
 import { TitleBar } from './ui/shell/TitleBar';
 import { Timeline } from './ui/timeline/Timeline';
 import { useProjectStore } from './store/project';
+import { t as tr, useT } from './ui/i18n';
+import { CommandPalette } from './ui/palette/CommandPalette';
+import { getSetting } from './ui/settings/store';
+import { trackPaneFocus } from './ui/shell/panes';
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 function Editor(): ReactNode {
+  const t = useT();
   const leftWidth = useUI((s) => s.leftWidth);
   const rightWidth = useUI((s) => s.rightWidth);
   const timelineHeight = useUI((s) => s.timelineHeight);
   const set = useUI((s) => s.set);
+  // Each panel is a focusable landmark (F6 / Shift+F6 cycle between them, see shell/panes.ts).
   return (
     <div className="editor">
       <div className="editor__top">
-        <LibraryRail />
-        <div className="editor__library" style={{ width: leftWidth }}>
-          <LibraryPanel />
-        </div>
+        <section className="editor__pane editor__pane--library" data-pane="library" tabIndex={-1} aria-label={t('Library')}>
+          <LibraryRail />
+          <div className="editor__library" style={{ width: leftWidth }}>
+            <LibraryPanel />
+          </div>
+        </section>
         <Resizer axis="x" onDrag={(d) => set({ leftWidth: clamp(useUI.getState().leftWidth + d, 280, 560) })} />
-        <div className="editor__preview">
+        <section className="editor__preview" data-pane="preview" tabIndex={-1} aria-label={t('Preview')}>
           <Preview />
-        </div>
+        </section>
         <Resizer axis="x" onDrag={(d) => set({ rightWidth: clamp(useUI.getState().rightWidth - d, 280, 480) })} />
-        <div className="editor__inspector" style={{ width: rightWidth }}>
+        <section className="editor__inspector" data-pane="inspector" tabIndex={-1} aria-label={t('Inspector')} style={{ width: rightWidth }}>
           <Inspector />
-        </div>
+        </section>
       </div>
       <Resizer axis="y" onDrag={(d) => set({ timelineHeight: clamp(useUI.getState().timelineHeight - d, 170, Math.max(200, window.innerHeight - 320)) })} />
-      <div className="editor__timeline" style={{ height: timelineHeight }}>
+      <section className="editor__timeline" data-pane="timeline" tabIndex={-1} aria-label={t('Timeline')} style={{ height: timelineHeight }}>
         <Timeline />
-      </div>
+      </section>
     </div>
   );
 }
 
 export function App(): ReactNode {
+  const t = useT();
   const screen = useUI((s) => s.screen);
   const [fileDrag, setFileDrag] = useState(false);
   const dragDepth = useRef(0);
@@ -64,8 +73,15 @@ export function App(): ReactNode {
       });
     });
     const offOpen = api.app.onOpenProject((path) => void openProject(path));
-    void api.app.getStartupProject().then((path) => {
-      if (path) void openProject(path);
+    void api.app.getStartupProject().then(async (path) => {
+      if (path) {
+        void openProject(path);
+        return;
+      }
+      // Settings → General → "Reopen the last project".
+      if ((await getSetting<string>('general.startup', 'home')) !== 'last') return;
+      const [last] = await api.app.getRecent();
+      if (last && useUI.getState().screen === 'home') void openProject(last.path);
     });
     return () => {
       stopSync();
@@ -75,12 +91,15 @@ export function App(): ReactNode {
   }, []);
 
   useEffect(() => {
+    // Every shortcut goes through the command registry and the user's keymap.
     const onKey = (e: KeyboardEvent): void => handleEditorKey(e);
     window.addEventListener('keydown', onKey);
+    const stopPanes = trackPaneFocus();
     // Undo / redo can remove selected clips: keep the selection valid.
     const unsub = useProjectStore.subscribe(() => sanitizeSelection());
     return () => {
       window.removeEventListener('keydown', onKey);
+      stopPanes();
       unsub();
     };
   }, []);
@@ -118,12 +137,12 @@ export function App(): ReactNode {
         return;
       }
       if (useUI.getState().screen !== 'editor') {
-        useUI.getState().toast({ kind: 'info', message: 'Create or open a project first', detail: 'Then drop your media into it.' });
+        useUI.getState().toast({ kind: 'info', message: tr('Create or open a project first'), detail: tr('Then drop your media into it.') });
         return;
       }
       const media = paths.filter((p) => MEDIA_EXTS.includes(extOf(p)));
       if (media.length === 0) {
-        useUI.getState().toast({ kind: 'error', message: 'Unsupported file type', detail: 'Kinora imports video, audio and image files.' });
+        useUI.getState().toast({ kind: 'error', message: tr('Unsupported file type'), detail: tr('Kinora imports video, audio and image files.') });
         return;
       }
       const onTimeline = !!(e.target as HTMLElement | null)?.closest?.('[data-timeline], [data-preview]');
@@ -149,6 +168,7 @@ export function App(): ReactNode {
       <TitleBar />
       <main className="app__main">{screen === 'home' ? <Home /> : <Editor />}</main>
       <Modals />
+      <CommandPalette />
       <MenuHost />
       <Toasts />
       <DragGhost />
@@ -156,8 +176,8 @@ export function App(): ReactNode {
         <div className="file-drop">
           <div className="file-drop__card">
             <Upload size={26} />
-            <strong>Drop to import</strong>
-            <span>Video, audio and images are added to your media. Drop on the timeline to place them right away.</span>
+            <strong>{t('Drop to import')}</strong>
+            <span>{t('Video, audio and images are added to your media. Drop on the timeline to place them right away.')}</span>
           </div>
         </div>
       )}

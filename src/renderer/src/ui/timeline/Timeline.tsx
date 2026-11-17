@@ -85,6 +85,7 @@ import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { InOutMarks } from '../export/InOutMarks';
 import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
+import { cachedThemeColor, useTheme } from '../theme';
 import { ClipView } from './ClipView';
 import { EditReadout, HistoryButton, MagneticButton, TrimToolButtons } from './EditToolbar';
 import { editedIds, installEditCursors, startEditGesture, useEditReadout, type GestureContext } from './editGestures';
@@ -167,13 +168,13 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
   if (!ctx) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, RULER_H);
-  ctx.fillStyle = '#0d0f13';
+  ctx.fillStyle = cachedThemeColor('--ruler-bg', '#0d0f13'); // theme-aware (ui/theme.ts)
   ctx.fillRect(0, 0, width, RULER_H);
 
   // Shade the area past the end of the project.
   const endX = timeToX(duration, pps) - scrollLeft;
   if (duration > 0 && endX < width) {
-    ctx.fillStyle = 'rgba(255,255,255,0.018)';
+    ctx.fillStyle = cachedThemeColor('--ruler-shade', 'rgba(255,255,255,0.018)');
     ctx.fillRect(Math.max(0, endX), 0, width - Math.max(0, endX), RULER_H);
   }
 
@@ -183,7 +184,7 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
   ctx.font = '500 10.5px "Inter Variable", "Segoe UI", sans-serif';
   ctx.textBaseline = 'top';
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.strokeStyle = cachedThemeColor('--ruler-tick', 'rgba(255,255,255,0.14)');
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let i = Math.floor(t0 / minor); i * minor <= t1; i++) {
@@ -194,8 +195,8 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
   }
   ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-  ctx.fillStyle = '#8f97a8';
+  ctx.strokeStyle = cachedThemeColor('--ruler-tick-major', 'rgba(255,255,255,0.3)');
+  ctx.fillStyle = cachedThemeColor('--ruler-text', '#8f97a8');
   ctx.beginPath();
   for (let i = Math.floor(t0 / major); i * major <= t1; i++) {
     const t = i * major;
@@ -224,7 +225,7 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
   // Playhead cap.
   const px = timeToX(time, pps) - scrollLeft;
   if (px > -10 && px < width + 10) {
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = cachedThemeColor('--playhead', '#ffffff');
     ctx.beginPath();
     ctx.moveTo(px - 6, 0);
     ctx.lineTo(px + 6, 0);
@@ -234,7 +235,7 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
     ctx.closePath();
     ctx.fill();
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillStyle = cachedThemeColor('--ruler-line', 'rgba(255,255,255,0.07)');
   ctx.fillRect(0, RULER_H - 1, width, 1);
 }
 
@@ -389,6 +390,9 @@ export function Timeline(): ReactNode {
   useEffect(() => {
     syncView();
   }, [syncView, bodySize.width, bodySize.height, pps, project.markers, duration, fps]);
+
+  // The ruler is a canvas: repaint it when the colour theme changes.
+  useEffect(() => useTheme.subscribe((s, prev) => s.resolved !== prev.resolved && requestAnimationFrame(paintRuler)), [paintRuler]);
 
   useEffect(() => {
     placePlayhead(engine.time);

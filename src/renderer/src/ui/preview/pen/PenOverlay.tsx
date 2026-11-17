@@ -546,16 +546,7 @@ export function PenOverlay({ k, stageW, stageH }: StageProps): ReactNode {
     return s.project.tracks.find((t) => t.id === c.trackId)?.locked ? null : c.id;
   });
 
-  // P switches to the pen tool (also registered as the `graphics.penTool` command).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key.toLowerCase() !== 'p' || e.altKey || e.shiftKey || !canvasKey(e)) return;
-      e.preventDefault();
-      useUI.getState().setTool('pen');
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  // P (the `graphics.penTool` command, rebindable) switches to the pen tool.
 
   if (tool === 'pen') return <PenDraw k={k} stageW={stageW} stageH={stageH} />;
   if (target && tool === 'select') return <PathEditor key={target} clipId={target} k={k} stageW={stageW} stageH={stageH} />;

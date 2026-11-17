@@ -10,16 +10,40 @@ import type { ReactNode } from 'react';
 export interface Command {
   /** Stable id, e.g. `clip.split` or `smart.autoCaptions`. Used for custom shortcuts. */
   id: string;
+  /** English title; translated for display with `t()` (see docs/I18N.md). */
   title: string;
   /** Menu / palette group, e.g. 'File', 'Edit', 'View', 'Timeline', 'Clip', 'Smart', 'Help'. */
   group: string;
   /** Extra search terms for the palette. */
   keywords?: string[];
-  /** Default shortcut in the form `Ctrl+Shift+K`, `S`, `Alt+ArrowLeft`. */
+  /**
+   * Default shortcut in the form `Ctrl+Shift+K`, `S`, `Alt+ArrowLeft`, `F6`, `?`. Printable
+   * symbols are written as the character they type (`?`, `+`), without Shift. Users can rebind
+   * it in Settings → Shortcuts.
+   */
   shortcut?: string;
+  /** Further default shortcuts (e.g. `Ctrl+Y` for redo). */
+  extraShortcuts?: string[];
   icon?: ReactNode;
   /** Return false to hide / disable the command in the current state. */
   when?: () => boolean;
+  /** For toggles and choices: shown as a check mark in menus and as On / Off in the palette. */
+  checked?: () => boolean;
+  /**
+   * Title-bar menu to list the command in: 'File' | 'Edit' | 'View' | 'Tools' | 'Help', or false
+   * for palette / shortcut only. Default: the group when it names one of those menus, otherwise
+   * 'Tools' (under a heading with the group name).
+   */
+  menu?: string | false;
+  /** Shorter label used inside a menu section (e.g. 'Light' under a 'Theme' heading). */
+  menuTitle?: string;
+  /** Heading of the menu section this command belongs to (consecutive commands share it). */
+  menuSection?: string;
+  /**
+   * The shortcut also works while a text field has focus (document-level commands such as Save
+   * or the command palette). Shortcuts never fire while a dialog or menu is open.
+   */
+  global?: boolean;
   run: () => unknown;
 }
 
