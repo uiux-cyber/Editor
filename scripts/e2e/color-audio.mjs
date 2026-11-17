@@ -120,6 +120,7 @@ export default async function colorAudio(ctx) {
       async videoFrameStats(file, time) {
         const v = document.createElement('video');
         v.muted = true;
+        v.crossOrigin = 'anonymous';
         v.src = window.kinora.media.toUrl(file);
         await new Promise((res, rej) => {
           v.onloadeddata = res;
@@ -520,10 +521,11 @@ export default async function colorAudio(ctx) {
   await thr.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await sleep(150);
   const tb = await thr.boundingBox();
-  await mouse.click(tb.x + tb.width * 0.55, tb.y + tb.height / 2);
+  // Click well away from the thumb (−24 dB sits at 60 %).
+  await mouse.click(tb.x + tb.width * 0.3, tb.y + tb.height / 2);
   await sleep(200);
   clip = await clipState(ids.music);
-  expect(clip.compressor.threshold > -30 && clip.compressor.threshold < -24, `threshold slider (${clip.compressor.threshold} dB)`);
+  expect(clip.compressor.threshold > -48 && clip.compressor.threshold < -36, `threshold slider (${clip.compressor.threshold} dB)`);
   // Auto make-up of the node is cancelled: a quiet tone passes at exactly the user's make-up.
   const makeupErr = await run(async (s) => {
     const ca = window.__kinoraColorAudio;
@@ -576,10 +578,10 @@ export default async function colorAudio(ctx) {
   await audioHeader.locator('button[title="Mute track"]').click();
   await sleep(1800);
   const muted = await run(() => ({ level: +document.querySelector('.track-meter').dataset.level, cls: document.querySelector('.track-meter').className }));
-  expect(muted.level < -80 && muted.cls.includes('is-muted'), `a muted track's meter drops to silence (${muted.level} dB)`);
+  // The meter falls with its release ballistics (26 dB/s); below −60 dBFS it reads empty.
+  expect(muted.level < -60 && muted.cls.includes('is-muted'), `a muted track's meter drops to silence (${muted.level} dB)`);
   await audioHeader.locator('button[title="Unmute track"]').click();
-  await sleep(1000);
-  const mixPeak = await run(() => +document.querySelector('.track-meter').dataset.peak);
+  await sleep(300);
   await run(() => window.__kinora.engine.pause());
 
   // ---- Export audio: EQ / compressor change the levels, preview ≈ export ---------------------
@@ -602,7 +604,8 @@ export default async function colorAudio(ctx) {
     const gap = s.gaps[0];
     expect(gap.minDb > gap.avgDb - 15, `no gap at the 4 s mix-window boundary with a compressor (min ${gap.minDb.toFixed(1)} vs avg ${gap.avgDb.toFixed(1)} dB)`);
   }
-  expect(Math.abs(processed.all.peakDb - mixPeak) < 3, `preview track meter peak matches the exported peak (${mixPeak.toFixed(1)} vs ${processed.all.peakDb.toFixed(1)} dBFS)`);
+  // Same EQ + compressor settings as while playing: the live track meter agrees with the export.
+  expect(Math.abs(processed.all.peakDb - peakSeen) < 3, `preview track meter peak matches the exported peak (${peakSeen.toFixed(1)} vs ${processed.all.peakDb.toFixed(1)} dBFS)`);
   await run((a) => window.__kinora.actions.editClips([a.id], (c) => ((c.eq = a.saved.eq), (c.compressor = a.saved.compressor))), { id: ids.music, saved });
 
   // ---- Full export (video + audio) and a decoded frame vs the preview ------------------------
