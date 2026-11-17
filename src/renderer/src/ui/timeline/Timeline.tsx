@@ -98,6 +98,10 @@ import { HistoryPanel } from './HistoryPanel';
 import { MainMagnetIcon } from './icons';
 import { TrimMonitor } from './TrimMonitor';
 import './timeline-editing.css';
+import { shortcutText, useKeymapVersion, withShortcut } from '../commands/keymapStore';
+
+/** Current shortcut of a command for menus (follows the user's keymap). */
+const sc = (id: string): string | undefined => shortcutText(id) || undefined;
 
 // ---------------------------------------------------------------------------------------------
 // Helpers
@@ -253,6 +257,7 @@ const zoomToSlider = (pps: number): number => Math.log(pps / MIN_PPS) / Math.log
 const sliderToZoom = (v: number): number => MIN_PPS * Math.pow(MAX_PPS / MIN_PPS, v);
 
 function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () => void }): ReactNode {
+  useKeymapVersion();
   const tool = useUI((s) => s.tool);
   const snapping = useUI((s) => s.snapping);
   const pps = useUI((s) => s.pxPerSec);
@@ -263,37 +268,37 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
   return (
     <div className="tl-toolbar">
       <div className="tl-toolbar__group">
-        <button type="button" data-tool="select" className={`icon-btn ${tool === 'select' ? 'is-active' : ''}`} title="Select tool (V) — Shift-drag a clip edge to ripple trim, Alt-click to pick one clip of a group or link" onClick={() => set({ tool: 'select' })}>
+        <button type="button" data-tool="select" className={`icon-btn ${tool === 'select' ? 'is-active' : ''}`} title={`${withShortcut('Select tool', 'tool.select')} — Shift-drag a clip edge to ripple trim, Alt-click to pick one clip of a group or link`} onClick={() => set({ tool: 'select' })}>
           <MousePointer2 size={15} />
         </button>
-        <button type="button" data-tool="blade" className={`icon-btn ${tool === 'blade' ? 'is-active' : ''}`} title="Blade tool — click a clip to cut it (C)" onClick={() => set({ tool: 'blade' })}>
+        <button type="button" data-tool="blade" className={`icon-btn ${tool === 'blade' ? 'is-active' : ''}`} title={`${withShortcut('Blade tool', 'tool.blade')} — click a clip to cut it`} onClick={() => set({ tool: 'blade' })}>
           <Scissors size={15} />
         </button>
         <TrimToolButtons />
         <span className="vdivider" />
-        <button type="button" className="icon-btn" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
+        <button type="button" className="icon-btn" title={withShortcut('Undo', 'edit.undo')} disabled={!canUndo} onClick={undo}>
           <Undo2 size={15} />
         </button>
-        <button type="button" className="icon-btn" title="Redo (Ctrl+Shift+Z)" disabled={!canRedo} onClick={redo}>
+        <button type="button" className="icon-btn" title={withShortcut('Redo', 'edit.redo')} disabled={!canRedo} onClick={redo}>
           <Redo2 size={15} />
         </button>
         <HistoryButton />
         <span className="vdivider" />
-        <button type="button" className="icon-btn" title="Split at playhead (S)" onClick={splitAtPlayhead}>
+        <button type="button" className="icon-btn" title={withShortcut('Split at playhead', 'clip.split')} onClick={splitAtPlayhead}>
           <SquareSplitHorizontal size={15} />
         </button>
-        <button type="button" className="icon-btn" title="Duplicate (Ctrl+D)" disabled={!hasSelection} onClick={duplicateSelection}>
+        <button type="button" className="icon-btn" title={withShortcut('Duplicate', 'edit.duplicate')} disabled={!hasSelection} onClick={duplicateSelection}>
           <Copy size={15} />
         </button>
         <button type="button" className="icon-btn" title="Delete (Del) · Shift+Del closes the gap" disabled={!hasSelection} onClick={() => deleteSelection(false)}>
           <Trash2 size={15} />
         </button>
         <span className="vdivider" />
-        <button type="button" className={`icon-btn ${snapping ? 'is-active' : ''}`} title="Snapping (N)" onClick={() => set({ snapping: !snapping })}>
+        <button type="button" className={`icon-btn ${snapping ? 'is-active' : ''}`} title={withShortcut('Snapping', 'timeline.snapping')} onClick={() => set({ snapping: !snapping })}>
           <Magnet size={15} />
         </button>
         <MagneticButton />
-        <button type="button" className="icon-btn" title="Add marker at playhead (M)" onClick={addMarker}>
+        <button type="button" className="icon-btn" title={withShortcut('Add marker at playhead', 'timeline.addMarker')} onClick={addMarker}>
           <Bookmark size={15} />
         </button>
       </div>
@@ -315,7 +320,7 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
         <button type="button" className="icon-btn" title="Zoom in (+)" onClick={() => onZoom(pps * 1.4)}>
           <ZoomIn size={15} />
         </button>
-        <button type="button" className="icon-btn" title="Fit the whole project (Shift+Z)" onClick={onFit}>
+        <button type="button" className="icon-btn" title={withShortcut('Fit the whole project', 'timeline.fit')} onClick={onFit}>
           <Maximize2 size={14} />
         </button>
       </div>
@@ -955,31 +960,31 @@ export function Timeline(): ReactNode {
       const clip = getProject().clips[id];
       const sel = useUI.getState().selection.map((x) => getProject().clips[x]).filter(Boolean);
       const items: MenuItem[] = [
-        { label: 'Split at playhead', icon: <SquareSplitHorizontal size={14} />, shortcut: 'S', run: splitAtPlayhead },
-        { label: 'Duplicate', icon: <Copy size={14} />, shortcut: 'Ctrl+D', run: duplicateSelection },
+        { label: 'Split at playhead', icon: <SquareSplitHorizontal size={14} />, shortcut: sc('clip.split'), run: splitAtPlayhead },
+        { label: 'Duplicate', icon: <Copy size={14} />, shortcut: sc('edit.duplicate'), run: duplicateSelection },
         { type: 'separator' },
-        { label: 'Cut', shortcut: 'Ctrl+X', run: cutSelection },
-        { label: 'Copy', shortcut: 'Ctrl+C', run: () => void copySelection() },
-        { label: 'Paste at playhead', shortcut: 'Ctrl+V', disabled: !ui.clipboard, run: paste },
+        { label: 'Cut', shortcut: sc('edit.cut'), run: cutSelection },
+        { label: 'Copy', shortcut: sc('edit.copy'), run: () => void copySelection() },
+        { label: 'Paste at playhead', shortcut: sc('edit.paste'), disabled: !ui.clipboard, run: paste },
         ...(clip?.type === 'video' ? [{ type: 'separator' as const }, { label: 'Detach audio', run: detachAudioFromSelection }] : []),
         ...timeMenuItems(clip),
         { type: 'separator' },
         sel.some((c) => c.groupId)
-          ? { label: 'Ungroup', icon: <Ungroup size={14} />, shortcut: 'Ctrl+Shift+G', run: ungroupSelection }
-          : { label: 'Group', icon: <Group size={14} />, shortcut: 'Ctrl+G', disabled: sel.length < 2, run: groupSelection },
+          ? { label: 'Ungroup', icon: <Ungroup size={14} />, shortcut: sc('clip.ungroup'), run: ungroupSelection }
+          : { label: 'Group', icon: <Group size={14} />, shortcut: sc('clip.group'), disabled: sel.length < 2, run: groupSelection },
         sel.some((c) => c.linkId)
-          ? { label: 'Unlink', icon: <Unlink2 size={14} />, shortcut: 'Ctrl+Shift+L', run: unlinkSelection }
-          : { label: 'Link', icon: <Link2 size={14} />, shortcut: 'Ctrl+L', disabled: sel.length < 2, run: linkSelection },
+          ? { label: 'Unlink', icon: <Unlink2 size={14} />, shortcut: sc('clip.unlink'), run: unlinkSelection }
+          : { label: 'Link', icon: <Link2 size={14} />, shortcut: sc('clip.link'), disabled: sel.length < 2, run: linkSelection },
         { type: 'separator' },
-        { label: 'Delete', icon: <Trash2 size={14} />, shortcut: 'Del', danger: true, run: () => deleteSelection(false) },
-        { label: 'Delete and close gap', shortcut: 'Shift+Del', danger: true, run: () => deleteSelection(true) },
+        { label: 'Delete', icon: <Trash2 size={14} />, shortcut: sc('edit.delete'), danger: true, run: () => deleteSelection(false) },
+        { label: 'Delete and close gap', shortcut: sc('edit.rippleDelete'), danger: true, run: () => deleteSelection(true) },
       ];
       openContextMenu(e, items);
       return;
     }
     const row = typeof pos.row === 'object' && pos.row ? pos.row : null;
     openContextMenu(e, [
-      { label: 'Paste here', shortcut: 'Ctrl+V', disabled: !useUI.getState().clipboard, run: () => { engine.seek(pos.time); paste(); } },
+      { label: 'Paste here', shortcut: sc('edit.paste'), disabled: !useUI.getState().clipboard, run: () => { engine.seek(pos.time); paste(); } },
       { label: 'Add marker here', icon: <Bookmark size={14} />, run: () => { engine.seek(pos.time); addMarker(); } },
       { type: 'separator' },
       { label: 'Add video track', icon: <Plus size={14} />, run: () => addTrackOfKind('visual') },

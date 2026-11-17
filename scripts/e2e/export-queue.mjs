@@ -352,6 +352,8 @@ export default async function exportQueue(ctx) {
           });
           v.currentTime = time;
           await new Promise((res) => (v.onseeked = res));
+          // 'seeked' can fire before the new frame is presented: wait for it (bounded).
+          await Promise.race([new Promise((res) => v.requestVideoFrameCallback?.(() => res()) ?? res()), new Promise((res) => setTimeout(res, 400))]);
           source = v;
           w = v.videoWidth;
           h = v.videoHeight;

@@ -12,6 +12,7 @@ import type { MenuItem } from '../common/overlays';
 import { breakApartSelection, closeCompound, createCompoundFromSelection, freezeFrame, openCompound, toggleReverseSelection } from './timeActions';
 import type { Clip } from '@/core/types';
 import './time.css';
+import { shortcutText } from '../commands/keymapStore';
 
 export function CompoundBar(): ReactNode {
   const path = useProjectStore((s) => s.editPath);
@@ -46,13 +47,13 @@ export function CompoundBar(): ReactNode {
 export function timeMenuItems(clip: Clip | undefined): MenuItem[] {
   if (!clip) return [];
   const items: MenuItem[] = [{ type: 'separator' }];
-  if (clip.type === 'video' && !clip.freeze) items.push({ label: 'Freeze frame', shortcut: 'Shift+F', run: () => freezeFrame() });
+  if (clip.type === 'video' && !clip.freeze) items.push({ label: 'Freeze frame', shortcut: shortcutText('clip.freezeFrame') || undefined, run: () => freezeFrame() });
   if ((clip.type === 'video' || clip.type === 'audio') && !clip.freeze) items.push({ label: clip.reverse ? 'Play forwards' : 'Reverse', run: toggleReverseSelection });
   if (clip.type === 'compound') {
     items.push({ label: 'Open compound clip', run: () => openCompound(clip.id) });
-    items.push({ label: 'Break apart', shortcut: 'Alt+Shift+G', run: breakApartSelection });
+    items.push({ label: 'Break apart', shortcut: shortcutText('compound.breakApart') || undefined, run: breakApartSelection });
   }
-  items.push({ label: 'Create compound clip', shortcut: 'Alt+G', run: createCompoundFromSelection });
+  items.push({ label: 'Create compound clip', shortcut: shortcutText('compound.create') || undefined, run: createCompoundFromSelection });
   return items;
 }
 

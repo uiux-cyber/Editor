@@ -369,10 +369,14 @@ export default async function vision(ctx) {
 
     // Feather / choke sliders (one undo step each).
     const pastBefore = (await state()).past;
+    // Other sections share this inspector tab, so bring each slider into view before clicking it.
     const feather = sec.locator('.field', { hasText: 'Feather' }).locator('input.slider');
+    await feather.scrollIntoViewIfNeeded();
     const fb = await feather.boundingBox();
     await mouse.click(fb.x + fb.width * 0.6, fb.y + fb.height / 2);
+    await sleep(200);
     const choke = sec.locator('.field', { hasText: 'Choke' }).locator('input.slider');
+    await choke.scrollIntoViewIfNeeded();
     const cb = await choke.boundingBox();
     await mouse.click(cb.x + cb.width * 0.7, cb.y + cb.height / 2);
     await sleep(500);
