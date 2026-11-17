@@ -98,11 +98,13 @@ import './timeline-editing.css';
 
 installEditCursors();
 
-/** A stable colour per group, so the clips of one group share an outline colour. */
+/** Light colours that read on every clip colour; each group gets a stable one. */
+const GROUP_COLORS = ['#fde68a', '#a5f3fc', '#f9a8d4', '#bbf7d0', '#ddd6fe', '#fecaca', '#bae6fd', '#ffffff'];
+
 function groupColor(groupId: ID): string {
   let h = 0;
   for (let i = 0; i < groupId.length; i++) h = (h * 31 + groupId.charCodeAt(i)) >>> 0;
-  return `hsl(${h % 360} 78% 66%)`;
+  return GROUP_COLORS[h % GROUP_COLORS.length];
 }
 
 /** Source timecode at a clip's first ('in') or last ('out') frame. */
@@ -526,6 +528,8 @@ export function Timeline(): ReactNode {
       }
       ui.select([...sel]);
     } else if (!wasSelected) ui.select(unit);
+    // A plain click on a clip picked alone earlier (Alt) takes its group / partners again.
+    else if (unit.some((id) => !ui.selection.includes(id))) ui.select([...new Set([...ui.selection, ...unit])]);
 
     const locked = new Set(base.tracks.filter((t) => t.locked).map((t) => t.id));
     const ids = (useUI.getState().selection.includes(clipId) ? useUI.getState().selection : [clipId]).filter((id) => base.clips[id] && !locked.has(base.clips[id].trackId));

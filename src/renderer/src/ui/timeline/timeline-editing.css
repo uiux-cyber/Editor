@@ -116,26 +116,17 @@
 
 /* ---- Groups and links --------------------------------------------------------------------- */
 
-.clip.is-grouped {
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--group) 70%, transparent) inset,
-    0 1px 0 rgba(255, 255, 255, 0.1) inset;
-}
-.clip.is-grouped.is-selected {
-  box-shadow:
-    0 0 0 2px #fff inset,
-    0 0 0 1px color-mix(in srgb, var(--group) 80%, #000);
-}
+/* Members of a group share a dashed outline in the group's colour. */
 .clip__group {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--group);
-  opacity: 0.9;
+  inset: 2px;
+  border: 1.5px dashed color-mix(in srgb, var(--group) 88%, transparent);
+  border-radius: 4px;
   pointer-events: none;
   z-index: 1;
+}
+.clip.is-selected .clip__group {
+  inset: 3px;
 }
 .clip__badge {
   display: inline-grid;

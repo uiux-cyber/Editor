@@ -473,6 +473,12 @@ export function deleteSelection(ripple = false): void {
   sanitizeSelection();
 }
 
+/** How paste / duplicate treat a magnetic main track: copies of its clips insert at a cut. */
+function magneticMain(p: Project): { id: ID; insert: (p: Project, ids: ID[], time: number) => void } | undefined {
+  const id = p.magneticMain ? mainTrackId(p) : null;
+  return id ? { id, insert: (d, ids, time) => void insertOnMain(d, ids, time) } : undefined;
+}
+
 export function copySelection(): boolean {
   const clips = selectedClips();
   if (clips.length === 0) return false;
@@ -496,7 +502,7 @@ export function paste(): void {
   let ids: ID[] = [];
   updateProject(
     (p) => {
-      ids = insertClipsAt(p, usable, playhead(), data.trackOrder);
+      ids = insertClipsAt(p, usable, playhead(), data.trackOrder, magneticMain(p));
     },
     { label: 'Paste' },
   );
@@ -511,7 +517,7 @@ export function duplicateSelection(): void {
   let ids: ID[] = [];
   updateProject(
     (p) => {
-      ids = insertClipsAt(p, clips, end, project.tracks.map((t) => t.id));
+      ids = insertClipsAt(p, clips, end, project.tracks.map((t) => t.id), magneticMain(p));
     },
     { label: 'Duplicate' },
   );
@@ -692,7 +698,7 @@ export function setTrackSize(size: TrackSize): void {
         else t.height = TRACK_SIZES[size][t.kind];
       }
     },
-    { label: `Track size: ${size}` },
+    { label: `Track size: ${size[0].toUpperCase()}${size.slice(1)}` },
   );
 }
 

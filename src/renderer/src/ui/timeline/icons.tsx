@@ -44,13 +44,12 @@ export const SlideIcon = ({ size }: { size?: number }): ReactNode => (
   </Glyph>
 );
 
-/** Magnetic main track: a magnet holding a track. */
+/** Magnetic main track: a horseshoe magnet holding a track. */
 export const MainMagnetIcon = ({ size }: { size?: number }): ReactNode => (
   <Glyph size={size}>
-    <path d="M7 3v6a5 5 0 0 0 10 0V3" />
-    <path d="M7 6h3M14 6h3" />
+    <path d="M6 15V9a6 6 0 0 1 12 0v6h-4V9a2 2 0 0 0-4 0v6z" />
+    <path d="M6 12.5h4M14 12.5h4" />
     <path d="M3 20h18" />
-    <path d="M12 16.5v1.5" />
   </Glyph>
 );
 

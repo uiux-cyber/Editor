@@ -451,8 +451,17 @@ export function cloneClip<T extends Clip>(clip: T): T {
  * Mutates. Inserts clips at `time`, keeping their relative timing and stacking order. Each
  * source track's clips stay together on one target track; new tracks are created when the
  * existing ones have no room. Returns the ids of the inserted clips.
+ *
+ * `main` describes a magnetic main track: clips copied from it go back onto it through
+ * `main.insert` (which inserts at a cut and makes room); other clips never land on it.
  */
-export function insertClipsAt(p: Project, clips: Clip[], time: number, sourceTrackOrder?: ID[]): ID[] {
+export function insertClipsAt(
+  p: Project,
+  clips: Clip[],
+  time: number,
+  sourceTrackOrder?: ID[],
+  main?: { id: ID; insert: (p: Project, ids: ID[], time: number) => void },
+): ID[] {
   if (clips.length === 0) return [];
   const origin = Math.min(...clips.map((c) => c.start));
   const groups = new Map<ID, Clip[]>();
@@ -475,11 +484,13 @@ export function insertClipsAt(p: Project, clips: Clip[], time: number, sourceTra
   for (const key of keys) {
     const group = groups.get(key)!;
     const kind = clipKind(group[0]);
+    const toMain = !!main && key === main.id && p.tracks.some((t) => t.id === main.id && !t.locked);
     const fits = (t: Track): boolean =>
-      t.kind === kind && !t.locked && !usedTracks.has(t.id) && group.every((c) => isFree(p, t.id, time + (c.start - origin), c.duration));
+      t.kind === kind && !t.locked && !usedTracks.has(t.id) && t.id !== main?.id && group.every((c) => isFree(p, t.id, time + (c.start - origin), c.duration));
     const candidates = kind === 'visual' ? p.tracks.filter((t) => t.kind === 'visual').reverse() : p.tracks.filter((t) => t.kind === 'audio');
-    const target = candidates.find(fits) ?? addTrack(p, kind);
+    const target = toMain ? p.tracks.find((t) => t.id === main!.id)! : (candidates.find(fits) ?? addTrack(p, kind));
     usedTracks.add(target.id);
+    const first = inserted.length;
     for (const c of group) {
       const copy = cloneClip(c);
       copy.trackId = target.id;
@@ -489,6 +500,7 @@ export function insertClipsAt(p: Project, clips: Clip[], time: number, sourceTra
       p.clips[copy.id] = copy;
       inserted.push(copy.id);
     }
+    if (toMain) main!.insert(p, inserted.slice(first), time + Math.min(...group.map((c) => c.start - origin)));
   }
   if (remap.size) cleanupRelations(p);
   return inserted;
