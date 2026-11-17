@@ -3,7 +3,6 @@
  * shapes) and animated media (image clips showing an animated GIF / WebP / APNG or a Lottie).
  */
 
-import { Repeat } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { MAX_COUNTER_DECIMALS, counterFromText, counterSpan, formatCounter } from '@/core/counter';
 import { EASE_IDS, EASE_LABELS } from '@/core/easing';
@@ -106,7 +105,7 @@ function CounterSection({ clip, ids }: InspectorSectionProps): ReactNode {
             </Field>
           )}
           <p className="hint">
-            Counts to <b style={{ color: 'var(--text-0)' }}>{formatCounter(c, c.to)}</b> in {formatSeconds(span)}. Digits keep a fixed width, so the number never wobbles.
+            Counts to <b style={{ color: 'var(--text-0)' }}>{formatCounter(c, c.to)}</b> in {formatSeconds(span)}, replacing the text while it plays. Digits keep a fixed width, so the number never wobbles.
           </p>
         </>
       )}
@@ -203,10 +202,10 @@ function AnimationSection({ clip, ids }: InspectorSectionProps): ReactNode {
         {asset.fps > 0 && <span style={{ color: 'var(--text-3)' }}>{Math.round(asset.fps * 10) / 10} fps</span>}
       </Field>
       <Field label="Length" title="Make the clip last a whole number of loops">
-        <div className="btn-row">
+        <div className="btn-row btn-row--wrap">
           {[1, 2, 3, 4].map((n) => (
-            <button key={n} type="button" className={`chip ${Math.abs(loops - n) < 0.01 ? 'is-active' : ''}`} onClick={() => setLoops(n)}>
-              <Repeat size={11} /> {n}×
+            <button key={n} type="button" className={`chip ${Math.abs(loops - n) < 0.01 ? 'is-active' : ''}`} title={`${n} loop${n === 1 ? '' : 's'}`} onClick={() => setLoops(n)}>
+              {n}×
             </button>
           ))}
         </div>

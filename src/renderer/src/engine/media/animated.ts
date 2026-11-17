@@ -459,10 +459,17 @@ function createSource(path: string, ext: string): AnimationSource {
   return ext === 'json' || ext === 'lottie' ? new LottieAnimation(path, ext) : new RasterAnimation(path, ext);
 }
 
+let usable: (assetId: ID) => boolean = () => true;
+/** assets.ts reports which assets are online, so missing (or still checking) files are never requested. */
+export function setAnimationAvailability(fn: (assetId: ID) => boolean): void {
+  usable = fn;
+}
+
 function sourceFor(asset: MediaAsset): AnimationSource | null {
   if (asset.kind !== 'animation' || asset.source.type !== 'file') return null;
   const filePath = asset.source.path;
   let src = sources.get(asset.id);
+  if (!src && !usable(asset.id)) return null;
   if (src && src.path !== filePath) {
     src.dispose();
     src = undefined;

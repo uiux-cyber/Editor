@@ -12,7 +12,7 @@ import type { ID, MediaAsset, Project } from '@/core/types';
 import { getSound } from '@/library';
 import { api } from '@/platform/api';
 import { getProject, updateProject } from '@/store/project';
-import { ANIMATION_CANDIDATE_EXTS, AnimationError, adoptAnimation, animationPoster, discardProbe, forgetAnimation, probeAnimation, resetAnimations, type ProbedAnimation } from './animated';
+import { ANIMATION_CANDIDATE_EXTS, AnimationError, adoptAnimation, animationPoster, discardProbe, forgetAnimation, probeAnimation, resetAnimations, setAnimationAvailability, type ProbedAnimation } from './animated';
 import { soundAssetDuration, soundBlob } from './sounds';
 
 export type AssetStatus = 'loading' | 'ready' | 'missing' | 'unsupported';
@@ -38,6 +38,9 @@ export const useAssetRuntime = create<RuntimeState>()((set) => ({
     set((s) => ({ items: { ...s.items, [id]: { ...(s.items[id] ?? { status: 'loading', url: null, thumb: null }), ...patch } } })),
   reset: () => set({ items: {} }),
 }));
+
+// Animated sources only open files that were found on disk (no failed requests for missing media).
+setAnimationAvailability((id) => useAssetRuntime.getState().items[id]?.status === 'ready');
 
 export const assetRuntime = (id: ID): AssetRuntime | undefined => useAssetRuntime.getState().items[id];
 export const assetUrl = (id: ID): string | null => useAssetRuntime.getState().items[id]?.url ?? null;

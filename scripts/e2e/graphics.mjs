@@ -413,6 +413,25 @@ export default async function graphics(ctx) {
     k.useUI.getState().clearSelection();
   }, counterClip.id);
 
+  // ---- Inspector sections for the path and the animated GIF -----------------------------------
+  await run((id) => window.__kinora.useUI.getState().select([id]), pathClip.id);
+  await sleep(300);
+  const pathSection = win.locator('[data-section="path"]');
+  await pathSection.scrollIntoViewIfNeeded();
+  expect((await pathSection.textContent()).includes('Closed'), 'a path shape shows the Path section');
+  await shot('48-graphics-path-section');
+  await win.locator(`.clip[data-clip="${gifClip.id}"]`).click({ position: { x: 40, y: 30 } });
+  await sleep(300);
+  const animSection = win.locator('[data-section="animation"]');
+  await animSection.scrollIntoViewIfNeeded();
+  expect((await animSection.textContent()).includes('Animated GIF'), 'an animated GIF clip shows the Animation section');
+  await animSection.locator('.chip', { hasText: '2×' }).click();
+  await sleep(200);
+  p = await project();
+  expect(Math.abs(p.clips[gifClip.id].duration - 1.8) < 1e-6, `Length 2× sets the clip to two loops (${p.clips[gifClip.id].duration}s)`);
+  await shot('49-graphics-animation-section');
+  await run((id) => window.__kinora.useProjectStore.getState().update((p) => void (p.clips[id].duration = 5)), gifClip.id);
+
   // ---- Play ------------------------------------------------------------------------------------
   await win.locator('.stage__overlay').click({ position: { x: 4, y: 4 } });
   await win.keyboard.press('Home');
@@ -604,6 +623,68 @@ export default async function graphics(ctx) {
   const c = samples.counter;
   expect(c.t1 < 5 && c.t15 < 5 && c.t4 < 5, `counter shows ${fmt(counterAt(1))} at 1s, ${fmt(counterAt(1.5))} at 1.5s and ${fmt(counterAt(4))} at 4s (diffs ${c.t1.toFixed(2)}, ${c.t15.toFixed(2)}, ${c.t4.toFixed(2)})`);
   expect(c.wrong > c.t1 * 2 + 1, `a different value would not match (diff ${c.wrong.toFixed(2)})`);
+
+  // ---- Lottie stays sharp at 4K: the box edge is a hard step, not an upscaled blur -------------
+  const still4k = path.join(outDir, 'graphics-4k.png');
+  const edge = await run(
+    async ({ file }) => {
+      const k = window.__kinora;
+      const project = k.useProjectStore.getState().project;
+      const settings = { container: 'png', videoCodec: 'avc', width: 3840, height: 2160, fps: 30, quality: 'high', audio: false, start: 1, end: 1, hardware: 'no-preference', fastStart: false };
+      await k.exporter.exportProject(project, settings, file, () => {}, new AbortController().signal);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = `kinora://media/file?path=${encodeURIComponent(file)}`;
+      await img.decode();
+      const cv = document.createElement('canvas');
+      cv.width = img.width;
+      cv.height = img.height;
+      const g = cv.getContext('2d', { willReadFrequently: true });
+      g.drawImage(img, 0, 0);
+      // Row through the box (design y = -200), from the left of the Lottie layer.
+      const y = Math.round(((-200 + 540) * 2160) / 1080);
+      const d = g.getImageData(0, y, 3840, 1).data;
+      let first = -1;
+      let soft = 0;
+      for (let x = 2400; x < 3600; x++) {
+        const r = d[x * 4];
+        if (first < 0 && r > 240) first = x;
+        if (r > 25 && r < 230) soft++;
+      }
+      return { width: img.width, first, soft };
+    },
+    { file: still4k },
+  );
+  expect(edge.width === 3840 && edge.first > 0 && edge.soft <= 4, `4K export: the Lottie box has crisp edges (${edge.soft} transition pixels across both edges)`);
+
+  // ---- Save and reopen: everything comes back --------------------------------------------------
+  const pathPoints = (await project()).clips[pathClip.id].shape.path.points.length;
+  await run(() => window.__kinora.useProjectStore.getState().update((p) => void (p.name = 'Graphics Test')));
+  await win.keyboard.press('Control+s');
+  await sleep(1200);
+  const saved = path.join(outDir, 'Graphics Test.kinora');
+  const reopened = await run(async (file) => {
+    const k = window.__kinora;
+    k.useUI.getState().set({ screen: 'home' });
+    await k.projectIO.openProject(file);
+    await new Promise((r) => setTimeout(r, 1500));
+    const p = k.useProjectStore.getState().project;
+    const clips = Object.values(p.clips);
+    k.engine.seek(1.5);
+    await new Promise((r) => setTimeout(r, 800));
+    return {
+      animations: Object.values(p.assets).filter((a) => a.kind === 'animation').map((a) => a.format),
+      counter: clips.find((c) => c.type === 'text')?.counter ?? null,
+      path: clips.find((c) => c.type === 'shape')?.shape.path ?? null,
+      thumbs: Object.values(k.assets.useAssetRuntime.getState().items).filter((r) => r.thumb).length,
+    };
+  }, saved);
+  expect(reopened.animations.sort().join(',') === 'gif,lottie,lottie' && reopened.counter?.to === COUNTER.to && reopened.path?.points.length === pathPoints && reopened.path.closed, 'reopening the project restores animations, the counter and the path');
+  await win.waitForSelector('.timeline');
+  await tab('media');
+  await sleep(600);
+  await shot('50-graphics-reopened');
+  expect(reopened.thumbs >= 4, `media posters are regenerated after reopening (${reopened.thumbs})`);
 
   await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
 }
