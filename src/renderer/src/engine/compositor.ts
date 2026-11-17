@@ -201,6 +201,11 @@ export class Compositor {
     }
   }
 
+  /** colour-audio: the last composited frame (premultiplied, row 0 = top) for scope readback. */
+  get lastFrame(): Target | null {
+    return this.last;
+  }
+
   /** RGBA pixels of the last rendered frame, top row first. */
   readPixels(): { data: Uint8Array; width: number; height: number } | null {
     if (!this.last) return null;

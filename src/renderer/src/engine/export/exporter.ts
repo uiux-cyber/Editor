@@ -33,8 +33,9 @@ import { clipGainAt, getAudioClips, getSceneItems } from '@/core/scene';
 import { clipEnd } from '@/core/time';
 import type { AudioClip, ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { api } from '@/platform/api';
-import { buildChain } from '../audio/chain';
+import { buildChain, chainKey } from '../audio/chain';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
+import { prepareLayerExtensions } from '../gl/layerExt';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
 
@@ -84,6 +85,12 @@ export class ExportCancelled extends Error {
 
 export const AUDIO_SAMPLE_RATE = 48000;
 const AUDIO_WINDOW = 4;
+/**
+ * colour-audio: seconds of audio rendered (and discarded) before each mix window for clips with
+ * a processing chain, so filters and compressors start each window in their settled state
+ * instead of from silence (no clicks or level dips every AUDIO_WINDOW seconds).
+ */
+const CHAIN_PREROLL = 0.5;
 
 const BPP: Record<QualityLevel, number> = { low: 0.045, medium: 0.085, high: 0.14, best: 0.22 };
 const CODEC_EFFICIENCY: Record<string, number> = { avc: 1, hevc: 0.68, vp9: 0.7, av1: 0.58, vp8: 1.15 };
@@ -276,8 +283,12 @@ class AudioMixer {
   /** Mix every audible clip for the timeline window `[t0, t1)`. */
   async render(t0: number, t1: number): Promise<AudioBuffer> {
     const frames = Math.max(1, Math.round((t1 - t0) * AUDIO_SAMPLE_RATE));
-    const ctx = new OfflineAudioContext(2, frames, AUDIO_SAMPLE_RATE);
-    for (const clip of this.clips) {
+    // colour-audio: pre-roll clips with a processing chain that were already playing (see CHAIN_PREROLL).
+    const live = this.clips.filter((c) => c.start < t1 && clipEnd(c) > t0);
+    const pre = live.some((c) => c.start < t0 - 1e-6 && chainKey(c) !== '') ? CHAIN_PREROLL : 0;
+    const preFrames = Math.round(pre * AUDIO_SAMPLE_RATE);
+    const ctx = new OfflineAudioContext(2, frames + preFrames, AUDIO_SAMPLE_RATE);
+    for (const clip of live) {
       const a = Math.max(t0, clip.start);
       const b = Math.min(t1, clipEnd(clip));
       if (b - a <= 1e-6) continue;
@@ -285,7 +296,10 @@ class AudioMixer {
       if (!asset) continue;
       const src = await this.source(asset);
       if (!src) continue;
-      const s0 = sourceTimeAt(clip, a - clip.start);
+      const chained = chainKey(clip) !== '';
+      // Audio before `a` that only warms up the chain (never before the clip starts).
+      const lead = chained && pre > 0 ? Math.min(pre, a - clip.start) : 0;
+      const s0 = sourceTimeAt(clip, a - lead - clip.start);
       const s1 = sourceTimeAt(clip, b - clip.start);
       const buffer = await this.decode(ctx, src, s0, s1);
       if (!buffer) continue;
@@ -298,10 +312,10 @@ class AudioMixer {
       const steps = Math.max(2, Math.ceil(span * 200) + 1);
       const curve = new Float32Array(steps);
       for (let i = 0; i < steps; i++) curve[i] = clipGainAt(clip, a - clip.start + (i / (steps - 1)) * span);
-      const when = a - t0;
+      const when = pre + (a - t0);
       gain.gain.value = curve[0];
       try {
-        gain.gain.setValueCurveAtTime(curve, when, Math.max(1e-3, Math.min(span, (frames - 1) / AUDIO_SAMPLE_RATE - when)));
+        gain.gain.setValueCurveAtTime(curve, when, Math.max(1e-3, Math.min(span, (frames - 1) / AUDIO_SAMPLE_RATE + pre - when)));
       } catch {
         gain.gain.setValueAtTime(curve[0], when);
       }
@@ -313,9 +327,13 @@ class AudioMixer {
         node.connect(gain);
       }
       gain.connect(ctx.destination);
-      node.start(when);
+      node.start(when - lead);
     }
-    return ctx.startRendering();
+    const rendered = await ctx.startRendering();
+    if (!preFrames) return rendered;
+    const out = new AudioBuffer({ numberOfChannels: 2, length: frames, sampleRate: AUDIO_SAMPLE_RATE });
+    for (let ch = 0; ch < 2; ch++) out.copyToChannel(rendered.getChannelData(ch).subarray(preFrames, preFrames + frames), ch);
+    return out;
   }
 }
 
@@ -360,7 +378,7 @@ async function prepareResources(project: Project): Promise<void> {
     if (clip.type === 'text') fonts.push(ensureFont(clip.text));
     if (clip.type === 'image') images.add(clip.assetId);
   }
-  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images])]);
+  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images]), prepareLayerExtensions(project)]);
 }
 
 export interface ExportHandle {
