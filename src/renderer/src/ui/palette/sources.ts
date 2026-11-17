@@ -103,7 +103,7 @@ export function libraryEntries(locale: string): PaletteEntry[] {
       kind,
       title: name,
       detail: labelOf(category),
-      fields: [{ text: name, weight: 1 }, { text: labelOf(category), weight: 0.5 }, { text: t(KIND_LABELS[kind]), weight: 0.45 }, ...extra.map((k) => ({ text: k, weight: 0.6 }))],
+      fields: [{ text: name, weight: 1 }, { text: labelOf(category), weight: 0.5 }, { text: t(KIND_LABELS[kind]), weight: 0.45 }, ...extra.map((k) => ({ text: k, weight: 0.4 }))],
       run,
     });
   };

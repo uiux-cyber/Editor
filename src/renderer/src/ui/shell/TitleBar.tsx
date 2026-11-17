@@ -41,8 +41,8 @@ function MenuBar(): ReactNode {
   const t = useT();
   useKeymapVersion();
   useUI((s) => s.screen);
-  const openMenu = useMenu((s) => s.open);
-  const [current, setCurrent] = useState<MenuName | null>(null);
+  // The menu bar button whose menu is open (context menus elsewhere do not count).
+  const openFrom = useMenu((s) => s.open?.opener?.dataset?.menu ?? null);
   const navRef = useRef<HTMLElement>(null);
   const names = usableMenus();
 
@@ -51,7 +51,6 @@ function MenuBar(): ReactNode {
   const show = (name: MenuName, focusFirst: boolean): void => {
     const el = buttonFor(name);
     if (!el) return;
-    setCurrent(name);
     openMenuBelow(el, buildMenu(name), {
       minWidth: 240,
       focusFirst,
@@ -84,10 +83,10 @@ function MenuBar(): ReactNode {
           type="button"
           role="menuitem"
           aria-haspopup="menu"
-          aria-expanded={!!openMenu && current === name}
+          aria-expanded={openFrom === name}
           data-menu={name}
           tabIndex={i === 0 ? 0 : -1}
-          className={openMenu && current === name ? 'is-open' : ''}
+          className={openFrom === name ? 'is-open' : ''}
           onClick={(e) => show(name, e.detail === 0)}
           onKeyDown={(e) => onKey(e, name)}
         >

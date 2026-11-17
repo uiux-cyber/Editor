@@ -77,6 +77,10 @@ describe('fuzzy matching', () => {
     // …but not over a clearly better match.
     expect(rankItems('save', items, ['c'])[0].item.key).toBe('b');
     expect(rankItems('sa', items, [], 2)).toHaveLength(2);
+    // A word in the title beats an exact match on a keyword of another item.
+    const titled: Rankable = { key: 't', fields: [{ text: 'Cross Zoom', weight: 1 }, { text: 'Transition', weight: 0.45 }] };
+    const keyworded: Rankable = { key: 'k', fields: [{ text: 'Focus Speed Lines', weight: 1 }, { text: 'zoom', weight: 0.4 }] };
+    expect(rankItems('zoom', [keyworded, titled])[0].item.key).toBe('t');
   });
 });
 

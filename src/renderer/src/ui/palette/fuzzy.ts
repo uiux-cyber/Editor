@@ -120,8 +120,8 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch | null {
     j = from[i][j];
   }
   let score = top;
-  if (t === q) score += 40;
-  else if (t.startsWith(q)) score += 20;
+  if (t === q) score += 20;
+  else if (t.startsWith(q)) score += 12;
   // Prefer shorter texts slightly (more of the text is matched).
   score += (n / m) * 6;
   return { score, indices };

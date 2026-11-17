@@ -14,6 +14,52 @@ Prefer these extension points over editing shared core files.
 | Settings page section | `src/renderer/src/ui/settings/defs/<area>.tsx` → `SettingsSectionDef[]` | `ui/settings/index.ts` |
 | Content (transitions, effects, templates…) | `src/renderer/src/library/<pack>/*.ts` | `library/types.ts` |
 
+## Commands, menus and shortcuts
+
+Every command registered in `ui/commands/defs/*.ts` automatically appears in the command palette
+(Ctrl+K), in Settings → Shortcuts (where users can rebind it) and in the keyboard shortcuts
+dialog; its `shortcut` works through the global key dispatcher. Title-bar menus are generated
+from the registry: a command goes to `menu` ('File' | 'Edit' | 'View' | 'Tools' | 'Help'), else to
+its `group` when that names a menu, else to **Tools** under a heading with its group name
+(`menu: false` keeps it palette / shortcut only). Useful optional fields:
+
+```ts
+{
+  id: 'smart.autoCaptions',          // stable: keys custom shortcuts and recents
+  title: 'Generate captions…',       // English; translated on display (docs/I18N.md)
+  group: 'Smart',
+  shortcut: 'Ctrl+Alt+C',            // symbols as typed: '?', '+'; extraShortcuts for more
+  when: () => useUI.getState().screen === 'editor',
+  checked: () => …,                  // toggles show a check mark / On-Off
+  global: true,                      // also fires while a text field has focus
+  run: () => …,
+}
+```
+
+Show a command's current shortcut with `shortcutText(id)` / `withShortcut(label, id)` from
+`ui/commands/keymapStore` (they follow the user's keymap), and run one with `runCommand(id)`.
+
+## Settings sections
+
+Settings sections (`ui/settings/defs/*.tsx`) appear in the Settings window (gear, Ctrl+,). Build
+them from `ui/settings/kit` (`SettingsGroup`, `SettingRow`, `ChoiceCards`, `Switch`) and persist
+values with `useSetting(key, fallback)` from `ui/settings/store`; `openSettings('<id>')` opens a
+section. Give the section `description` and `keywords` so the settings search finds it.
+
+## Themes and text
+
+All colours come from the tokens in `styles/base.css`, which has a dark and a light set
+(`<html data-theme="dark|light">`); use `var(--…)` rather than fixed colours. Canvas code can read
+tokens with `cachedThemeColor('--name', fallback)` from `ui/theme`. User-visible strings go
+through `t()` — see [docs/I18N.md](I18N.md).
+
+## Project file paths
+
+Asset paths (`source.path`, `proxy.path`, `transcodedFrom`) are stored relative to the project
+file when the media sits inside the project's folder (`Media/clip.mp4`), and resolved on load
+(`serializeProject(p, { projectPath })` / `parseProjectFile(text, { projectPath })`). In memory
+they are always absolute. File → Collect project… copies every file into such a folder.
+
 ## Calling the main process
 
 Main handlers register channels named `x:<area>:<action>`:
