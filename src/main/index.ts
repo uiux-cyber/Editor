@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, powerSaveBlocker, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, powerSaveBlocker, protocol, screen, session, shell } from 'electron';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
@@ -41,6 +41,13 @@ app.commandLine.appendSwitch('force_high_performance_gpu');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+/**
+ * Automated tests run the window off-screen without taking focus (KINORA_E2E_HIDDEN=1), so test
+ * runs do not flash windows in front of the user. Occlusion tracking is off so an off-screen
+ * window keeps rendering at full rate.
+ */
+const e2eHidden = !!process.env.KINORA_E2E_DIR && process.env.KINORA_E2E_HIDDEN === '1';
+if (e2eHidden) app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -315,7 +322,13 @@ interface WindowState {
 }
 
 function createWindow(): void {
-  const state = store.get<WindowState>('windowState', { width: 1600, height: 960, maximized: true })!;
+  let state = store.get<WindowState>('windowState', { width: 1600, height: 960, maximized: true })!;
+  if (e2eHidden) {
+    // Same size as a maximized window, but placed left of every display.
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const left = Math.min(...screen.getAllDisplays().map((d) => d.bounds.x));
+    state = { x: left - width - 200, y: 0, width, height, maximized: false };
+  }
   // nativeTheme.themeSource and the title-bar colours follow the user's theme: see handlers/theme.ts.
 
   const win = new BrowserWindow({
@@ -344,7 +357,7 @@ function createWindow(): void {
   mainWindow = win;
   if (state.maximized) win.maximize();
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => (e2eHidden ? win.showInactive() : win.show()));
 
   win.on('close', (e) => {
     if (documentDirty && !closeConfirmed) {

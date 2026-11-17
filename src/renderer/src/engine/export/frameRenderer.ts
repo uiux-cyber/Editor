@@ -11,6 +11,7 @@ import { sourceTimeAt } from '@/core/project';
 import { getSceneItems } from '@/core/scene';
 import type { ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
+import { prepareLayerExtensions } from '../gl/layerExt';
 import { animationFrame, ensureAnimationFrame, preloadAnimations } from '../media/animated';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
@@ -173,7 +174,7 @@ export async function prepareResources(project: Project): Promise<void> {
     if (clip.type === 'image') (project.assets[clip.assetId]?.kind === 'animation' ? animations : images).add(clip.assetId);
   }
   const animated = [...animations].map((id) => project.assets[id]).filter(Boolean);
-  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images]), preloadAnimations(animated)]);
+  await Promise.all([...fonts, ensureFont({ fontFamily: 'Inter', fontWeight: 600, italic: false }), preloadImages([...images]), preloadAnimations(animated), prepareLayerExtensions(project)]);
 }
 
 export interface FrameRendererOptions {

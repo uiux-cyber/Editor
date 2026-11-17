@@ -32,6 +32,8 @@ interface Slot {
   bus: GainNode | null;
   /** Reverse playback (decoded frames + rendered sound) for reversed clips. */
   rev: ReverseState | null;
+  /** colour-audio: track bus the clip's gain currently feeds. */
+  busTrack: ID | null;
 }
 
 /** Reverse playback state of a slot (see ./reverse.ts). */
@@ -42,6 +44,24 @@ interface ReverseState {
   /** Audio-clock time and clip-local time at which `node` started. */
   startedAt: number;
   startedLocal: number;
+}
+
+/** colour-audio: per-track mix bus (track mute + stereo peak metering). */
+interface TrackBus {
+  input: GainNode;
+  splitter: ChannelSplitterNode;
+  left: AnalyserNode;
+  right: AnalyserNode;
+  buf: Float32Array<ArrayBuffer>;
+}
+
+/**
+ * Top-level track a clip instance plays on. Clips inside compound clips have instance ids
+ * `compound/…/clip` and nested track ids: they play through the bus of the outermost compound's track.
+ */
+function topTrackOf(project: Project, instanceId: ID, trackId: ID): ID {
+  const sep = instanceId.indexOf('/');
+  return sep < 0 ? trackId : (project.clips[instanceId.slice(0, sep)]?.trackId ?? trackId);
 }
 
 const PRELOAD_AHEAD = 2.0;
@@ -57,6 +77,7 @@ export class MediaPool {
   private meterBuf: Float32Array<ArrayBuffer> | null = null;
   private tick = 0;
   private masterVolume = 1;
+  private buses = new Map<ID, TrackBus>();
   /** Called when a paused element has decoded a new frame and the preview should repaint. */
   onFrame: () => void = () => undefined;
 
@@ -109,7 +130,7 @@ export class MediaPool {
     el.src = url;
     this.host.appendChild(el);
 
-    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined, chain: null, bus: null, rev: null };
+    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined, chain: null, bus: null, rev: null, busTrack: null };
 
     try {
       const ctx = this.ensureAudio();
@@ -118,7 +139,7 @@ export class MediaPool {
       slot.node.connect(slot.bus);
       slot.gain = ctx.createGain();
       slot.gain.gain.value = 0;
-      slot.gain.connect(this.master!);
+      this.routeToBus(slot, clip.trackId);
       this.wireChain(slot, clip);
     } catch (err) {
       console.warn('[preview] audio routing unavailable', err);
@@ -170,6 +191,83 @@ export class MediaPool {
       src.connect(slot.gain);
     }
   }
+
+  // --- colour-audio: per-track buses ---------------------------------------------------------
+
+  private busFor(trackId: ID): TrackBus | null {
+    let bus = this.buses.get(trackId);
+    if (bus) return bus;
+    if (!this.audioCtx || !this.master) return null;
+    const ctx = this.audioCtx;
+    // Explicit stereo so mono sources are up-mixed to both meter channels.
+    const input = ctx.createGain();
+    input.channelCount = 2;
+    input.channelCountMode = 'explicit';
+    input.channelInterpretation = 'speakers';
+    const splitter = ctx.createChannelSplitter(2);
+    const left = ctx.createAnalyser();
+    const right = ctx.createAnalyser();
+    left.fftSize = right.fftSize = 2048;
+    input.connect(this.master);
+    input.connect(splitter);
+    splitter.connect(left, 0);
+    splitter.connect(right, 1);
+    bus = { input, splitter, left, right, buf: new Float32Array(left.fftSize) };
+    this.buses.set(trackId, bus);
+    return bus;
+  }
+
+  /** Connect a slot's gain to the bus of its track (clips can move between tracks). */
+  private routeToBus(slot: Slot, trackId: ID): void {
+    if (!slot.gain || slot.busTrack === trackId) return;
+    const bus = this.busFor(trackId);
+    try {
+      slot.gain.disconnect();
+    } catch {
+      /* not connected yet */
+    }
+    slot.gain.connect(bus ? bus.input : this.master!);
+    slot.busTrack = trackId;
+  }
+
+  /** Apply track mutes to the buses and drop buses of deleted tracks. */
+  private syncBuses(project: Project): void {
+    if (!this.audioCtx) return;
+    const tracks = new Map(project.tracks.map((t) => [t.id, t]));
+    for (const [id, bus] of this.buses) {
+      const track = tracks.get(id);
+      if (!track) {
+        try {
+          bus.input.disconnect();
+          bus.splitter.disconnect();
+        } catch {
+          /* already gone */
+        }
+        this.buses.delete(id);
+        continue;
+      }
+      bus.input.gain.setTargetAtTime(track.muted ? 0 : 1, this.audioCtx.currentTime, 0.01);
+    }
+  }
+
+  private static peak(an: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
+    an.getFloatTimeDomainData(buf);
+    let p = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = Math.abs(buf[i]);
+      if (v > p) p = v;
+    }
+    return p;
+  }
+
+  /** Stereo peak levels (linear) of a track's bus. */
+  trackLevels(trackId: ID): [number, number] {
+    const bus = this.buses.get(trackId);
+    if (!bus) return [0, 0];
+    return [MediaPool.peak(bus.left, bus.buf), MediaPool.peak(bus.right, bus.buf)];
+  }
+
+  // --- end colour-audio ----------------------------------------------------------------------
 
   private destroySlot(slot: Slot): void {
     slot.cleanup();
@@ -251,12 +349,14 @@ export class MediaPool {
     }
 
     if (playing && this.audioCtx && this.audioCtx.state === 'suspended') void this.audioCtx.resume();
+    this.syncBuses(project);
 
     for (const w of wanted.values()) {
       const asset = project.assets[w.clip.assetId];
       if (!asset) continue;
       const slot = this.slotFor(w.clip);
       if (!slot) continue;
+      this.routeToBus(slot, topTrackOf(project, w.clip.id, w.clip.trackId));
       if (slot.node && slot.gain && slot.chain && slot.chain.key !== chainKey(w.clip)) this.wireChain(slot, w.clip);
       const el = slot.el;
       const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.02) : Infinity;

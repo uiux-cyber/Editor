@@ -87,6 +87,7 @@ import { InOutMarks } from '../export/InOutMarks';
 import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
 import { cachedThemeColor, useTheme } from '../theme';
 import { SpeechTimelineOverlay } from '../speech/TimelineOverlay';
+import { soundTrackIds, TrackMeter } from '../coloraudio/TrackMeter';
 import { ClipView } from './ClipView';
 import { EditReadout, HistoryButton, MagneticButton, TrimToolButtons } from './EditToolbar';
 import { editedIds, installEditCursors, startEditGesture, useEditReadout, type GestureContext } from './editGestures';
@@ -1151,6 +1152,8 @@ export function Timeline(): ReactNode {
       window.removeEventListener('keyup', onKey);
     };
   }, []);
+  // colour-audio: tracks that carry sound show a live stereo meter in their header.
+  const soundTracks = soundTrackIds(project);
 
   const lo = view.left - 500;
   const hi = view.left + view.width + 500;
@@ -1235,6 +1238,7 @@ export function Timeline(): ReactNode {
                     <button type="button" className={`icon-btn icon-btn--sm ${track.locked ? 'is-active' : ''}`} title={track.locked ? 'Unlock track' : 'Lock track'} onClick={() => toggleTrack(track.id, 'locked')}>
                       {track.locked ? <Lock size={13} /> : <LockOpen size={13} />}
                     </button>
+                    {soundTracks.has(track.id) && <TrackMeter trackId={track.id} muted={track.muted} />}
                   </span>
                   <span
                     className="tl-header__resize"

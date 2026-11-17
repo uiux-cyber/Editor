@@ -15,7 +15,7 @@
  * Prefix every uniform / function you declare in `decls` with your extension id (e.g. `ext_lut_`).
  */
 
-import type { VisualClip } from '@/core/types';
+import type { Project, VisualClip } from '@/core/types';
 import type { MediaProvider } from '../compositor';
 import type { GLContext } from './context';
 import type { Program } from './shaderlib';
@@ -44,7 +44,12 @@ export interface LayerExtContext {
   px: number;
   /** True while shading an adjustment layer (the input is the whole frame beneath it). */
   identity: boolean;
-  /** Reserve a texture unit for this draw (units 0..3 are taken by the core shader). */
+  /**
+   * Reserve a texture unit for this draw (units 0..3 are taken by the core shader).
+   * Sampler uniforms keep their value between draws: when your extension is inactive, point its
+   * sampler2D uniforms back at unit 0, and give non-2D samplers (sampler3D…) a unit of their own
+   * on every draw — WebGL rejects draws where samplers of different types share a unit.
+   */
   unit: () => number;
 }
 
@@ -63,7 +68,39 @@ export interface LayerExtension {
    * run for this layer; return false to skip it (cheap: a uniform branch).
    */
   apply: (ctx: LayerExtContext) => boolean;
+  /**
+   * Optional: load asynchronous data the extension needs for `project` (e.g. LUT tables). The
+   * exporter awaits this before rendering the first frame so exports never miss it.
+   */
+  prepare?: (project: Project) => Promise<void>;
 }
+
+// --- colour-audio: async data hooks for layer extensions ----------------------------------------
+const changeListeners = new Set<() => void>();
+
+/** Extensions call this when asynchronously loaded data becomes available; the preview repaints. */
+export function notifyLayerExtChanged(): void {
+  changeListeners.forEach((cb) => cb());
+}
+
+export function onLayerExtChanged(cb: () => void): () => void {
+  changeListeners.add(cb);
+  return () => changeListeners.delete(cb);
+}
+
+/** Run every extension's `prepare` for a project (used by the exporter). */
+export async function prepareLayerExtensions(project: Project): Promise<void> {
+  await Promise.all(
+    LAYER_EXTENSIONS.map(async (e) => {
+      try {
+        await e.prepare?.(project);
+      } catch (err) {
+        console.warn(`[gl] layer extension "${e.id}" could not prepare`, err);
+      }
+    }),
+  );
+}
+// --- end colour-audio ---------------------------------------------------------------------------
 
 const modules = import.meta.glob<{ default: LayerExtension | LayerExtension[] }>('./ext/*.ts', { eager: true });
 

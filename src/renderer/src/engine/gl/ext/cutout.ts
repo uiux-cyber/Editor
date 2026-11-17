@@ -88,17 +88,24 @@ uniform vec4 u_ext_cutout_p; // mask texel x, y, feather, choke
 `,
   apply: (ctx) => {
     const clip = ctx.clip;
-    if (ctx.identity || (clip.type !== 'video' && clip.type !== 'image') || !clip.cutout?.enabled) return false;
-    const matte = ctx.provider.matte?.(clip, clip.type === 'video' ? (ctx.sourceTime ?? ctx.localTime) : ctx.localTime);
-    if (!matte) return false;
     const gl = ctx.gl;
+    // Sampler uniforms keep their value between draws: when inactive, point the mask sampler back
+    // at unit 0 (a 2D texture) so it never shares a unit with another extension's sampler3D.
+    const maskLoc = ctx.prog.loc('u_ext_cutout_mask');
+    const off = (): boolean => {
+      if (maskLoc) gl.uniform1i(maskLoc, 0);
+      return false;
+    };
+    if (ctx.identity || (clip.type !== 'video' && clip.type !== 'image') || !clip.cutout?.enabled) return off();
+    const matte = ctx.provider.matte?.(clip, clip.type === 'video' ? (ctx.sourceTime ?? ctx.localTime) : ctx.localTime);
+    if (!matte) return off();
     const unit = ctx.unit();
     // Activate our unit before touching textures so the layer's own bindings stay intact.
     gl.activeTexture(gl.TEXTURE0 + unit);
     const tex = matteTexture(ctx.glctx, clip.id, matte);
-    if (!tex) return false;
+    if (!tex) return off();
     gl.bindTexture(gl.TEXTURE_2D, tex.tex);
-    gl.uniform1i(ctx.prog.loc('u_ext_cutout_mask'), unit);
+    gl.uniform1i(maskLoc, unit);
     gl.uniform4f(ctx.prog.loc('u_ext_cutout_p'), 1 / Math.max(1, tex.w), 1 / Math.max(1, tex.h), clip.cutout.feather, clip.cutout.choke);
     return true;
   },

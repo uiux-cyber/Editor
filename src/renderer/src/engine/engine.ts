@@ -11,6 +11,7 @@ import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { Compositor, type LayerBox, type MediaProvider } from './compositor';
 import { animationFrame, onAnimationUpdate } from './media/animated';
+import { onLayerExtChanged } from './gl/layerExt';
 import { getImage, onImageLoaded, useAssetRuntime } from './media/assets';
 import { MediaPool } from './preview/mediaPool';
 import { onFontsChanged } from './sources/text';
@@ -125,6 +126,8 @@ class Engine {
       onFontsChanged(() => this.invalidate()),
       onImageLoaded(() => this.invalidate()),
       onAnimationUpdate(() => this.invalidate()),
+      // colour-audio: repaint when a layer extension's async data (e.g. a LUT) arrives.
+      onLayerExtChanged(() => this.invalidate()),
     );
     this.updateSize();
     this.syncMedia();
@@ -351,6 +354,14 @@ class Engine {
       console.error('[engine] render failed', err);
       return;
     }
+    // colour-audio: scopes / histograms read the frame back from here.
+    for (const cb of this.renderedListeners) {
+      try {
+        cb(this.compositor);
+      } catch (err) {
+        console.warn('[engine] frame listener failed', err);
+      }
+    }
     // Let on-canvas handles follow animated layers without re-rendering React every frame.
     let sig = '';
     for (const id of useUI.getState().selection) {
@@ -377,6 +388,21 @@ class Engine {
   level(): number {
     return this.playing ? (this.pool?.level() ?? 0) : 0;
   }
+
+  // --- colour-audio ------------------------------------------------------------------------
+  private renderedListeners = new Set<(c: Compositor) => void>();
+
+  /** Called after every rendered preview frame with the compositor that drew it. */
+  onRendered(cb: (c: Compositor) => void): () => void {
+    this.renderedListeners.add(cb);
+    return () => this.renderedListeners.delete(cb);
+  }
+
+  /** Stereo peak levels (0..1, linear) of a track's bus while playing, else null. */
+  trackLevels(trackId: ID): [number, number] | null {
+    return this.playing && this.pool ? this.pool.trackLevels(trackId) : null;
+  }
+  // --- end colour-audio --------------------------------------------------------------------
 
   /** PNG of the current frame at preview resolution. */
   async snapshot(): Promise<Blob | null> {

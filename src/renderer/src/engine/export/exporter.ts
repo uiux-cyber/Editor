@@ -35,7 +35,7 @@ import { getIndex, projectDuration } from '@/core/project';
 import { clipGainAt } from '@/core/scene';
 import type { ID, MediaAsset, Project } from '@/core/types';
 import { api } from '@/platform/api';
-import { buildChain } from '../audio/chain';
+import { buildChain, chainKey } from '../audio/chain';
 import { ClipAudioRenderer, openAudioSource, type AudioSource } from '../audio/render';
 import { exportCaptionCues, withoutBurnedCaptions } from './captions';
 import { FrameRenderer, prepareResources } from './frameRenderer';
@@ -109,6 +109,12 @@ export class ExportCancelled extends Error {
 
 export const AUDIO_SAMPLE_RATE = 48000;
 const AUDIO_WINDOW = 4;
+/**
+ * Seconds of audio fed (and discarded) before each mix window for clips with a processing chain
+ * (EQ, compressor…), so filters and compressors start each window in their settled state instead
+ * of from silence (no clicks or level dips every AUDIO_WINDOW seconds).
+ */
+const CHAIN_PREROLL = 0.5;
 
 const BPP: Record<QualityLevel, number> = { low: 0.045, medium: 0.085, high: 0.14, best: 0.22 };
 const CODEC_EFFICIENCY: Record<string, number> = { avc: 1, hevc: 0.68, vp9: 0.7, av1: 0.58, vp8: 1.15 };
@@ -194,6 +200,8 @@ export function canEncodeSize(codec: VideoCodec, width: number, height: number, 
 class AudioMixer {
   private sources = new Map<ID, AudioSource | null>();
   private renderers = new Map<ID, ClipAudioRenderer>();
+  /** Last CHAIN_PREROLL seconds rendered for each chained clip (pre-roll of the next window). */
+  private tails = new Map<ID, { end: number; data: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] }>();
   private instances: MediaInstance[];
 
   constructor(
@@ -224,13 +232,19 @@ class AudioMixer {
     const SR = AUDIO_SAMPLE_RATE;
     const s0 = Math.round(t0 * SR);
     const frames = Math.max(1, Math.round(t1 * SR) - s0);
-    const ctx = new OfflineAudioContext(2, frames, SR);
+    // Pre-roll when a clip with a processing chain was already playing (see CHAIN_PREROLL).
+    const pre = this.instances.some((i) => i.from < t0 - 1e-6 && i.to > t0 && chainKey(i.clip) !== '') ? CHAIN_PREROLL : 0;
+    const preFrames = Math.round(pre * SR);
+    const ctx = new OfflineAudioContext(2, frames + preFrames, SR);
     for (const inst of this.instances) {
       const clip = inst.clip;
       const a = Math.max(t0, inst.from);
       const b = Math.min(t1, inst.to);
       if (b - a <= 1e-6) {
-        if (inst.to <= t0) this.renderers.delete(clip.id);
+        if (inst.to <= t0) {
+          this.renderers.delete(clip.id);
+          this.tails.delete(clip.id);
+        }
         continue;
       }
       const asset = this.project.assets[clip.assetId];
@@ -241,12 +255,36 @@ class AudioMixer {
       const sa = Math.round(a * SR);
       const n = Math.round(b * SR) - sa;
       if (n <= 0) continue;
+      const origin = Math.round(inst.origin * SR);
       let renderer = this.renderers.get(clip.id);
       if (!renderer) this.renderers.set(clip.id, (renderer = new ClipAudioRenderer(clip, src, SR)));
-      const data = await renderer.render(sa - Math.round(inst.origin * SR), n);
-      const buffer = ctx.createBuffer(2, n, SR);
-      buffer.copyToChannel(data[0], 0);
-      buffer.copyToChannel(data[1], 1);
+      const data = await renderer.render(sa - origin, n);
+      // Warm-up audio for the chain: the end of the previous window when it joins up exactly,
+      // otherwise rendered afresh (never from before the clip starts).
+      const chained = chainKey(clip) !== '';
+      let lead: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] | null = null;
+      const want = chained ? Math.min(preFrames, sa - Math.round(inst.from * SR)) : 0;
+      if (want > 0) {
+        const tail = this.tails.get(clip.id);
+        if (tail && tail.end === sa && tail.data[0].length >= want) {
+          lead = [tail.data[0].subarray(tail.data[0].length - want), tail.data[1].subarray(tail.data[1].length - want)];
+        } else {
+          const r = await new ClipAudioRenderer(clip, src, SR).render(sa - want - origin, want);
+          lead = [r[0], r[1]];
+        }
+      }
+      if (chained) {
+        const keep = Math.round(CHAIN_PREROLL * SR);
+        this.tails.set(clip.id, { end: sa + n, data: [data[0].slice(Math.max(0, n - keep)), data[1].slice(Math.max(0, n - keep))] });
+      }
+      const leadN = lead ? lead[0].length : 0;
+      const buffer = ctx.createBuffer(2, leadN + n, SR);
+      if (lead) {
+        buffer.copyToChannel(lead[0], 0, 0);
+        buffer.copyToChannel(lead[1], 1, 0);
+      }
+      buffer.copyToChannel(data[0], 0, leadN);
+      buffer.copyToChannel(data[1], 1, leadN);
       const node = ctx.createBufferSource();
       node.buffer = buffer;
       const gain = ctx.createGain();
@@ -258,10 +296,10 @@ class AudioMixer {
         const t = a + (i / (steps - 1)) * span;
         curve[i] = clipGainAt(clip, t - inst.origin) * parentGainAt(inst, t);
       }
-      const when = (sa - s0) / SR;
+      const when = (preFrames + sa - s0) / SR;
       gain.gain.value = curve[0];
       try {
-        gain.gain.setValueCurveAtTime(curve, when, Math.max(1e-3, Math.min(span, (frames - 1) / AUDIO_SAMPLE_RATE - when)));
+        gain.gain.setValueCurveAtTime(curve, when, Math.max(1e-3, Math.min(span, (frames + preFrames - 1) / SR - when)));
       } catch {
         gain.gain.setValueAtTime(curve[0], when);
       }
@@ -273,9 +311,13 @@ class AudioMixer {
         node.connect(gain);
       }
       gain.connect(ctx.destination);
-      node.start(when);
+      node.start(when - leadN / SR);
     }
-    return ctx.startRendering();
+    const rendered = await ctx.startRendering();
+    if (!preFrames) return rendered;
+    const out = new AudioBuffer({ numberOfChannels: 2, length: frames, sampleRate: SR });
+    for (let ch = 0; ch < 2; ch++) out.copyToChannel(rendered.getChannelData(ch).subarray(preFrames, preFrames + frames), ch);
+    return out;
   }
 }
 

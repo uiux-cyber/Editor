@@ -24,7 +24,8 @@ const app = await electron.launch({
   executablePath: packaged ? path.join(root, 'release', 'win-unpacked', 'Kinora.exe') : electronPath,
   args: packaged ? [] : [root],
   cwd: root,
-  env: { ...process.env, KINORA_USER_DATA: userData, KINORA_E2E_DIR: outDir },
+  // Off-screen and without focus unless KINORA_E2E_SHOW=1 (watch the run).
+  env: { ...process.env, KINORA_USER_DATA: userData, KINORA_E2E_DIR: outDir, KINORA_E2E_HIDDEN: process.env.KINORA_E2E_SHOW === '1' ? '0' : '1' },
 });
 
 const problems = [];
