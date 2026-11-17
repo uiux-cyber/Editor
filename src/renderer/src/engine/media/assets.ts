@@ -14,6 +14,9 @@ import { api } from '@/platform/api';
 import { getProject, updateProject } from '@/store/project';
 import { ANIMATION_CANDIDATE_EXTS, AnimationError, adoptAnimation, animationPoster, discardProbe, forgetAnimation, probeAnimation, resetAnimations, setAnimationAvailability, type ProbedAnimation } from './animated';
 import { soundAssetDuration, soundBlob } from './sounds';
+// Performance & media area: HDR detection and preview-source (proxy) selection.
+import { isHdrColorSpace, probeHdrPipeline, setHdrInfo } from './hdr';
+import { useMediaPrefs } from './prefs';
 
 export type AssetStatus = 'loading' | 'ready' | 'missing' | 'unsupported';
 
@@ -24,6 +27,8 @@ export interface AssetRuntime {
   /** Small poster as a data URL. */
   thumb: string | null;
   note?: string;
+  /** URL of the asset's proxy once its file has been verified (see media/proxies.ts). */
+  proxyUrl?: string | null;
 }
 
 interface RuntimeState {
@@ -44,6 +49,16 @@ setAnimationAvailability((id) => useAssetRuntime.getState().items[id]?.status ==
 
 export const assetRuntime = (id: ID): AssetRuntime | undefined => useAssetRuntime.getState().items[id];
 export const assetUrl = (id: ID): string | null => useAssetRuntime.getState().items[id]?.url ?? null;
+
+/**
+ * URL the preview should play for an asset: its proxy when "Use proxies" is on and the proxy is
+ * ready, else the original. Export never calls this (it always opens the original).
+ */
+export function previewUrl(id: ID): string | null {
+  const rt = useAssetRuntime.getState().items[id];
+  if (!rt) return null;
+  return (useMediaPrefs.getState().useProxies && rt.status === 'ready' && rt.proxyUrl) || rt.url;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Mediabunny inputs
@@ -73,17 +88,47 @@ export function sharedInput(asset: MediaAsset): Input {
   return input;
 }
 
+/**
+ * Shared input for preview visuals (filmstrips, waveforms, posters): the proxy when proxies are
+ * in use and ready, else the original.
+ */
+export function previewInput(asset: MediaAsset): Input {
+  const proxyUrl = useMediaPrefs.getState().useProxies ? useAssetRuntime.getState().items[asset.id]?.proxyUrl : null;
+  if (!proxyUrl) return sharedInput(asset);
+  const key = `${asset.id}#proxy`;
+  let input = sharedInputs.get(key);
+  if (!input || input.disposed) {
+    input = new Input({ source: new UrlSource(proxyUrl, { maxCacheSize: 16 * 1024 * 1024 }), formats: ALL_FORMATS });
+    sharedInputs.set(key, input);
+  }
+  return input;
+}
+
 function disposeInput(id: ID): void {
-  const input = sharedInputs.get(id);
-  if (input && !input.disposed) input.dispose();
-  sharedInputs.delete(id);
+  for (const key of [id, `${id}#proxy`]) {
+    const input = sharedInputs.get(key);
+    if (input && !input.disposed) input.dispose();
+    sharedInputs.delete(key);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
 // Probing
 // ---------------------------------------------------------------------------------------------
 
-export class ImportError extends Error {}
+export class ImportError extends Error {
+  /** True when FFmpeg could convert the file into something this PC can decode. */
+  convertible = false;
+  /** Codec / container that could not be read, for messages. */
+  codec?: string;
+}
+
+function convertibleError(message: string, codec?: string): ImportError {
+  const err = new ImportError(message);
+  err.convertible = true;
+  err.codec = codec;
+  return err;
+}
 
 function canvasToThumb(source: CanvasImageSource, sw: number, sh: number): string {
   const maxW = 320;
@@ -167,7 +212,10 @@ async function probe(info: FileInfo): Promise<Probed> {
 
   const input = new Input({ source: new UrlSource(url), formats: ALL_FORMATS });
   try {
-    if (!(await input.canRead())) throw new ImportError('The container format could not be read.');
+    if (!(await input.canRead())) {
+      if (VIDEO_EXTS.includes(info.ext)) throw convertibleError('The container format could not be read.', info.ext.toUpperCase());
+      throw new ImportError('The container format could not be read.');
+    }
     const video = await input.getPrimaryVideoTrack();
     const audio = await input.getPrimaryAudioTrack();
     if (!video && !audio) throw new ImportError('No playable video or audio track was found.');
@@ -177,7 +225,7 @@ async function probe(info: FileInfo): Promise<Probed> {
     const audioOk = audio ? await audio.canDecode() : false;
     const asVideo = !!video && !AUDIO_EXTS.includes(info.ext);
     if (asVideo && !videoOk) {
-      throw new ImportError(`The video codec${videoCodec ? ` (${videoCodec.toUpperCase()})` : ''} cannot be decoded on this PC. Convert the file to H.264 MP4 and import it again.`);
+      throw convertibleError(`The video codec${videoCodec ? ` (${videoCodec.toUpperCase()})` : ''} cannot be decoded on this PC.`, videoCodec?.toUpperCase());
     }
     if (!asVideo && !audioOk) {
       throw new ImportError(`The audio codec${audioCodec ? ` (${audioCodec.toUpperCase()})` : ''} cannot be decoded on this PC.`);
@@ -195,6 +243,18 @@ async function probe(info: FileInfo): Promise<Probed> {
       } catch {
         /* keep default */
       }
+      // HDR (PQ / HLG) sources are tone-mapped by the `hdr` layer extension.
+      let hdr = false;
+      try {
+        const cs = await video!.getColorSpace();
+        hdr = (await video!.hasHighDynamicRange()) || isHdrColorSpace(cs);
+        if (hdr) {
+          setHdrInfo(base.id, cs);
+          void probeHdrPipeline();
+        }
+      } catch {
+        /* colour space unknown: SDR */
+      }
       return {
         asset: {
           ...base,
@@ -207,6 +267,7 @@ async function probe(info: FileInfo): Promise<Probed> {
           hasAudio: !!audio && audioOk,
           videoCodec: videoCodec ?? undefined,
           audioCodec: audio && audioOk ? (audioCodec ?? undefined) : undefined,
+          ...(hdr ? { hdr: true } : {}),
         },
         thumb: await videoPoster(input, duration),
       };
@@ -222,12 +283,35 @@ async function probe(info: FileInfo): Promise<Probed> {
 
 export interface ImportResult {
   assets: MediaAsset[];
-  failures: { name: string; reason: string }[];
+  /** `convertible`: FFmpeg could turn the file into a format this PC decodes (see media/ffmpeg.ts). */
+  failures: { name: string; reason: string; path?: string; convertible?: boolean }[];
+}
+
+type AssetsHook = (assets: MediaAsset[]) => void;
+const importHooks = new Set<AssetsHook>();
+const prepareHooks = new Set<(project: Project) => void>();
+
+/** Run `cb` with every batch of newly imported assets (e.g. to queue proxies). */
+export function onAssetsImported(cb: AssetsHook): () => void {
+  importHooks.add(cb);
+  return () => importHooks.delete(cb);
+}
+
+/** Run `cb` after a project's assets have been prepared (e.g. to verify proxies). */
+export function onProjectAssetsPrepared(cb: (project: Project) => void): () => void {
+  prepareHooks.add(cb);
+  return () => prepareHooks.delete(cb);
+}
+
+export interface ImportOptions {
+  /** Converted files: lower-cased converted path → original file (sets `transcodedFrom` and the name). */
+  transcodedFrom?: Record<string, string>;
 }
 
 /** Probe files and add them to the current project's media bin. */
-export async function importMediaFiles(files: FileInfo[]): Promise<ImportResult> {
+export async function importMediaFiles(files: FileInfo[], opts: ImportOptions = {}): Promise<ImportResult> {
   const result: ImportResult = { assets: [], failures: [] };
+  const existingBefore = new Set(Object.keys(getProject().assets));
   const existing = new Map<string, MediaAsset>();
   for (const a of Object.values(getProject().assets)) {
     if (a.source.type === 'file') existing.set(a.source.path.toLowerCase(), a);
@@ -245,6 +329,11 @@ export async function importMediaFiles(files: FileInfo[]): Promise<ImportResult>
     try {
       const { asset, thumb, animation } = await probe(file);
       if (animation) adoptAnimation(asset.id, animation);
+      const original = opts.transcodedFrom?.[file.path.toLowerCase()];
+      if (original) {
+        asset.transcodedFrom = original;
+        asset.name = original.split(/[\\/]/).pop() ?? asset.name;
+      }
       useAssetRuntime.getState().patch(asset.id, { status: 'ready', url: api.media.toUrl(file.path), thumb });
       updateProject((p) => {
         p.assets[asset.id] = asset;
@@ -254,9 +343,11 @@ export async function importMediaFiles(files: FileInfo[]): Promise<ImportResult>
     } catch (err) {
       const reason = err instanceof ImportError ? err.message : 'The file could not be read.';
       if (!(err instanceof ImportError)) console.warn('[assets] import failed', file.path, err);
-      result.failures.push({ name: file.name, reason });
+      result.failures.push({ name: file.name, reason, path: file.path, convertible: err instanceof ImportError && err.convertible });
     }
   }
+  const added = result.assets.filter((a) => !existingBefore.has(a.id));
+  if (added.length) importHooks.forEach((cb) => cb(added));
   return result;
 }
 
@@ -318,6 +409,14 @@ async function prepareAsset(asset: MediaAsset): Promise<void> {
   }
   const url = api.media.toUrl(asset.source.path);
   rt.patch(asset.id, { status: 'ready', url, thumb: current?.thumb ?? null });
+  if (asset.hdr) {
+    setHdrInfo(asset.id, null);
+    void probeHdrPipeline();
+    void sharedInput(asset)
+      .getPrimaryVideoTrack()
+      .then(async (t) => t && setHdrInfo(asset.id, await t.getColorSpace()))
+      .catch(() => undefined);
+  }
   // Posters are regenerated lazily in the background.
   void (async () => {
     try {
@@ -325,7 +424,7 @@ async function prepareAsset(asset: MediaAsset): Promise<void> {
         const img = await loadImage(url);
         rt.patch(asset.id, { thumb: canvasToThumb(img, img.naturalWidth || 1, img.naturalHeight || 1) });
       } else if (asset.kind === 'video') {
-        const thumb = await videoPoster(sharedInput(asset), asset.duration);
+        const thumb = await videoPoster(previewInput(asset), asset.duration);
         if (thumb) rt.patch(asset.id, { thumb });
       } else if (asset.kind === 'animation') {
         const poster = await animationPoster(asset);
@@ -345,6 +444,7 @@ export async function prepareProjectAssets(project: Project): Promise<{ missing:
   const assets = Object.values(project.assets);
   await Promise.all(assets.map((a) => prepareAsset(a).catch(() => useAssetRuntime.getState().patch(a.id, { status: 'missing', url: null }))));
   const items = useAssetRuntime.getState().items;
+  prepareHooks.forEach((cb) => cb(project));
   return { missing: assets.filter((a) => items[a.id]?.status === 'missing') };
 }
 

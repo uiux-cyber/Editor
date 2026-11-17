@@ -14,6 +14,7 @@ import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { prepareLayerExtensions } from '../gl/layerExt';
 import { animationFrame, ensureAnimationFrame, preloadAnimations } from '../media/animated';
 import { getImage, openInput, preloadImages } from '../media/assets';
+import { canvasSinkFor } from '../media/hdr';
 import { ensureFont } from '../sources/text';
 import { endExportMattes, exportMatte, isCutoutClip, prepareExportMatte } from '@/vision/cutout';
 
@@ -247,9 +248,10 @@ export class FrameRenderer {
             const h = Math.max(1, asset.height || 1080);
             const fps = asset.fps > 0 ? asset.fps : 30;
             const maxFrames = Math.min(90, Math.max(8, Math.floor(REVERSE_BUDGET_BYTES / (w * h * 4))));
-            decoder = new ReverseClipDecoder(new CanvasSink(track, { alpha }), new EncodedPacketSink(track), await track.getFirstTimestamp(), maxFrames / fps);
+            decoder = new ReverseClipDecoder(canvasSinkFor(asset, track, { alpha }), new EncodedPacketSink(track), await track.getFirstTimestamp(), maxFrames / fps);
           } else {
-            decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3, alpha }), await track.getFirstTimestamp());
+            // HDR sources keep their raw signal (tone-mapped by the `hdr` layer extension, like the preview).
+            decoder = new ClipDecoder(canvasSinkFor(asset, track, { poolSize: 3, alpha }), await track.getFirstTimestamp());
           }
         }
       }

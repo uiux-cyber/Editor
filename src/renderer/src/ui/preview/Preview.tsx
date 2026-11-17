@@ -18,6 +18,7 @@ import { PenOverlay, PenToolButton } from './pen/PenOverlay';
 import { VisionOverlay } from '../vision/VisionOverlay';
 import { useColorAudioPrefs, toggleScopes } from '../coloraudio/prefs';
 import { ScopesDock } from '../coloraudio/ScopesPanel';
+import { TransportMedia } from '../media/TransportMedia';
 
 const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type HandleId = (typeof HANDLE_IDS)[number];
@@ -254,7 +255,7 @@ function Timecode(): ReactNode {
     <div className="timecode mono" title="Current time / project duration">
       <span ref={ref} className="timecode__now" />
       <span className="timecode__sep">/</span>
-      <span>{formatTimecode(duration, fps)}</span>
+      <span className="timecode__dur">{formatTimecode(duration, fps)}</span>
     </div>
   );
 }
@@ -314,6 +315,8 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
     <div className="transport">
       <div className="transport__side">
         <Timecode />
+        {/* Performance & media: proxies toggle, render preview, background tasks. */}
+        <TransportMedia />
       </div>
       <div className="transport__center">
         <button type="button" className="icon-btn" title="Previous edit point (↑)" onClick={() => jumpToEdit(-1)}>
@@ -349,7 +352,7 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
         </button>
         <input
           type="range"
-          className="slider"
+          className="slider transport__volume"
           style={{ width: 70, flex: 'none', ['--pct' as string]: `${Math.min(100, volume * 100)}%` }}
           min={0}
           max={1}

@@ -88,6 +88,7 @@ import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/Compo
 import { cachedThemeColor, useTheme } from '../theme';
 import { SpeechTimelineOverlay } from '../speech/TimelineOverlay';
 import { soundTrackIds, TrackMeter } from '../coloraudio/TrackMeter';
+import { onCacheStatus, paintCacheBar } from '../media/cacheBar';
 import { ClipView } from './ClipView';
 import { EditReadout, HistoryButton, MagneticButton, TrimToolButtons } from './EditToolbar';
 import { editedIds, installEditCursors, startEditGesture, useEditReadout, type GestureContext } from './editGestures';
@@ -223,6 +224,9 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
     ctx.closePath();
     ctx.fill();
   }
+
+  // Render-cache status bar (performance & media area): green = rendered, amber = needs render.
+  paintCacheBar(ctx, width, scrollLeft, pps, RULER_H);
 
   // Playhead cap.
   const px = timeToX(time, pps) - scrollLeft;
@@ -412,6 +416,8 @@ export function Timeline(): ReactNode {
   useEffect(() => {
     placePlayhead(engine.time);
   }, [pps, placePlayhead]);
+
+  useEffect(() => onCacheStatus(paintRuler), [paintRuler]);
 
   // Keep the point under the cursor fixed while zooming.
   useLayoutEffect(() => {

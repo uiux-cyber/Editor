@@ -1,0 +1,381 @@
+/* ========================================================================================== */
+/* Performance & media: proxies, render cache, FFmpeg conversion, HDR                          */
+/* ========================================================================================== */
+
+/* ---- Media tile badges ------------------------------------------------------------------- */
+
+.mt-badges {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  pointer-events: none;
+}
+.mt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(8, 10, 14, 0.78);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  pointer-events: auto;
+  backdrop-filter: blur(4px);
+}
+.mt-badge--hdr {
+  background: linear-gradient(120deg, #f59e0b, #ef4444 60%, #a855f7);
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+.mt-badge--proxy {
+  background: rgba(52, 211, 153, 0.22);
+  color: #8ff0c9;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.35) inset;
+}
+.mt-badge--proxy.is-off {
+  background: rgba(8, 10, 14, 0.78);
+  color: var(--text-2);
+  box-shadow: 0 0 0 1px var(--line-2) inset;
+}
+.mt-badge--conv {
+  background: rgba(34, 211, 238, 0.2);
+  color: #9be9f7;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.3) inset;
+}
+.mt-badge--pending {
+  color: var(--text-0);
+}
+.mt-badge--pending .spinner {
+  border-width: 1.5px;
+  border-color: var(--green);
+  border-top-color: transparent;
+}
+.mt-badge--error {
+  background: rgba(120, 20, 30, 0.85);
+  color: #ffc2c7;
+}
+.mt-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.mt-progress__bar {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+  transition: width 0.25s linear;
+}
+.mt-cancel {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(8, 10, 14, 0.82);
+  color: var(--text-1);
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 2;
+}
+.media-tile:hover .mt-cancel {
+  opacity: 1;
+}
+.mt-cancel:hover {
+  color: #fff;
+  background: var(--red);
+}
+.media-tile:hover .mt-cancel ~ .media-tile__add,
+.media-tile__thumb:has(.mt-cancel) .media-tile__add {
+  display: none;
+}
+
+/* ---- Preview transport: proxies toggle and background tasks -------------------------------- */
+
+.mx-proxy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 650;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.mx-proxy:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+.mx-proxy.is-on {
+  color: #8ff0c9;
+  background: rgba(52, 211, 153, 0.12);
+}
+.mx-proxy.is-on:hover {
+  background: rgba(52, 211, 153, 0.2);
+}
+.mx-proxy__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.mx-proxy.is-on .mx-proxy__dot {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+.mx-tasks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border-radius: 13px;
+  background: var(--bg-3);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 190px;
+}
+.mx-tasks:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+.mx-tasks .spinner {
+  width: 11px;
+  height: 11px;
+  border-color: var(--cyan);
+  border-top-color: transparent;
+}
+.mx-tasks__pct {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mx-popover {
+  position: fixed;
+  z-index: 60;
+  width: 340px;
+  padding: 10px;
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-pop), 0 0 0 1px var(--line-2);
+}
+.mx-popover h4 {
+  margin: 2px 2px 8px;
+  color: var(--text-0);
+  font-size: 12px;
+  font-weight: 650;
+}
+.mx-task {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+}
+.mx-task + .mx-task {
+  margin-top: 6px;
+}
+.mx-task__title {
+  min-width: 0;
+  color: var(--text-0);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.mx-task__meta {
+  grid-column: 1 / -1;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mx-task .progress {
+  grid-column: 1 / -1;
+  height: 4px;
+}
+.mx-task--error .mx-task__meta {
+  color: #ffb3ba;
+}
+
+/* ---- Timeline ruler legend (render cache) ------------------------------------------------- */
+
+.mx-cache-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mx-cache-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 4px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* ---- FFmpeg conversion dialog ---------------------------------------------------------- */
+
+.mx-convert__files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+.mx-convert__file {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+}
+.mx-convert__file svg {
+  grid-row: span 2;
+  color: var(--text-2);
+}
+.mx-convert__file strong {
+  min-width: 0;
+  color: var(--text-0);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mx-convert__file span {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.mx-convert__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: rgba(52, 211, 153, 0.08);
+  color: #b6f3da;
+  font-size: 12px;
+}
+.mx-convert__status--missing {
+  flex-direction: column;
+  align-items: stretch;
+  background: rgba(251, 191, 36, 0.08);
+  color: #f3d58a;
+}
+.mx-convert__steps {
+  margin: 6px 0 4px;
+  padding-left: 18px;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+.mx-convert__steps code,
+.mx-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-4);
+  color: var(--text-0);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* ---- Settings sections ----------------------------------------------------------------- */
+
+.mx-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mx-settings .field__label {
+  width: 170px;
+}
+.mx-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mx-storage {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+}
+.mx-storage strong {
+  color: var(--text-0);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mx-storage span {
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mx-ffmpeg-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+  font-size: 12px;
+}
+.mx-ffmpeg-state.is-ok {
+  background: rgba(52, 211, 153, 0.08);
+  color: #b6f3da;
+}
+.mx-ffmpeg-state.is-missing {
+  background: rgba(251, 191, 36, 0.08);
+  color: #f3d58a;
+}
+
+/* Standalone host for settings sections (used until / unless the Settings window hosts them). */
+.mx-settings-host .modal__body {
+  max-height: 70vh;
+  overflow: auto;
+}
+.mx-settings-host h3 {
+  margin: 14px 0 8px;
+  color: var(--text-0);
+  font-size: 13px;
+  font-weight: 650;
+}
+.mx-settings-host h3:first-child {
+  margin-top: 0;
+}
+
+/* ---- Inspector: HDR section ------------------------------------------------------------ */
+
+.mx-hdr-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.mx-hdr-note .mt-badge {
+  position: static;
+}

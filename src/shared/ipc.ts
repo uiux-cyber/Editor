@@ -7,7 +7,8 @@ export const APP_NAME = 'Kinora';
 export const PROJECT_EXT = 'kinora';
 export const MEDIA_SCHEME = 'kinora';
 
-export const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'ts', 'mts', 'm2ts', '3gp'];
+// 'mxf' (broadcast / camera files) is imported through the optional FFmpeg conversion.
+export const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'ts', 'mts', 'm2ts', '3gp', 'mxf'];
 export const AUDIO_EXTS = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'weba'];
 export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', 'svg', 'apng'];
 /**

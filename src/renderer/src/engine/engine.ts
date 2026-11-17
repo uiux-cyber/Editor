@@ -9,10 +9,13 @@ import { snapToFrame } from '@/core/time';
 import type { ID, Project } from '@/core/types';
 import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
+import { drawCachedFrame, notePresented, prefetchCached } from './cache/player';
+import { setBusyProbe } from './cache/renderCache';
 import { Compositor, type LayerBox, type MediaProvider } from './compositor';
 import { animationFrame, onAnimationUpdate } from './media/animated';
 import { onLayerExtChanged } from './gl/layerExt';
 import { getImage, onImageLoaded, useAssetRuntime } from './media/assets';
+import { startMediaServices } from './media/services';
 import { MediaPool } from './preview/mediaPool';
 import { onFontsChanged } from './sources/text';
 import { previewMatte } from '@/vision/cutout';
@@ -81,6 +84,8 @@ class Engine {
     if (this.canvas === canvas) return;
     this.detach();
     this.canvas = canvas;
+    // Performance & media: background render cache pauses while the preview plays or exports run.
+    setBusyProbe(() => this.playing || this.suspended);
     this.pool = new MediaPool();
     this.pool.onFrame = () => this.invalidate();
     this.pool.setMasterVolume(useUI.getState().masterVolume);
@@ -236,6 +241,7 @@ class Engine {
     this.playWall = performance.now();
     this.playFrom = this.time;
     usePlayback.setState({ playing: true });
+    prefetchCached(this.project, this.time);
     this.syncMedia();
     this.schedule();
   }
@@ -348,6 +354,12 @@ class Engine {
     const fps = project.settings.fps;
     // Sample on the frame grid so the preview shows exactly what an export would.
     const t = Math.floor(this.time * fps + 1e-4) / fps;
+    // Background render cache (engine/cache): while playing, show pre-rendered frames of heavy
+    // sections; anything not cached (or not decoded yet) is composited live below.
+    if (this.playing && drawCachedFrame(this.compositor, project, t)) {
+      notePresented(project, t, true, true);
+      return;
+    }
     try {
       this.compositor.render(project, t, this.provider);
     } catch (err) {
@@ -362,6 +374,7 @@ class Engine {
         console.warn('[engine] frame listener failed', err);
       }
     }
+    notePresented(project, t, this.playing, false);
     // Let on-canvas handles follow animated layers without re-rendering React every frame.
     let sig = '';
     for (const id of useUI.getState().selection) {
@@ -413,3 +426,6 @@ class Engine {
 }
 
 export const engine = new Engine();
+
+// Proxies, render cache, FFmpeg and HDR services (performance & media area).
+startMediaServices();

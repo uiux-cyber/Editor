@@ -1410,6 +1410,32 @@ body.is-dragging * {
   flex: none;
   background: var(--bg-1);
   border-top: 1px solid var(--line);
+  /* The controls drop secondary pieces as the preview narrows (container queries below). */
+  container: transport / inline-size;
+}
+.transport__side > * {
+  flex-shrink: 0;
+}
+@container transport (max-width: 1180px) {
+  .transport .meter,
+  .transport__volume {
+    display: none;
+  }
+}
+@container transport (max-width: 1000px) {
+  .transport .timecode__sep,
+  .transport .timecode__dur {
+    display: none;
+  }
+}
+@container transport (max-width: 860px) {
+  .transport .vdivider {
+    display: none;
+  }
+  .transport__center .icon-btn:first-child,
+  .transport__center .icon-btn:last-child {
+    display: none;
+  }
 }
 .transport__side {
   flex: 1;
