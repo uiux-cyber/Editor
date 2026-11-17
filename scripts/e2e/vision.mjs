@@ -586,6 +586,7 @@ export default async function vision(ctx) {
     await sec.locator('[data-action="match-color"]').click();
     await sec.locator('[data-color-result]').waitFor({ timeout: 60000 });
     perf.colorMatchSeconds = (Date.now() - t0) / 1000;
+    await sec.locator('[data-color-result]').scrollIntoViewIfNeeded();
     await sleep(500);
     await shot('vision-08-color-match');
     const res = await run((id) => {
@@ -598,7 +599,7 @@ export default async function vision(ctx) {
     expect(res.adjust.temperature > 0.2 && res.adjust.saturation < -0.1, 'the result is warm and desaturated like the reference, written as editable Adjust values');
     expect((await state()).past === pastBefore + 1, 'applying the match is one undo step');
     // Rendered output: both clips now look alike.
-    const pts = [[0.5, 0.4], [0.5, 0.75], [0.3, 0.6], [0.7, 0.6], [0.1, 0.1]];
+    const pts = [[0.42, 0.22], [0.5, 0.62], [0.56, 0.48], [0.38, 0.7], [0.5, 0.9], [0.62, 0.3]];
     const a = await samplePixels((await exportTo('vision-color-ref.png', { container: 'png', start: 1.5, end: 1.5 })).file, 'png', 0, pts);
     const b = await samplePixels((await exportTo('vision-color-matched.png', { container: 'png', start: 4.5, end: 4.5 })).file, 'png', 0, pts);
     const meanDiff = a.colors.reduce((s, c, i) => s + Math.abs(c[0] - b.colors[i][0]) + Math.abs(c[1] - b.colors[i][1]) + Math.abs(c[2] - b.colors[i][2]), 0) / (pts.length * 3);

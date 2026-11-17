@@ -235,6 +235,13 @@ export interface LabStats {
   p05: number;
   p50: number;
   p95: number;
+  /**
+   * Colour of the dark / middle / bright third of the pixels (ranked by L, so the zones follow the
+   * same picture content when the exposure changes): mean a, b and chroma per zone.
+   */
+  zoneA: [number, number, number];
+  zoneB: [number, number, number];
+  zoneC: [number, number, number];
 }
 
 const HIST_BINS = 512;
@@ -242,7 +249,8 @@ const HIST_BINS = 512;
 /** Statistics of packed RGB floats (0..1). */
 export function labStats(rgb: Float32Array): LabStats {
   const n = Math.max(1, Math.floor(rgb.length / 3));
-  const lab = new Float32Array(3);
+  const lab = new Float32Array(n * 3);
+  const px = new Float32Array(3);
   const hist = new Uint32Array(HIST_BINS);
   let sL = 0;
   let sL2 = 0;
@@ -252,10 +260,13 @@ export function labStats(rgb: Float32Array): LabStats {
   let sB2 = 0;
   let sC = 0;
   for (let i = 0; i < n; i++) {
-    rgbToLab(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], lab);
-    const L = lab[0];
-    const a = lab[1];
-    const b = lab[2];
+    rgbToLab(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], px);
+    const L = px[0];
+    const a = px[1];
+    const b = px[2];
+    lab[i * 3] = L;
+    lab[i * 3 + 1] = a;
+    lab[i * 3 + 2] = b;
     sL += L;
     sL2 += L * L;
     sA += a;
@@ -278,8 +289,30 @@ export function labStats(rgb: Float32Array): LabStats {
     }
     return 100;
   };
-  const mean = (s: number): number => s / n;
-  const std = (s: number, s2: number): number => Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2));
+  // Rank zones: the darkest / middle / brightest third of the pixels (thresholds from the
+  // L histogram, so this stays linear in the number of pixels).
+  const t1 = pct(1 / 3);
+  const t2 = pct(2 / 3);
+  const zoneA: [number, number, number] = [0, 0, 0];
+  const zoneB: [number, number, number] = [0, 0, 0];
+  const zoneC: [number, number, number] = [0, 0, 0];
+  const counts = [0, 0, 0];
+  for (let i = 0; i < n; i++) {
+    const L = lab[i * 3];
+    const z = L < t1 ? 0 : L < t2 ? 1 : 2;
+    zoneA[z] += lab[i * 3 + 1];
+    zoneB[z] += lab[i * 3 + 2];
+    zoneC[z] += Math.hypot(lab[i * 3 + 1], lab[i * 3 + 2]);
+    counts[z]++;
+  }
+  for (let z = 0; z < 3; z++) {
+    const c = Math.max(1, counts[z]);
+    zoneA[z] /= c;
+    zoneB[z] /= c;
+    zoneC[z] /= c;
+  }
+  const mean = (v: number): number => v / n;
+  const std = (v: number, v2: number): number => Math.sqrt(Math.max(0, v2 / n - (v / n) ** 2));
   return {
     meanL: mean(sL),
     stdL: std(sL, sL2),
@@ -291,6 +324,9 @@ export function labStats(rgb: Float32Array): LabStats {
     p05: pct(0.05),
     p50: pct(0.5),
     p95: pct(0.95),
+    zoneA,
+    zoneB,
+    zoneC,
   };
 }
 
@@ -307,6 +343,7 @@ export function statResiduals(a: LabStats, b: LabStats): number[] {
     (a.meanC - b.meanC) / 4,
     (a.stdA - b.stdA) / 5,
     (a.stdB - b.stdB) / 5,
+    ...[0, 1, 2].flatMap((z) => [(a.zoneA[z] - b.zoneA[z]) / 4, (a.zoneB[z] - b.zoneB[z]) / 4, (a.zoneC[z] - b.zoneC[z]) / 5]),
   ];
 }
 
@@ -361,9 +398,23 @@ export interface MatchResult {
 
 /** Mix two stat sets (used for partial strength). */
 function mixStats(a: LabStats, b: LabStats, k: number): LabStats {
-  const out = { ...a };
-  for (const key of Object.keys(a) as (keyof LabStats)[]) out[key] = a[key] + (b[key] - a[key]) * k;
-  return out;
+  const m = (x: number, y: number): number => x + (y - x) * k;
+  const z = (x: [number, number, number], y: [number, number, number]): [number, number, number] => [m(x[0], y[0]), m(x[1], y[1]), m(x[2], y[2])];
+  return {
+    meanL: m(a.meanL, b.meanL),
+    stdL: m(a.stdL, b.stdL),
+    meanA: m(a.meanA, b.meanA),
+    stdA: m(a.stdA, b.stdA),
+    meanB: m(a.meanB, b.meanB),
+    stdB: m(a.stdB, b.stdB),
+    meanC: m(a.meanC, b.meanC),
+    p05: m(a.p05, b.p05),
+    p50: m(a.p50, b.p50),
+    p95: m(a.p95, b.p95),
+    zoneA: z(a.zoneA, b.zoneA),
+    zoneB: z(a.zoneB, b.zoneB),
+    zoneC: z(a.zoneC, b.zoneC),
+  };
 }
 
 function solve(A: number[][], b: number[]): number[] | null {
@@ -383,6 +434,72 @@ function solve(A: number[][], b: number[]): number[] | null {
   return M.map((row, i) => row[n] / row[i]);
 }
 
+type Residuals = (p: number[]) => number[];
+const sumSq = (r: number[]): number => r.reduce((s, v) => s + v * v, 0);
+
+/**
+ * Levenberg–Marquardt with a numeric Jacobian over the `active` parameters, projected onto the
+ * parameter bounds after every step.
+ */
+function levenbergMarquardt(p0: number[], active: number[], residuals: Residuals, iterations: number): { p: number[]; cost: number } {
+  const clampP = (p: number[]): number[] => p.map((v, i) => Math.min(MATCH_PARAMS[i].max, Math.max(MATCH_PARAMS[i].min, v)));
+  let p = clampP(p0);
+  let r = residuals(p);
+  let c = sumSq(r);
+  let lambda = 1e-2;
+  const P = active.length;
+  for (let it = 0; it < iterations; it++) {
+    const J: number[][] = [];
+    const h = 1e-3;
+    for (const j of active) {
+      const q = p.slice();
+      q[j] += q[j] + h > MATCH_PARAMS[j].max ? -h : h;
+      const step = q[j] - p[j];
+      const rq = residuals(q);
+      J.push(rq.map((v, i) => (v - r[i]) / step));
+    }
+    const JtJ: number[][] = [];
+    const Jtr: number[] = [];
+    for (let a = 0; a < P; a++) {
+      JtJ.push(new Array<number>(P).fill(0));
+      let s1 = 0;
+      for (let i = 0; i < r.length; i++) s1 += J[a][i] * r[i];
+      Jtr.push(-s1);
+      for (let b = 0; b < P; b++) {
+        let s2 = 0;
+        for (let i = 0; i < r.length; i++) s2 += J[a][i] * J[b][i];
+        JtJ[a][b] = s2;
+      }
+    }
+    let improved = false;
+    for (let tries = 0; tries < 8; tries++) {
+      const A = JtJ.map((row, i) => row.map((v, j) => (i === j ? v * (1 + lambda) + 1e-9 : v)));
+      const delta = solve(A, Jtr);
+      if (!delta) {
+        lambda *= 10;
+        continue;
+      }
+      const q = p.slice();
+      active.forEach((j, k) => (q[j] += delta[k]));
+      const qc = clampP(q);
+      const rq = residuals(qc);
+      const cq = sumSq(rq);
+      if (cq < c) {
+        const gain = c - cq;
+        p = qc;
+        r = rq;
+        c = cq;
+        lambda = Math.max(1e-6, lambda / 3);
+        improved = gain > 1e-7;
+        break;
+      }
+      lambda *= 4;
+    }
+    if (!improved) break;
+  }
+  return { p, cost: c };
+}
+
 /** Find Adjust values that make the source look like the target. */
 export function matchColors(input: MatchInput): MatchResult {
   const base: GradeInput = { ...(input.baseAdjust ?? {}) };
@@ -394,73 +511,41 @@ export function matchColors(input: MatchInput): MatchResult {
   const target = strength >= 1 ? target0 : mixStats(before, target0, strength);
 
   const P = MATCH_PARAMS.length;
+  const idx = (k: MatchKey): number => MATCH_PARAMS.findIndex((d) => d.key === k);
   const toAdjust = (p: number[]): GradeInput => {
     const out: GradeInput = { ...base };
     MATCH_PARAMS.forEach((d, i) => ((out as Record<string, number>)[d.key] = p[i]));
     return out;
   };
-  const reg = 0.06; // prefers small, editable values
-  const residuals = (p: number[]): number[] => [...statResiduals(render(toAdjust(p)), target), ...p.map((v) => v * reg)];
-  const cost = (r: number[]): number => r.reduce((s, v) => s + v * v, 0);
-  const clampP = (p: number[]): number[] => p.map((v, i) => Math.min(MATCH_PARAMS[i].max, Math.max(MATCH_PARAMS[i].min, v)));
-
-  // Start from neutral for the solved fields (the match replaces them).
-  let p = new Array<number>(P).fill(0);
-  let r = residuals(p);
-  let c = cost(r);
-  let lambda = 1e-2;
+  // Prefer small, editable values — and primary corrections (exposure, contrast, white balance,
+  // saturation) over the secondary tone controls, the way a colourist would.
+  const REG: Record<MatchKey, number> = { exposure: 0.04, contrast: 0.05, temperature: 0.04, tint: 0.04, saturation: 0.04, highlights: 0.16, shadows: 0.16, gamma: 0.12 };
+  const regs = MATCH_PARAMS.map((d) => REG[d.key]);
+  const regTerms = (p: number[]): number[] => p.map((v, i) => v * regs[i]);
+  const all: Residuals = (p) => [...statResiduals(render(toAdjust(p)), target), ...regTerms(p)];
+  // Residual subsets for the staged solve (indices into statResiduals).
+  const pick = (ids: number[]): Residuals => (p) => {
+    const r = statResiduals(render(toAdjust(p)), target);
+    return [...ids.map((i) => r[i]), ...regTerms(p)];
+  };
+  const TONE = [0, 1, 2, 3, 4];
+  const COLOUR = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+  const toneParams = (['exposure', 'contrast', 'highlights', 'shadows', 'gamma'] as MatchKey[]).map(idx);
+  const colourParams = (['temperature', 'tint', 'saturation'] as MatchKey[]).map(idx);
+  const allParams = MATCH_PARAMS.map((_, i) => i);
   const iterations = input.iterations ?? 40;
-  for (let it = 0; it < iterations; it++) {
-    // Numeric Jacobian.
-    const J: number[][] = [];
-    const h = 1e-3;
-    for (let j = 0; j < P; j++) {
-      const q = p.slice();
-      q[j] += h;
-      const rq = residuals(q);
-      J.push(rq.map((v, i) => (v - r[i]) / h));
-    }
-    // Normal equations (JᵀJ + λ diag) δ = -Jᵀr.
-    const JtJ: number[][] = [];
-    const Jtr: number[] = [];
-    for (let a = 0; a < P; a++) {
-      JtJ.push(new Array<number>(P).fill(0));
-      let s = 0;
-      for (let i = 0; i < r.length; i++) s += J[a][i] * r[i];
-      Jtr.push(-s);
-      for (let b2 = 0; b2 < P; b2++) {
-        let s2 = 0;
-        for (let i = 0; i < r.length; i++) s2 += J[a][i] * J[b2][i];
-        JtJ[a][b2] = s2;
-      }
-    }
-    let improved = false;
-    for (let tries = 0; tries < 8; tries++) {
-      const A = JtJ.map((row, i) => row.map((v, j) => (i === j ? v * (1 + lambda) + 1e-9 : v)));
-      const delta = solve(A, Jtr);
-      if (!delta) {
-        lambda *= 10;
-        continue;
-      }
-      const q = clampP(p.map((v, i) => v + delta[i]));
-      const rq = residuals(q);
-      const cq = cost(rq);
-      if (cq < c) {
-        p = q;
-        r = rq;
-        const gain = c - cq;
-        c = cq;
-        lambda = Math.max(1e-6, lambda / 3);
-        improved = gain > 1e-7;
-        break;
-      }
-      lambda *= 4;
-    }
-    if (!improved) break;
-  }
+
+  // Candidate 1: tone first, then colour, then everything together (avoids trading a colour
+  // cast against exposure). Candidate 2: everything at once from neutral. Keep the better.
+  const zero = new Array<number>(P).fill(0);
+  const tone = levenbergMarquardt(zero, toneParams, pick(TONE), iterations);
+  const colour = levenbergMarquardt(tone.p, colourParams, pick(COLOUR), iterations);
+  const staged = levenbergMarquardt(colour.p, allParams, all, iterations);
+  const joint = levenbergMarquardt(zero, allParams, all, iterations);
+  const best = staged.cost <= joint.cost ? staged : joint;
 
   const round = (v: number): number => Math.round(v * 1000) / 1000;
-  const adjust = toAdjust(p.map(round));
+  const adjust = toAdjust(best.p.map(round));
   const after = render(adjust);
   return { adjust, before, after, target: target0, distanceBefore: statDistance(before, target0), distanceAfter: statDistance(after, target0) };
 }

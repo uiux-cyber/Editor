@@ -134,13 +134,17 @@ export function ReframePanel(): ReactNode {
         <ul className="vision-assets">
           {assets.map((a) => {
             const tr = focusTrack(a);
-            const faces = tr ? Math.round((tr.sources.face ?? 0) * 100) : 0;
-            const objects = tr ? Math.round((tr.sources.object ?? 0) * 100) : 0;
+            const share = (k: string): number => Math.round((tr?.sources[k] ?? 0) * 100);
+            const parts = [
+              ['faces', share('face')],
+              ['subjects', share('object')],
+              ['saliency', share('saliency')],
+            ].filter(([, v]) => (v as number) >= 5);
             return (
-              <li key={a.id}>
+              <li key={a.id} title={tr ? 'How the subject was found in the analysed frames' : undefined}>
                 <Film size={12} />
                 <span className="truncate">{a.name}</span>
-                <small>{tr ? (faces ? `faces ${faces}%` : objects ? `subjects ${objects}%` : 'centre / saliency') : 'not analysed'}</small>
+                <small>{tr ? parts.map(([k, v]) => `${k} ${v}%`).join(' · ') || 'centre' : 'not analysed'}</small>
               </li>
             );
           })}
