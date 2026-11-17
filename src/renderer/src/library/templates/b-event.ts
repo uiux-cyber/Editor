@@ -2,7 +2,7 @@ import { linear, makeShape, makeSlot, makeSticker } from '@/core/factory';
 import type { Clip } from '@/core/types';
 import type { TemplateDef, TemplateEnv } from '../types';
 import { A, B, H, alignLeft, alpha, backdrop, column, fitAspect, holder, hrow, label, lay, mix, pItem, pill, setXY, split, strong, tItem, textOn, till, vivid, vstack, type Box, type Txt } from './_lib/b-kit';
-import { chance, pick } from './_lib/kit';
+import { chance, logoBug, pick } from './_lib/kit';
 
 const soft = (env: TemplateEnv, k = 1): { color: string; blur: number; x: number; y: number } => ({ color: alpha('#000000', (env.palette.dark ? 0.42 : 0.14) * k), blur: 36, x: 0, y: 14 });
 
@@ -169,8 +169,10 @@ const templates: TemplateDef[] = [
         placeCta(-ctaW / 2, ctaRow.transform.y);
       }
       setXY([dot], live.box.transform.x - live.w / 2 + Math.round(30 * k) + 8, live.box.transform.y);
+      // Host / company logo in the top corner (brand kit).
+      const logo = logoBug(env, 'tr', { start: 0.4, duration: till(d, 0.4), anim: A('fade-in', 0.6, 'fade-out', 0.4) });
 
-      return [bg, ...live.clips, dot, title, card, photo, tagS, spName, spRole, ...infos.flatMap((x) => [x.ic, x.tx]), ...cta.clips, seats];
+      return [bg, ...live.clips, dot, title, card, photo, tagS, spName, spRole, ...infos.flatMap((x) => [x.ic, x.tx]), ...cta.clips, seats, logo];
     },
   },
 
@@ -184,6 +186,7 @@ const templates: TemplateDef[] = [
     tags: ['party', 'birthday', 'celebration', 'invite', 'confetti', 'rsvp', 'night out'],
     duration: 7,
     poster: 0.6,
+    music: { soundId: 'music-happy-ukulele', volume: 0.7 },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -241,6 +244,7 @@ const templates: TemplateDef[] = [
     tags: ['wedding', 'invitation', 'elegant', 'monogram', 'ceremony', 'formal', 'romantic'],
     duration: 9,
     poster: 0.65,
+    music: { soundId: 'music-acoustic-pluck' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;

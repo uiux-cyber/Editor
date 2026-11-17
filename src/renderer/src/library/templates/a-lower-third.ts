@@ -2,7 +2,7 @@ import { linear, makeShape, makeSlot, makeSticker } from '@/core/factory';
 import type { Clip } from '@/core/types';
 import type { TemplateDef, TemplateEnv } from '../types';
 import { accentOn, an, atLeft, copy, footageShadow, inkOn, label, life, lightPanel, mutedOn, overlayBox, slotFill, softShade, title, vivid, vividOn, vivids } from './_lib/a-kit';
-import { alpha, chance, pick } from './_lib/kit';
+import { alpha, chance, logoBug, pick } from './_lib/kit';
 
 /*
  * Lower-thirds are overlays: no background, anchored bottom-left of the safe area (raised on
@@ -54,6 +54,8 @@ const templates: TemplateDef[] = [
         makeShape('rect', { name: 'Accent bar', ...life(env, 0.15, 0.02), width: barW, height: nameH + roleH, x: box.left + barW / 2, y: Math.round(top + (nameH + roleH) / 2), fill: panel === sig[0] ? sig[2] : strip === sig[0] ? sig[1] : sig[0], anim: an('wipe-down-in', 0.4, 'wipe-up-out', 0.35) }),
         name,
         role,
+        // Channel / company logo in the corner (brand kit), like a broadcast bug.
+        logoBug(env, 'tr', { ...life(env, 0.3, 0.1), fill: slotFill(env) }),
       ];
     },
   },
@@ -248,6 +250,8 @@ const templates: TemplateDef[] = [
         event,
         name,
         role,
+        // Event / company logo in the corner (brand kit).
+        logoBug(env, 'tr', { ...life(env, 0.3, 0.1), fill: slotFill(env) }),
       ];
     },
   },

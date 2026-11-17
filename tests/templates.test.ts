@@ -1,9 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import samplePack from '../resources/packs/sample.kinorapack?raw';
 import { linear, makeAudio, makeImage, makeShape, makeText, makeTrack, makeVideo } from '@/core/factory';
 import { createProject } from '@/core/project';
-import type { Clip, MediaAsset, Project, ShapeClip, TextClip } from '@/core/types';
+import type { Clip, ImageClip, MediaAsset, Project, ShapeClip, TextClip } from '@/core/types';
 import { TEMPLATES, getTemplate, registerContent, hasLibraryId, getLibraryVersion, PALETTES, LIBRARY_COUNTS, getSound } from '@/library';
 import { BRAND_PALETTE_ID, DEFAULT_BRAND, brandContrastChecks, brandFontPair, brandPalette, pickLogo, sanitizeBrandKit, type BrandKit } from '@/library/brand';
 import { applyBrandStyle } from '@/library/brandStyle';
@@ -13,7 +12,6 @@ import { buildTemplate, fillLogoSlots, isLogoSlot, setTemplateBrand, variationFo
 import { contrast } from '@/library/templates/_lib/kit';
 import { parseUserTemplate, serializeSelection, userTemplateDef } from '@/library/userTemplates';
 
-const samplePack = readFileSync(resolve('resources/packs/sample.kinorapack'), 'utf8');
 
 // Built-in designs measure text with a 2D canvas; tests run in Node, so provide a simple metric
 // (fixed advance per character) — layouts only need to be plausible, not pixel exact.
@@ -276,7 +274,7 @@ describe('brand kit', () => {
     const slot = makeShape('ellipse', { name: 'Logo', width: 300, height: 300, x: 50, y: -20, duration: 3 });
     slot.shape.slot = true;
     const logo: MediaAsset = { ...imageAsset, id: 'as_wide', width: 1000, height: 250 };
-    const [img] = fillLogoSlots([slot], logo, 1920, 1080);
+    const [img] = fillLogoSlots([slot], logo, 1920, 1080) as ImageClip[];
     expect(img.type).toBe('image');
     // 1000×250 contain-fits 1920×1080 at 1920×480; the logo must fit 70 % of the round slot.
     expect(1920 * img.transform.scaleX).toBeLessThanOrEqual(300 * 0.7 + 0.01);

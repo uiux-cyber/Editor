@@ -35,6 +35,7 @@ const templates: TemplateDef[] = [
     tags: ['story', 'slideshow', 'swipe', 'progress', 'travel', 'photos', 'reel'],
     duration: 12,
     poster: 0.6,
+    music: { soundId: 'music-lofi-chill' },
     build: (env) => {
       const L = lay(env);
       const d = env.duration;
@@ -100,6 +101,7 @@ const templates: TemplateDef[] = [
     tags: ['polaroid', 'collage', 'memories', 'scrapbook', 'photos', 'instant', 'summer'],
     duration: 10,
     poster: 0.72,
+    music: { soundId: 'music-acoustic-pluck' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -235,6 +237,7 @@ const templates: TemplateDef[] = [
     tags: ['cinematic', 'ken burns', 'letterbox', 'film', 'travel', 'crossfade', 'documentary'],
     duration: 14,
     poster: 0.2,
+    music: { soundId: 'music-cinematic-pad' },
     build: (env) => {
       const L = lay(env);
       const d = env.duration;
@@ -344,6 +347,7 @@ const templates: TemplateDef[] = [
     tags: ['carousel', 'cards', 'slideshow', 'portfolio', 'recap', 'photos', 'deck'],
     duration: 12,
     poster: 0.55,
+    music: { soundId: 'music-happy-ukulele', volume: 0.7 },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;

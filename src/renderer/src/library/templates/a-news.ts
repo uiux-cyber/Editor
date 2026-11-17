@@ -71,6 +71,7 @@ const templates: TemplateDef[] = [
     tags: ['news', 'breaking', 'headline', 'ticker', 'broadcast', 'overlay'],
     duration: 8,
     poster: 0.5,
+    music: { soundId: 'music-tense-pulse' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;

@@ -36,6 +36,7 @@ const templates: TemplateDef[] = [
     tags: ['hook', 'reel', 'story', 'headline', 'video', 'kinetic', 'tiktok'],
     duration: 6,
     poster: 0.62,
+    music: { soundId: 'music-hiphop-beat' },
     build: (env) => {
       const L = lay(env);
       const d = env.duration;
@@ -329,6 +330,7 @@ const templates: TemplateDef[] = [
     tags: ['product', 'spotlight', 'shop', 'ecommerce', 'new', 'feature', 'price'],
     duration: 7,
     poster: 0.62,
+    music: { soundId: 'music-funk-groove' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;
@@ -513,6 +515,7 @@ const templates: TemplateDef[] = [
     tags: ['announcement', 'news', 'launch', 'update', 'opening', 'post', 'confetti'],
     duration: 6,
     poster: 0.62,
+    music: { soundId: 'music-upbeat-pop' },
     build: (env) => {
       const L = lay(env);
       const c = env.palette;

@@ -29,6 +29,7 @@ const templates: TemplateDef[] = [
     tags: ['intro', 'opener', 'aurora', 'gradient', 'brand', 'modern'],
     duration: 6,
     poster: 0.55,
+    music: { soundId: 'music-cinematic-pad' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -76,8 +77,12 @@ const templates: TemplateDef[] = [
         style: { align },
         anim: an('soft-slide-up-in', 0.7, 'fade-out', 0.45),
       });
+      // Brand logo above the stack (filled from the brand kit, else a drop-in placeholder).
+      const L = env.portrait ? 190 : 140;
+      const logo = makeSlot({ name: 'Logo', ...life(env, 0.15, 0.15), width: L, height: L, radius: Math.round(L * 0.24), fill: slotFill(env), anim: an('zoom-soft-in', 0.8, 'fade-out', 0.45) });
       const total = stack(
         [
+          { clip: logo, height: L, gap: 44 },
           { clip: kicker, height: kicker.metrics.height, gap: 30 },
           { clip: head, height: head.metrics.height, gap: 36 },
           { clip: sub, height: sub.metrics.height },
@@ -88,15 +93,17 @@ const templates: TemplateDef[] = [
       const deco: Clip[] = [];
       if (leftLayout) {
         for (const t of [kicker, head, sub]) atLeft(t, x0);
+        logo.transform.x = Math.round(x0 + L / 2);
         deco.push(
           makeShape('rect', {
             name: 'Accent bar',
             ...life(env, 0.2, 0.25),
             width: 8,
-            height: Math.round(total + 20),
+            // Spans the text (not the logo above it).
+            height: Math.round(total - L - 44 + 20),
             radius: 4,
             x: x0 - 52,
-            y: -10,
+            y: Math.round((kicker.transform.y - kicker.metrics.height / 2 + sub.transform.y + sub.metrics.height / 2) / 2),
             fill: linear(90, c.primary, c.secondary),
             anim: an('wipe-down-in', 0.8, 'wipe-up-out', 0.5),
           }),
@@ -131,7 +138,7 @@ const templates: TemplateDef[] = [
       foot.transform.y = Math.round(env.ch / 2 - safe.my - foot.metrics.height / 2);
       if (leftLayout) atLeft(foot, x0);
 
-      return [bg, vignette, ...deco, kicker, head, sub, foot];
+      return [bg, vignette, ...deco, logo, kicker, head, sub, foot];
     },
   },
 
@@ -143,6 +150,7 @@ const templates: TemplateDef[] = [
     tags: ['intro', 'opener', 'split', 'photo', 'editorial', 'episode'],
     duration: 6,
     poster: 0.6,
+    music: { soundId: 'music-acoustic-pluck' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -238,6 +246,7 @@ const templates: TemplateDef[] = [
     tags: ['intro', 'cinematic', 'film', 'spotlight', 'presents', 'trailer'],
     duration: 7,
     poster: 0.6,
+    music: { soundId: 'music-ambient-drone', volume: 0.9 },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -286,8 +295,12 @@ const templates: TemplateDef[] = [
       const lineW = Math.min(w, Math.max(head.metrics.inkWidth + 140, 520));
       const ruleTop = makeShape('rect', { name: 'Rule top', ...life(env, 0.9, 0.3), width: lineW, height: 2, fill: alpha(ink, 0.55), anim: an('wipe-center-in', 1.0, 'wipe-center-out', 0.6) });
       const ruleBot = makeShape('rect', { name: 'Rule bottom', ...life(env, 1.0, 0.3), width: lineW, height: 2, fill: alpha(ink, 0.55), anim: an('wipe-center-in', 1.0, 'wipe-center-out', 0.6) });
+      // The presenter's logo above "… presents" (brand kit), else a drop-in placeholder.
+      const L = env.portrait ? 150 : 112;
+      const logo = makeSlot({ name: 'Logo', ...life(env, 0.2, 0.35), width: L, height: L, radius: Math.round(L * 0.24), fill: slotFill(env), anim: an('fade-in', 1.0, 'fade-out', 0.5) });
       stack(
         [
+          { clip: logo, height: L, gap: 40 },
           { clip: kicker, height: kicker.metrics.height, gap: 44 },
           { clip: ruleTop, height: 2, gap: 40 },
           { clip: head, height: head.metrics.height, gap: 40 },
@@ -317,7 +330,7 @@ const templates: TemplateDef[] = [
         ruleBot.shape.width = Math.round(lineW * 0.35);
         clips.push(ruleTop, ruleBot);
       }
-      clips.push(kicker, head, date);
+      clips.push(logo, kicker, head, date);
       return clips;
     },
   },
@@ -330,6 +343,7 @@ const templates: TemplateDef[] = [
     tags: ['intro', 'kinetic', 'bold', 'typography', 'blocks', 'energetic'],
     duration: 5,
     poster: 0.6,
+    music: { soundId: 'music-future-bass', volume: 0.7 },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
@@ -522,6 +536,7 @@ const templates: TemplateDef[] = [
     tags: ['intro', 'logo', 'reveal', 'brand', 'orbit', 'channel'],
     duration: 5,
     poster: 0.6,
+    music: { soundId: 'music-synthwave-drive' },
     build: (env) => {
       const c = env.palette;
       const d = env.duration;
