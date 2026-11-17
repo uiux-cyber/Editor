@@ -317,3 +317,21 @@
   background: rgba(130, 220, 255, 0.92);
   color: #04202b;
 }
+
+/* ---- Inspector tabs: the Speed tab makes six tabs for video clips; keep them on one row ---- */
+
+.inspector .tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.inspector .tabs__tab {
+  flex: none;
+  white-space: nowrap;
+}
+.inspector .tabs:has(> .tabs__tab:nth-child(6)) {
+  padding: 0 6px;
+  gap: 0;
+}
+.inspector .tabs:has(> .tabs__tab:nth-child(6)) .tabs__tab {
+  padding: 0 5.5px;
+}

@@ -426,5 +426,21 @@ export default async function time(ctx) {
   expect(rRevEarly > rRevLate * 2, 'the reversed clip plays its rising music backwards (loud → quiet)');
   expect(rRamp > 0.01, 'the ramped clip (keep pitch on) has sound');
 
+  // ---- Break apart (Alt+Shift+G) and undo ------------------------------------------------------
+  await fit();
+  await clickClip(comp.id);
+  await kb.press('Alt+Shift+g');
+  await sleep(400);
+  s = await state();
+  const back = (id) => s.clips.find((x) => x.id === id);
+  expect(!s.clips.some((x) => x.type === 'compound'), 'Alt+Shift+G breaks the compound clip apart');
+  expect(back(A.id) && Math.abs(back(A.id).start) < 1e-6 && back(fr.id) && Math.abs(back(fr.id).start - 3) < 1e-6 && back(fr.id).freeze && back(text.id) && Math.abs(back(text.id).start - 1) < 1e-6, 'its clips are back at their timeline positions');
+  const trackIndex = (id) => run((tid) => window.__kinora.useProjectStore.getState().project.tracks.findIndex((t) => t.id === tid), back(id).trackId);
+  expect((await trackIndex(text.id)) < (await trackIndex(A.id)), 'and keep their layering (title above the video)');
+  await shot('51-time-broken-apart');
+  await kb.press('Control+z');
+  await sleep(300);
+  expect((await state()).clips.some((x) => x.id === comp.id && x.type === 'compound'), 'Ctrl+Z brings the compound clip back');
+
   await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
 }
