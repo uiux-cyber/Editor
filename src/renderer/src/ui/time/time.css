@@ -1,0 +1,337 @@
+/* ========================================================================================== */
+/* Time remapping & compound clips (ui/time, inspector sections/defs/time.tsx, timeline)       */
+/* ========================================================================================== */
+
+/* ---- Speed curve editor ------------------------------------------------------------------ */
+
+.speed-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+.speed-curve__svg {
+  display: block;
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  box-shadow: 0 0 0 1px var(--line) inset;
+  touch-action: none;
+}
+.speed-curve__grid {
+  stroke: rgba(255, 255, 255, 0.05);
+  stroke-width: 1;
+}
+.speed-curve__one {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.speed-curve__axis {
+  fill: var(--text-3);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+.speed-curve__area {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.speed-curve__line {
+  fill: none;
+  stroke: var(--accent-hi);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.speed-curve__playhead {
+  stroke: #fff;
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.speed-curve__point {
+  cursor: grab;
+}
+.speed-curve__point:active {
+  cursor: grabbing;
+}
+.speed-curve__hit {
+  fill: transparent;
+}
+.speed-curve__dot {
+  fill: var(--bg-1);
+  stroke: #fff;
+  stroke-width: 2;
+  transition: r 0.1s;
+}
+.speed-curve__point:hover .speed-curve__dot,
+.speed-curve__point.is-active .speed-curve__dot {
+  fill: var(--accent);
+}
+.speed-curve__label rect {
+  fill: rgba(8, 10, 14, 0.82);
+  stroke: var(--line-2);
+}
+.speed-curve__label text {
+  fill: var(--text-1);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.speed-curve__label.is-on rect {
+  fill: var(--accent);
+  stroke: none;
+}
+.speed-curve__label.is-on text {
+  fill: #fff;
+}
+.speed-curve__bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.speed-curve__readout {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+/* ---- Ramp presets ------------------------------------------------------------------------ */
+
+.ramp-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+.ramp-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 5px 2px 4px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 10px;
+  line-height: 1.1;
+  text-align: center;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.ramp-tile span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ramp-tile:hover {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+.ramp-tile.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-0);
+}
+.ramp-tile .curve-thumb {
+  width: 100%;
+  height: 26px;
+}
+.curve-thumb__line {
+  fill: none;
+  stroke: var(--accent-hi);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.curve-thumb__one {
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-dasharray: 2 2;
+}
+
+/* ---- Freeze / compound cards -------------------------------------------------------------- */
+
+.freeze-card,
+.compound-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.freeze-card svg {
+  flex: none;
+  color: var(--cyan);
+  margin-top: 1px;
+}
+.compound-card svg {
+  flex: none;
+  color: var(--clip-compound, #e3b341);
+  margin-top: 2px;
+}
+.compound-card div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.compound-card strong {
+  color: var(--text-0);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+/* ---- Compound breadcrumb bar (above the timeline tracks) ---------------------------------- */
+
+.compound-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--clip-compound, #e3b341) 16%, var(--bg-1)), var(--bg-1) 70%);
+  font-size: 11.5px;
+}
+.compound-bar__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--text-2);
+  font-weight: 600;
+  max-width: 220px;
+}
+.compound-bar__crumb span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compound-bar__crumb:hover:not(:disabled) {
+  background: var(--bg-4);
+  color: var(--text-0);
+}
+.compound-bar__crumb.is-current {
+  color: var(--text-0);
+  cursor: default;
+}
+.compound-bar__crumb.is-current svg {
+  color: var(--clip-compound, #e3b341);
+}
+.compound-bar__sep {
+  color: var(--text-3);
+}
+.compound-bar__info {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.compound-bar .btn {
+  margin-left: 8px;
+}
+
+/* ---- Timeline clips ----------------------------------------------------------------------- */
+
+.clip.clip--compound {
+  --c: var(--clip-compound, #e3b341);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 45%),
+    color-mix(in srgb, var(--c) 26%, #0b0d12);
+  /* Stacked look: two offset "sheets" behind the clip. */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--c) 82%, #000) inset,
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 -3px 0 -1px color-mix(in srgb, var(--c) 40%, #0b0d12) inset;
+}
+.clip.clip--compound .clip__label {
+  top: 3px;
+  background: transparent;
+  height: 17px;
+}
+.clip.clip--compound.is-selected {
+  box-shadow:
+    0 0 0 2px #fff inset,
+    0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+/* Two thin "sheets" along the top edge: the stacked look of a nested sequence. */
+.clip__stack {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 0;
+  height: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--c) 80%, #fff);
+  border-bottom: 1px solid color-mix(in srgb, var(--c) 55%, #fff);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.clip__mini {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20px;
+  bottom: 4px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.clip__mini i {
+  position: absolute;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--k, #fff);
+  opacity: 0.85;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.clip__ramp {
+  position: absolute;
+  bottom: 15px;
+  height: 22px;
+  pointer-events: none;
+  overflow: visible;
+}
+.clip__ramp path {
+  fill: none;
+  stroke: #ffd36b;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
+}
+.clip__ramp line {
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-dasharray: 2 3;
+}
+.clip.is-freeze {
+  background-image: repeating-linear-gradient(135deg, rgba(160, 230, 255, 0.12) 0 6px, transparent 6px 12px);
+}
+.clip__tag--time {
+  background: rgba(255, 211, 107, 0.92);
+  color: #1b1405;
+}
+.clip__tag--freeze {
+  background: rgba(130, 220, 255, 0.92);
+  color: #04202b;
+}
+
+/* ---- Inspector tabs: the Speed tab makes six tabs for video clips; keep them on one row ---- */
+
+.inspector .tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.inspector .tabs__tab {
+  flex: none;
+  white-space: nowrap;
+}
+.inspector .tabs:has(> .tabs__tab:nth-child(6)) {
+  padding: 0 6px;
+  gap: 0;
+}
+.inspector .tabs:has(> .tabs__tab:nth-child(6)) .tabs__tab {
+  padding: 0 5.5px;
+}

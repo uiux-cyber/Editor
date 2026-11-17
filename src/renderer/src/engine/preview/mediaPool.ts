@@ -4,13 +4,13 @@
  * Web Audio so clip volume, fades and the master level apply.
  */
 
-import { getIndex, sourceTimeAt } from '@/core/project';
-import { getAudibleClips, getSceneItems } from '@/core/scene';
-import { clipEnd } from '@/core/time';
-import type { AudioClip, ID, Project, VideoClip } from '@/core/types';
+import { mediaInstances, pictureRefsAt, soundsAt } from '@/core/nested';
+import { sourceRange, sourceTimeAt, speedAt } from '@/core/timemap';
+import type { AudioClip, ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { buildChain, chainKey, type BuiltChain } from '../audio/chain';
 import type { FrameImage } from '../compositor';
 import { assetUrl } from '../media/assets';
+import { ReverseAudio, ReverseFrames } from './reverse';
 
 type MediaClip = VideoClip | AudioClip;
 
@@ -28,6 +28,20 @@ interface Slot {
   cleanup: () => void;
   /** Per-clip processing chain between the element source and its gain (engine/audio). */
   chain: BuiltChain | null;
+  /** Sum point of the clip's sources (element / reversed buffer) feeding the chain. */
+  bus: GainNode | null;
+  /** Reverse playback (decoded frames + rendered sound) for reversed clips. */
+  rev: ReverseState | null;
+}
+
+/** Reverse playback state of a slot (see ./reverse.ts). */
+interface ReverseState {
+  frames: ReverseFrames | null;
+  audio: ReverseAudio | null;
+  node: AudioBufferSourceNode | null;
+  /** Audio-clock time and clip-local time at which `node` started. */
+  startedAt: number;
+  startedLocal: number;
 }
 
 const PRELOAD_AHEAD = 2.0;
@@ -95,11 +109,13 @@ export class MediaPool {
     el.src = url;
     this.host.appendChild(el);
 
-    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined, chain: null };
+    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined, chain: null, bus: null, rev: null };
 
     try {
       const ctx = this.ensureAudio();
       slot.node = ctx.createMediaElementSource(el);
+      slot.bus = ctx.createGain();
+      slot.node.connect(slot.bus);
       slot.gain = ctx.createGain();
       slot.gain.gain.value = 0;
       slot.gain.connect(this.master!);
@@ -135,11 +151,12 @@ export class MediaPool {
     return slot;
   }
 
-  /** (Re)connect source → processing chain → gain for a clip's current settings. */
+  /** (Re)connect sources → processing chain → gain for a clip's current settings. */
   private wireChain(slot: Slot, clip: MediaClip): void {
-    if (!slot.node || !slot.gain || !this.audioCtx) return;
+    const src = slot.bus ?? slot.node;
+    if (!src || !slot.gain || !this.audioCtx) return;
     try {
-      slot.node.disconnect();
+      src.disconnect();
     } catch {
       /* not connected yet */
     }
@@ -147,18 +164,20 @@ export class MediaPool {
     const chain = buildChain(this.audioCtx, clip, 'preview');
     slot.chain = chain;
     if (chain.input && chain.output) {
-      slot.node.connect(chain.input);
+      src.connect(chain.input);
       chain.output.connect(slot.gain);
     } else {
-      slot.node.connect(slot.gain);
+      src.connect(slot.gain);
     }
   }
 
   private destroySlot(slot: Slot): void {
     slot.cleanup();
+    this.dropReverse(slot);
     try {
       slot.el.pause();
       slot.node?.disconnect();
+      slot.bus?.disconnect();
       slot.chain?.dispose();
       slot.gain?.disconnect();
       slot.el.removeAttribute('src');
@@ -209,30 +228,25 @@ export class MediaPool {
     const fps = project.settings.fps;
     const wanted = new Map<ID, { clip: MediaClip; localTime: number; gain: number; active: boolean }>();
 
-    // Pictures on screen (including the handles used by transitions).
-    for (const item of getSceneItems(project, time)) {
-      const refs = item.kind === 'layer' ? [item.layer] : [item.from, item.to];
-      for (const ref of refs) {
-        if (ref.clip.type === 'video') wanted.set(ref.clip.id, { clip: ref.clip, localTime: ref.localTime, gain: 0, active: true });
-      }
+    // Pictures on screen (including the handles used by transitions and clips inside compound
+    // clips, which come as instance clips with their own ids).
+    for (const ref of pictureRefsAt(project, time)) {
+      wanted.set(ref.clip.id, { clip: ref.clip, localTime: ref.localTime, gain: 0, active: true });
     }
     // Sound.
-    for (const a of getAudibleClips(project, time)) {
+    for (const a of soundsAt(project, time)) {
       const w = wanted.get(a.clip.id);
       if (w) w.gain = a.gain;
       else wanted.set(a.clip.id, { clip: a.clip, localTime: a.localTime, gain: a.gain, active: true });
     }
     // Clips about to start: create and pre-seek their elements so the cut is seamless.
-    const idx = getIndex(project);
-    for (const clips of idx.byTrack.values()) {
-      for (const clip of clips) {
-        if (clip.start > time + PRELOAD_AHEAD) break;
-        if (clip.type !== 'video' && clip.type !== 'audio') continue;
-        if (clip.start > time && !wanted.has(clip.id)) wanted.set(clip.id, { clip, localTime: 0, gain: 0, active: false });
-        // Keep the element of a clip we just left for a moment (scrubbing back and forth).
-        else if (clipEnd(clip) <= time && time - clipEnd(clip) < 0.5 && !wanted.has(clip.id) && this.slots.has(clip.id)) {
-          this.slots.get(clip.id)!.lastUsed = this.tick;
-        }
+    for (const inst of mediaInstances(project)) {
+      if (inst.from > time + PRELOAD_AHEAD) break;
+      const clip = inst.clip;
+      if (inst.from > time && !wanted.has(clip.id)) wanted.set(clip.id, { clip, localTime: inst.from - inst.origin, gain: 0, active: false });
+      // Keep the element of a clip we just left for a moment (scrubbing back and forth).
+      else if (inst.to <= time && time - inst.to < 0.5 && !wanted.has(clip.id) && this.slots.has(clip.id)) {
+        this.slots.get(clip.id)!.lastUsed = this.tick;
       }
     }
 
@@ -247,14 +261,24 @@ export class MediaPool {
       const el = slot.el;
       const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.02) : Infinity;
       const desired = Math.min(Math.max(sourceTimeAt(w.clip, w.localTime), 0), maxT);
-      const rate = Math.min(16, Math.max(0.0625, w.clip.speed));
+      // Speed ramps drive the rate continuously; freeze frames hold a paused element.
+      const rate = Math.min(16, Math.max(0.0625, speedAt(w.clip, w.localTime) || 1));
       if (slot.gain) {
         const g = playing && w.active ? w.gain : 0;
         // Short smoothing avoids zipper noise on fades.
         slot.gain.gain.setTargetAtTime(g, this.audioCtx!.currentTime, 0.012);
       }
+      if (el.preservesPitch !== !!w.clip.preservePitch) el.preservesPitch = !!w.clip.preservePitch;
 
-      if (playing && w.active && el.readyState >= 1) {
+      if (w.clip.reverse && !w.clip.freeze) {
+        // Media elements cannot play backwards: decoded frames + a rendered reversed sound.
+        if (!el.paused) el.pause();
+        this.syncReverse(slot, w.clip, asset, w.localTime, desired, playing && w.active);
+        continue;
+      }
+      if (slot.rev) this.dropReverse(slot);
+
+      if (playing && w.active && el.readyState >= 1 && !w.clip.freeze) {
         if (el.playbackRate !== rate) el.playbackRate = rate;
         const atEnd = desired >= maxT - 0.001;
         if (el.paused) {
@@ -285,8 +309,10 @@ export class MediaPool {
     for (const slot of this.slots.values()) {
       if (wanted.has(slot.clipId)) continue;
       if (!slot.el.paused) slot.el.pause();
+      if (slot.rev) this.stopReverseSound(slot.rev);
       if (slot.gain && this.audioCtx) slot.gain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.01);
-      if (!project.clips[slot.clipId]) this.destroySlot(slot);
+      // Instance clips of compound clips are not in project.clips: they simply age out.
+      if (!project.clips[slot.clipId] && !slot.clipId.includes('/')) this.destroySlot(slot);
       else idle.push(slot);
     }
     if (idle.length > MAX_IDLE_SLOTS) {
@@ -295,10 +321,64 @@ export class MediaPool {
     }
   }
 
-  /** Current picture of a video clip's element, if it has one. */
-  videoFrame(clip: VideoClip): FrameImage | null {
+  /** Start / steer / stop the reverse playback of a slot. */
+  private syncReverse(slot: Slot, clip: MediaClip, asset: MediaAsset, localTime: number, sourceTime: number, playing: boolean): void {
+    const rev = (slot.rev ??= { frames: null, audio: null, node: null, startedAt: 0, startedLocal: 0 });
+    if (clip.type === 'video' && asset.hasVideo) {
+      rev.frames ??= new ReverseFrames(asset, () => {
+        slot.frameVersion++;
+        this.onFrame();
+      });
+      rev.frames.want(sourceTime, sourceRange(clip).from, playing);
+    }
+    if (!this.audioCtx || !slot.bus) return;
+    rev.audio ??= new ReverseAudio(this.audioCtx);
+    rev.audio.prepare(clip, asset);
+    const ctx = this.audioCtx;
+    const buffer = rev.audio.buffer;
+    if (playing && buffer && localTime >= 0 && localTime < clip.duration) {
+      const at = rev.node ? rev.startedLocal + (ctx.currentTime - rev.startedAt) : -1;
+      if (!rev.node || rev.node.buffer !== buffer || Math.abs(at - localTime) > 0.06) {
+        this.stopReverseSound(rev);
+        const node = ctx.createBufferSource();
+        node.buffer = buffer;
+        node.connect(slot.bus);
+        node.start(0, Math.max(0, localTime));
+        rev.node = node;
+        rev.startedAt = ctx.currentTime;
+        rev.startedLocal = localTime;
+      }
+    } else {
+      this.stopReverseSound(rev);
+    }
+  }
+
+  private stopReverseSound(rev: ReverseState): void {
+    if (!rev.node) return;
+    try {
+      rev.node.stop();
+      rev.node.disconnect();
+    } catch {
+      /* already stopped */
+    }
+    rev.node = null;
+  }
+
+  private dropReverse(slot: Slot): void {
+    if (!slot.rev) return;
+    this.stopReverseSound(slot.rev);
+    slot.rev.frames?.dispose();
+    slot.rev.audio?.dispose();
+    slot.rev = null;
+  }
+
+  /** Current picture of a video clip (its element, or decoded frames for reversed clips). */
+  videoFrame(clip: VideoClip, sourceTime?: number): FrameImage | null {
     const slot = this.slots.get(clip.id);
     if (!slot || !slot.isVideo) return null;
+    if (clip.reverse && !clip.freeze && slot.rev?.frames) {
+      return slot.rev.frames.frame(sourceTime ?? sourceTimeAt(clip, 0));
+    }
     const el = slot.el as HTMLVideoElement;
     if (el.readyState < 2 || el.videoWidth === 0) return null;
     return {
@@ -312,13 +392,19 @@ export class MediaPool {
   /** True while any needed element is still seeking / buffering (the picture may be stale). */
   isSettling(): boolean {
     for (const slot of this.slots.values()) {
-      if (slot.lastUsed === this.tick && (slot.el.seeking || slot.pendingSeek !== null || slot.el.readyState < 2)) return true;
+      if (slot.lastUsed !== this.tick) continue;
+      if (slot.rev?.frames) {
+        if (slot.rev.frames.settling(slot.rev.frames.lastTarget)) return true;
+        continue;
+      }
+      if (slot.el.seeking || slot.pendingSeek !== null || slot.el.readyState < 2) return true;
     }
     return false;
   }
 
   pauseAll(): void {
     for (const slot of this.slots.values()) {
+      if (slot.rev) this.stopReverseSound(slot.rev);
       if (!slot.el.paused) slot.el.pause();
       if (slot.gain && this.audioCtx) slot.gain.gain.setTargetAtTime(0, this.audioCtx.currentTime, 0.01);
     }

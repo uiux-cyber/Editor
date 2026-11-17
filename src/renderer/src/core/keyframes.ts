@@ -27,7 +27,7 @@ export function evalKeyframes(frames: Keyframe[] | undefined, t: number, fallbac
 
 /** The static (non-keyframed) value of a property. */
 export function baseProp(clip: Clip, prop: KeyframeProp): number {
-  if (prop === 'volume') return clip.type === 'video' || clip.type === 'audio' ? clip.volume : 1;
+  if (prop === 'volume') return clip.type === 'video' || clip.type === 'audio' || clip.type === 'compound' ? clip.volume : 1;
   if (clip.type === 'audio') return 0;
   return (clip as VisualClip).transform[prop];
 }

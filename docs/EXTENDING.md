@@ -73,9 +73,20 @@ points, track roles and heights) — implement against them rather than inventin
 - `core/reframe.ts` — `reframeProject(project, w, h)` adapts a project to another aspect ratio;
   `setFocusProvider()` lets subject tracking steer the pan.
 
+## Time remapping and compound clips
+
+- Never compute source time as `trimIn + t * speed`: use `sourceTimeAt(clip, localTime)` from
+  `core/timemap.ts` (speed ramps, reverse, freeze). Trims and splits go through `retimeClip`, limits
+  through `maxDurationFor` / `maxStartExtension`.
+- Compound clips nest a `Sequence`. To find what plays at a time — including inside compounds — use
+  `core/nested.ts` (`pictureRefsAt`, `soundsAt`, `mediaInstances`); nested clips come back as
+  instance clips with ids `compoundId/clipId`. `deepClips()` walks every clip of a project.
+- While a compound clip is open, the store's `project` (and `getProject()`) is its nested sequence;
+  `root` / `getRootProject()` is the document. Save, autosave and export use the root.
+
 ## Checks to run
 
 ```bash
 npm run typecheck && npm test && npm run check
-npm run build && node scripts/e2e.mjs smoke && node scripts/e2e.mjs ui && node scripts/e2e.mjs export
+npm run build && node scripts/e2e.mjs smoke && node scripts/e2e.mjs ui && node scripts/e2e.mjs export && node scripts/e2e.mjs time
 ```

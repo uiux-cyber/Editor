@@ -1,8 +1,9 @@
 import { produce } from 'immer';
 import { create } from 'zustand';
+import { commitView, resolveEditPath } from '@/core/compound';
 import { packMainTrack } from '@/core/editing';
 import { createProject } from '@/core/project';
-import type { Project } from '@/core/types';
+import type { ID, Project } from '@/core/types';
 import { describeChange } from './historyLabels';
 
 const HISTORY_LIMIT = 200;
@@ -31,19 +32,31 @@ export interface HistoryEntry {
 }
 
 interface ProjectState {
+  /**
+   * The timeline being edited: the document itself, or — while a compound clip is open — a view
+   * of its nested sequence (same settings and assets). Every editing surface (timeline, inspector,
+   * preview) works on this; `update` writes changes back into the document.
+   */
   project: Project;
+  /** The document (what is saved, autosaved and exported). Same object as `project` at the top level. */
+  root: Project;
+  /** Compound clips opened for editing, outermost first ([] = editing the document itself). */
+  editPath: ID[];
   /** Path of the .kinora file on disk, if the project has been saved. */
   filePath: string | null;
-  /** The project instance at the last save; identity comparison drives the dirty flag. */
+  /** The document instance at the last save; identity comparison drives the dirty flag. */
   savedRef: Project | null;
+  /** Undo / redo snapshots of the document (`root`). */
   past: Project[];
   future: Project[];
   /** `pastMeta[i]` names the step from `past[i]` to the state after it (aligned with `past`). */
   pastMeta: HistoryEntry[];
   /** `futureMeta[i]` names the step that leads to `future[i]` (aligned with `future`). */
   futureMeta: HistoryEntry[];
-  /** Base snapshot of an in-progress drag / gesture. */
+  /** Base snapshot (document) of an in-progress drag / gesture. */
   txnBase: Project | null;
+  /** The edited view at the start of the gesture (equals `txnBase` at the top level). */
+  txnView: Project | null;
   /** Label given to the gesture in progress (by `begin` or a labelled update inside it). */
   txnLabel: string | null;
   lastCoalesce: { key: string; at: number } | null;
@@ -67,20 +80,40 @@ interface ProjectState {
   /** Jump to a state in the history list: 0 = oldest kept state, `past.length` = current. */
   goTo: (index: number) => void;
   markSaved: (filePath: string | null) => void;
+  /** Open (or close, with a shorter path) compound clips for editing. Not an undo step. */
+  setEditPath: (path: ID[]) => void;
 }
 
-/** Every change goes through here so derived invariants (the magnetic main track) always hold. */
-function apply(base: Project, recipe: (draft: Project) => void): Project {
+/** View + valid path for a document and a requested edit path. */
+function viewOf(root: Project, path: ID[]): { project: Project; editPath: ID[] } {
+  if (path.length === 0) return { project: root, editPath: path };
+  const r = resolveEditPath(root, path);
+  return { project: r.view, editPath: r.path };
+}
+
+/**
+ * Every change goes through here so derived invariants (the magnetic main track) always hold.
+ * The magnetic main track belongs to the document's own timeline, so it is not applied inside
+ * an open compound clip.
+ */
+function apply(base: Project, recipe: (draft: Project) => void, nested: boolean): Project {
   return produce(base, (draft) => {
     recipe(draft);
-    packMainTrack(draft);
+    if (!nested) packMainTrack(draft);
   });
 }
 
+/** Write an edited view back into the document (`base`, by default the current one). */
+const rootFor = (s: Pick<ProjectState, 'root' | 'editPath'>, view: Project, base: Project = s.root): Project => (s.editPath.length ? commitView(base, s.editPath, view) : view);
+
 const entry = (label: string): HistoryEntry => ({ label, at: Date.now() });
 
+const initial = createProject({ width: 1920, height: 1080, fps: 30 });
+
 export const useProjectStore = create<ProjectState>()((set, get) => ({
-  project: createProject({ width: 1920, height: 1080, fps: 30 }),
+  project: initial,
+  root: initial,
+  editPath: [],
   filePath: null,
   savedRef: null,
   past: [],
@@ -88,6 +121,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   pastMeta: [],
   futureMeta: [],
   txnBase: null,
+  txnView: null,
   txnLabel: null,
   lastCoalesce: null,
   docVersion: 0,
@@ -95,6 +129,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   load: (project, filePath, saved = true) =>
     set((s) => ({
       project,
+      root: project,
+      editPath: [],
       filePath,
       savedRef: saved ? project : null,
       past: [],
@@ -102,6 +138,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       pastMeta: [],
       futureMeta: [],
       txnBase: null,
+      txnView: null,
       txnLabel: null,
       lastCoalesce: null,
       docVersion: s.docVersion + 1,
@@ -109,14 +146,16 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   update: (recipe, opts = {}) => {
     const s = get();
-    const next = apply(s.project, recipe);
+    const next = apply(s.project, recipe, s.editPath.length > 0);
     if (next === s.project) return;
+    // Inside a compound clip the edited sequence is written back into the document.
+    const root = rootFor(s, next);
     if (s.txnBase) {
-      set(opts.label && !s.txnLabel ? { project: next, txnLabel: opts.label } : { project: next });
+      set(opts.label && !s.txnLabel ? { project: next, root, txnLabel: opts.label } : { project: next, root });
       return;
     }
     if (opts.history === false) {
-      set({ project: next });
+      set({ project: next, root });
       return;
     }
     const now = performance.now();
@@ -125,12 +164,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const meta = s.pastMeta.slice();
       const last = meta[meta.length - 1];
       if (last) meta[meta.length - 1] = { ...last, at: Date.now() };
-      set({ project: next, pastMeta: meta, future: [], futureMeta: [], lastCoalesce: { key: opts.coalesce!, at: now } });
+      set({ project: next, root, pastMeta: meta, future: [], futureMeta: [], lastCoalesce: { key: opts.coalesce!, at: now } });
       return;
     }
     set({
       project: next,
-      past: [...s.past, s.project].slice(-HISTORY_LIMIT),
+      root,
+      past: [...s.past, s.root].slice(-HISTORY_LIMIT),
       pastMeta: [...s.pastMeta, entry(opts.label ?? describeChange(s.project, next))].slice(-HISTORY_LIMIT),
       future: [],
       futureMeta: [],
@@ -140,33 +180,35 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   updateFromBase: (recipe, opts = {}) => {
     const s = get();
-    if (!s.txnBase) {
+    if (!s.txnBase || !s.txnView) {
       s.update(recipe, opts);
       return;
     }
-    const next = apply(s.txnBase, recipe);
+    const next = apply(s.txnView, recipe, s.editPath.length > 0);
     if (next === s.project) return;
-    set(opts.label && !s.txnLabel ? { project: next, txnLabel: opts.label } : { project: next });
+    const root = rootFor(s, next, s.txnBase);
+    set(opts.label && !s.txnLabel ? { project: next, root, txnLabel: opts.label } : { project: next, root });
   },
 
   begin: (label) => {
     const s = get();
-    if (!s.txnBase) set({ txnBase: s.project, txnLabel: label ?? null });
+    if (!s.txnBase) set({ txnBase: s.root, txnView: s.project, txnLabel: label ?? null });
   },
 
   commit: (label) => {
     const s = get();
     if (!s.txnBase) return;
-    if (s.txnBase === s.project) {
-      set({ txnBase: null, txnLabel: null });
+    if (s.txnBase === s.root) {
+      set({ txnBase: null, txnView: null, txnLabel: null });
       return;
     }
     set({
       past: [...s.past, s.txnBase].slice(-HISTORY_LIMIT),
-      pastMeta: [...s.pastMeta, entry(label ?? s.txnLabel ?? describeChange(s.txnBase, s.project))].slice(-HISTORY_LIMIT),
+      pastMeta: [...s.pastMeta, entry(label ?? s.txnLabel ?? describeChange(s.txnView, s.project))].slice(-HISTORY_LIMIT),
       future: [],
       futureMeta: [],
       txnBase: null,
+      txnView: null,
       txnLabel: null,
       lastCoalesce: null,
     });
@@ -174,7 +216,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   cancel: () => {
     const s = get();
-    if (s.txnBase) set({ project: s.txnBase, txnBase: null, txnLabel: null });
+    if (s.txnBase) set({ root: s.txnBase, ...viewOf(s.txnBase, s.editPath), txnBase: null, txnView: null, txnLabel: null });
   },
 
   undo: () => {
@@ -191,15 +233,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   goTo: (index) => {
     const s = get();
-    const states = [...s.past, s.project, ...s.future];
+    const states = [...s.past, s.root, ...s.future];
     // metas[i] names the step from states[i] to states[i + 1].
     const metas = [...s.pastMeta, ...s.futureMeta];
     const target = Math.round(index);
     if (s.txnBase || target < 0 || target >= states.length || target === s.past.length) return;
     // Pad metadata defensively so the arrays always stay aligned with the states.
     while (metas.length < states.length - 1) metas.push(entry('Edit'));
+    const root = states[target];
     set({
-      project: states[target],
+      root,
+      ...viewOf(root, s.editPath),
       past: states.slice(0, target),
       pastMeta: metas.slice(0, target),
       future: states.slice(target + 1, target + 1 + HISTORY_LIMIT),
@@ -208,12 +252,21 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     });
   },
 
-  markSaved: (filePath) => set((s) => ({ filePath, savedRef: s.project })),
+  markSaved: (filePath) => set((s) => ({ filePath, savedRef: s.root })),
+
+  setEditPath: (path) => {
+    const s = get();
+    if (s.txnBase) return;
+    set(viewOf(s.root, path));
+  },
 }));
 
+/** The timeline being edited (the document, or an open compound clip's sequence). */
 export const getProject = (): Project => useProjectStore.getState().project;
+/** The document itself, whatever is open for editing. */
+export const getRootProject = (): Project => useProjectStore.getState().root;
 export const updateProject = (recipe: (draft: Project) => void, opts?: UpdateOptions): void => useProjectStore.getState().update(recipe, opts);
 export const isDirty = (): boolean => {
   const s = useProjectStore.getState();
-  return s.project !== s.savedRef && (Object.keys(s.project.clips).length > 0 || Object.keys(s.project.assets).length > 0 || s.savedRef !== null);
+  return s.root !== s.savedRef && (Object.keys(s.root.clips).length > 0 || Object.keys(s.root.assets).length > 0 || s.savedRef !== null);
 };

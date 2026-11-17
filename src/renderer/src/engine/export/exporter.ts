@@ -11,7 +11,6 @@
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder';
 import { GIFEncoder, applyPalette, quantize } from 'gifenc';
 import {
-  AudioBufferSink,
   AudioBufferSource,
   CanvasSource,
   MovOutputFormat,
@@ -27,17 +26,17 @@ import {
   canEncodeVideo,
   type AudioCodec,
   type Input,
-  type InputAudioTrack,
   type StreamTargetChunk,
   type VideoCodec,
 } from 'mediabunny';
 import { toSrt, toVtt, type CaptionCue } from '@/core/captions';
-import { getIndex, projectDuration, sourceTimeAt } from '@/core/project';
-import { clipGainAt, getAudioClips } from '@/core/scene';
-import { clipEnd } from '@/core/time';
-import type { AudioClip, ID, MediaAsset, Project, VideoClip } from '@/core/types';
+import { mediaInstances, parentGainAt, type MediaInstance } from '@/core/nested';
+import { getIndex, projectDuration } from '@/core/project';
+import { clipGainAt } from '@/core/scene';
+import type { ID, MediaAsset, Project } from '@/core/types';
 import { api } from '@/platform/api';
 import { buildChain } from '../audio/chain';
+import { ClipAudioRenderer, openAudioSource, type AudioSource } from '../audio/render';
 import { exportCaptionCues, withoutBurnedCaptions } from './captions';
 import { FrameRenderer, prepareResources } from './frameRenderer';
 
@@ -187,38 +186,32 @@ export function canEncodeSize(codec: VideoCodec, width: number, height: number, 
 // Audio mixing
 // ---------------------------------------------------------------------------------------------
 
-interface AudioSourceEntry {
-  input: Input;
-  track: InputAudioTrack;
-  sink: AudioBufferSink;
-  sampleRate: number;
-  channels: number;
-}
-
+/**
+ * Offline mix. Every media clip — including clips inside compound clips — is rendered through
+ * its time mapping (speed, ramps, reverse, freeze, preserve pitch: see engine/audio/render.ts)
+ * at the output rate, then gained (clip × enclosing compounds) and processed by its chain.
+ */
 class AudioMixer {
-  private sources = new Map<ID, AudioSourceEntry | null>();
-  private clips: (VideoClip | AudioClip)[];
+  private sources = new Map<ID, AudioSource | null>();
+  private renderers = new Map<ID, ClipAudioRenderer>();
+  private instances: MediaInstance[];
 
   constructor(
     private project: Project,
     private inputFor: (asset: MediaAsset) => Input,
   ) {
-    this.clips = getAudioClips(project);
+    this.instances = mediaInstances(project).filter((i) => i.audible && !!project.assets[i.clip.assetId]?.hasAudio);
   }
 
   get hasAudio(): boolean {
-    return this.clips.length > 0;
+    return this.instances.length > 0;
   }
 
-  private async source(asset: MediaAsset): Promise<AudioSourceEntry | null> {
+  private async source(asset: MediaAsset): Promise<AudioSource | null> {
     if (this.sources.has(asset.id)) return this.sources.get(asset.id)!;
-    let entry: AudioSourceEntry | null = null;
+    let entry: AudioSource | null = null;
     try {
-      const input = this.inputFor(asset);
-      const track = await input.getPrimaryAudioTrack();
-      if (track && (await track.canDecode())) {
-        entry = { input, track, sink: new AudioBufferSink(track), sampleRate: await track.getSampleRate(), channels: Math.min(2, await track.getNumberOfChannels()) };
-      }
+      entry = await openAudioSource(this.inputFor(asset));
     } catch (err) {
       console.warn('[export] audio source unavailable', asset.name, err);
     }
@@ -226,52 +219,46 @@ class AudioMixer {
     return entry;
   }
 
-  /** Decode `[s0, s1)` seconds of a source into one contiguous AudioBuffer. */
-  private async decode(ctx: BaseAudioContext, src: AudioSourceEntry, s0: number, s1: number): Promise<AudioBuffer | null> {
-    const length = Math.max(1, Math.ceil((s1 - s0) * src.sampleRate));
-    const out = ctx.createBuffer(src.channels, length, src.sampleRate);
-    let wrote = false;
-    for await (const { buffer, timestamp } of src.sink.buffers(Math.max(0, s0), s1)) {
-      const offset = Math.round((timestamp - s0) * src.sampleRate);
-      for (let ch = 0; ch < src.channels; ch++) {
-        const data = buffer.getChannelData(Math.min(ch, buffer.numberOfChannels - 1));
-        const from = Math.max(0, -offset);
-        const to = Math.min(data.length, length - offset);
-        if (to > from) {
-          out.getChannelData(ch).set(data.subarray(from, to), offset + from);
-          wrote = true;
-        }
-      }
-    }
-    return wrote ? out : null;
-  }
-
   /** Mix every audible clip for the timeline window `[t0, t1)`. */
   async render(t0: number, t1: number): Promise<AudioBuffer> {
-    const frames = Math.max(1, Math.round((t1 - t0) * AUDIO_SAMPLE_RATE));
-    const ctx = new OfflineAudioContext(2, frames, AUDIO_SAMPLE_RATE);
-    for (const clip of this.clips) {
-      const a = Math.max(t0, clip.start);
-      const b = Math.min(t1, clipEnd(clip));
-      if (b - a <= 1e-6) continue;
+    const SR = AUDIO_SAMPLE_RATE;
+    const s0 = Math.round(t0 * SR);
+    const frames = Math.max(1, Math.round(t1 * SR) - s0);
+    const ctx = new OfflineAudioContext(2, frames, SR);
+    for (const inst of this.instances) {
+      const clip = inst.clip;
+      const a = Math.max(t0, inst.from);
+      const b = Math.min(t1, inst.to);
+      if (b - a <= 1e-6) {
+        if (inst.to <= t0) this.renderers.delete(clip.id);
+        continue;
+      }
       const asset = this.project.assets[clip.assetId];
       if (!asset) continue;
       const src = await this.source(asset);
       if (!src) continue;
-      const s0 = sourceTimeAt(clip, a - clip.start);
-      const s1 = sourceTimeAt(clip, b - clip.start);
-      const buffer = await this.decode(ctx, src, s0, s1);
-      if (!buffer) continue;
+      // Sample-exact placement: contiguous windows continue each clip seamlessly.
+      const sa = Math.round(a * SR);
+      const n = Math.round(b * SR) - sa;
+      if (n <= 0) continue;
+      let renderer = this.renderers.get(clip.id);
+      if (!renderer) this.renderers.set(clip.id, (renderer = new ClipAudioRenderer(clip, src, SR)));
+      const data = await renderer.render(sa - Math.round(inst.origin * SR), n);
+      const buffer = ctx.createBuffer(2, n, SR);
+      buffer.copyToChannel(data[0], 0);
+      buffer.copyToChannel(data[1], 1);
       const node = ctx.createBufferSource();
       node.buffer = buffer;
-      node.playbackRate.value = clip.speed;
       const gain = ctx.createGain();
-      // Sample the clip's gain envelope (volume, keyframes, fades) at 200 Hz.
+      // Sample the gain envelope (volume, keyframes, fades, enclosing compounds) at 200 Hz.
       const span = b - a;
       const steps = Math.max(2, Math.ceil(span * 200) + 1);
       const curve = new Float32Array(steps);
-      for (let i = 0; i < steps; i++) curve[i] = clipGainAt(clip, a - clip.start + (i / (steps - 1)) * span);
-      const when = a - t0;
+      for (let i = 0; i < steps; i++) {
+        const t = a + (i / (steps - 1)) * span;
+        curve[i] = clipGainAt(clip, t - inst.origin) * parentGainAt(inst, t);
+      }
+      const when = (sa - s0) / SR;
       gain.gain.value = curve[0];
       try {
         gain.gain.setValueCurveAtTime(curve, when, Math.max(1e-3, Math.min(span, (frames - 1) / AUDIO_SAMPLE_RATE - when)));

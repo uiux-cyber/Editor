@@ -101,7 +101,7 @@ function menus(): Record<string, MenuItem[]> {
 export function TitleBar(): ReactNode {
   const screen = useUI((s) => s.screen);
   const name = useProjectStore((s) => s.project.name);
-  const dirty = useProjectStore((s) => s.project !== s.savedRef);
+  const dirty = useProjectStore((s) => s.root !== s.savedRef);
   const filePath = useProjectStore((s) => s.filePath);
   const hasContent = useProjectStore((s) => Object.keys(s.project.clips).length > 0);
   const [editing, setEditing] = useState(false);

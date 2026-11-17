@@ -6,9 +6,10 @@
 import { getAnimation } from '@/library';
 import type { AnimMod } from '@/library/types';
 import { propAt } from './keyframes';
+import { instanceView, MAX_NESTING } from './compound';
 import { getIndex } from './project';
 import { clipEnd } from './time';
-import type { AudioClip, Clip, ClipAnimations, Project, Transition, VideoClip, VisualClip } from './types';
+import type { AudioClip, Clip, ClipAnimations, CompoundClip, Project, Transition, VideoClip, VisualClip } from './types';
 
 export interface LayerRef {
   clip: VisualClip;
@@ -194,7 +195,7 @@ export function isAnimatingAt(clip: VisualClip, localTime: number): boolean {
 // ---------------------------------------------------------------------------------------------
 
 /** Linear gain of an audio-bearing clip at a clip-local time (volume × keyframes × fades). */
-export function clipGainAt(clip: VideoClip | AudioClip, localTime: number): number {
+export function clipGainAt(clip: VideoClip | AudioClip | CompoundClip, localTime: number): number {
   if (localTime < 0 || localTime > clip.duration) return 0;
   let g = propAt(clip, 'volume', localTime);
   if (clip.fadeIn > 0 && localTime < clip.fadeIn) g *= localTime / clip.fadeIn;
@@ -220,7 +221,8 @@ export function getAudibleClips(project: Project, time: number): AudibleClip[] {
     const at = findClipAt(clips, time);
     if (at < 0) continue;
     const clip = clips[at];
-    if ((clip.type !== 'video' && clip.type !== 'audio') || clip.muted) continue;
+    // Freeze frames are silent.
+    if ((clip.type !== 'video' && clip.type !== 'audio') || clip.muted || clip.freeze) continue;
     const asset = project.assets[clip.assetId];
     if (!asset || !asset.hasAudio) continue;
     const localTime = time - clip.start;
@@ -229,12 +231,19 @@ export function getAudibleClips(project: Project, time: number): AudibleClip[] {
   return out;
 }
 
-/** All audio-bearing clips that are not silenced by their clip or track mute. */
-export function getAudioClips(project: Project): (VideoClip | AudioClip)[] {
+/**
+ * All audio-bearing clips that are not silenced by their clip or track mute. Clips inside
+ * compound clips are included (as instance clips, in nested time).
+ */
+export function getAudioClips(project: Project, depth = 0): (VideoClip | AudioClip)[] {
   const muted = new Set(project.tracks.filter((t) => t.muted).map((t) => t.id));
   const out: (VideoClip | AudioClip)[] = [];
   for (const clip of Object.values(project.clips)) {
-    if ((clip.type !== 'video' && clip.type !== 'audio') || clip.muted || muted.has(clip.trackId)) continue;
+    if (clip.type === 'compound') {
+      if (!clip.muted && !muted.has(clip.trackId) && depth < MAX_NESTING) out.push(...getAudioClips(instanceView(project, clip), depth + 1));
+      continue;
+    }
+    if ((clip.type !== 'video' && clip.type !== 'audio') || clip.muted || clip.freeze || muted.has(clip.trackId)) continue;
     const asset = project.assets[clip.assetId];
     if (asset && asset.hasAudio) out.push(clip);
   }

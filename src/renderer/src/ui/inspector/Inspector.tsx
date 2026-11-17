@@ -1,12 +1,12 @@
 import { Blend, Film, Image as ImageIcon, Layers, Music, Shapes, Smile, Sparkles, Trash2, Type, Unlink, Volume2, VolumeX } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { designSize, maxDurationFromSource, maxTransitionDuration, projectDuration } from '@/core/project';
+import { designSize, maxTransitionDuration, projectDuration } from '@/core/project';
 import { formatSeconds, formatTimecode } from '@/core/time';
 import type { Clip, ID, Transition } from '@/core/types';
 import { TRANSITIONS, getTransition } from '@/library';
 import { updateProject, useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
-import { detachAudioFromSelection, editClips, removeTransition, setSpeed } from '../actions';
+import { detachAudioFromSelection, editClips, removeTransition } from '../actions';
 import { ColorInput, Field, NumberInput, Section, Select, SliderField, Toggle } from '../common/controls';
 import { writeProp } from '../keyframeOps';
 import { AdjustTab, EffectsTab } from './AdjustTab';
@@ -27,16 +27,15 @@ const TYPE_META: Record<Clip['type'], { label: string; icon: ReactNode }> = {
   shape: { label: 'Shape', icon: <Shapes size={14} /> },
   generator: { label: 'Background', icon: <Sparkles size={14} /> },
   adjustment: { label: 'Adjustment', icon: <Layers size={14} /> },
-  compound: { label: 'Compound clip', icon: <Layers size={14} /> },
+  compound: { label: 'Compound', icon: <Layers size={14} /> },
 };
 
 // ---------------------------------------------------------------------------------------------
-// Audio & speed
+// Audio (speed, ramps, reverse and freeze live in the Speed tab: sections/defs/time.tsx)
 // ---------------------------------------------------------------------------------------------
 
 function AudioPanel({ clip, ids }: { clip: Extract<Clip, { type: 'video' | 'audio' }>; ids: ID[] }): ReactNode {
   const asset = useProjectStore((s) => s.project.assets[clip.assetId]);
-  const assets = useProjectStore((s) => s.project.assets);
   const volume = useLiveProp(clip, 'volume');
   const editMedia = (recipe: (c: Extract<Clip, { type: 'video' | 'audio' }>) => void): void =>
     editClips(ids, (c) => {
@@ -77,23 +76,6 @@ function AudioPanel({ clip, ids }: { clip: Extract<Clip, { type: 'video' | 'audi
             )}
           </>
         )}
-      </Section>
-      <Section title="Speed" id="speed">
-        <SliderField label="Speed" value={clip.speed} min={0.1} max={8} step={0.05} precision={2} suffix="×" defaultValue={1} onChange={(v) => setSpeed(ids, v)} />
-        <div className="btn-row btn-row--wrap">
-          {[0.25, 0.5, 1, 1.5, 2, 4].map((s) => (
-            <button key={s} type="button" className={`chip ${Math.abs(clip.speed - s) < 0.001 ? 'is-active' : ''}`} onClick={() => setSpeed(ids, s)}>
-              {s}×
-            </button>
-          ))}
-        </div>
-        <Field label="Duration">
-          <span className="mono" style={{ color: 'var(--text-0)' }}>
-            {formatSeconds(clip.duration)}
-          </span>
-          {Number.isFinite(maxDurationFromSource(clip, assets)) && <span style={{ color: 'var(--text-3)' }}>of {formatSeconds(maxDurationFromSource(clip, assets))} available</span>}
-        </Field>
-        <p className="hint">Changing speed also changes the pitch of the clip's sound.</p>
       </Section>
     </>
   );

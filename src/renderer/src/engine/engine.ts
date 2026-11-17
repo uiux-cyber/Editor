@@ -46,7 +46,7 @@ class Engine {
   private lastLayoutSig = '';
 
   private provider: MediaProvider = {
-    videoFrame: (clip) => this.pool?.videoFrame(clip) ?? null,
+    videoFrame: (clip, sourceTime) => this.pool?.videoFrame(clip, sourceTime) ?? null,
     image: (assetId, time, hint) => {
       // Animated GIF / WebP / APNG / Lottie: the frame at this clip time (media/animated.ts).
       const asset = this.project.assets[assetId];

@@ -4,18 +4,26 @@
  * decoders for the project's video clips. Nothing here touches the live preview.
  */
 
-import { CanvasSink, type Input, type WrappedCanvas } from 'mediabunny';
+import { CanvasSink, EncodedPacketSink, type Input, type WrappedCanvas } from 'mediabunny';
+import { MAX_NESTING, deepClips, instanceView } from '@/core/compound';
+import { mediaInstances, pictureRefsAt, type MediaInstance } from '@/core/nested';
 import { sourceTimeAt } from '@/core/project';
 import { getSceneItems } from '@/core/scene';
-import { clipEnd } from '@/core/time';
 import type { ID, MediaAsset, Project, VideoClip } from '@/core/types';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { animationFrame, ensureAnimationFrame, preloadAnimations } from '../media/animated';
 import { getImage, openInput, preloadImages } from '../media/assets';
 import { ensureFont } from '../sources/text';
 
+/** Hands out the frame shown at a source time for one video clip instance. */
+interface FrameDecoder {
+  seek(time: number): Promise<void>;
+  frame(): FrameImage | null;
+  dispose(): Promise<void>;
+}
+
 /** Sequential decoder for one video clip: hands out the frame shown at increasing source times. */
-class ClipDecoder {
+class ClipDecoder implements FrameDecoder {
   private iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null = null;
   private current: WrappedCanvas | null = null;
   private next: WrappedCanvas | null = null;
@@ -93,12 +101,73 @@ class ClipDecoder {
   }
 }
 
+/** Memory budget for the frames of one reversed clip (full resolution canvases). */
+const REVERSE_BUDGET_BYTES = 256 * 1024 * 1024;
+
+/**
+ * Decoder for reversed clips, whose source time decreases from frame to frame: decodes one GOP
+ * (or a bounded slice of a long one, re-decoding from its key frame) at a time and hands its
+ * frames out backwards, so every packet is decoded about once instead of once per frame.
+ */
+class ReverseClipDecoder implements FrameDecoder {
+  private frames: WrappedCanvas[] = [];
+  private from = Infinity;
+  private to = -Infinity;
+  private current: WrappedCanvas | null = null;
+  version = 0;
+
+  constructor(
+    private sink: CanvasSink,
+    private packets: EncodedPacketSink,
+    private firstTimestamp: number,
+    private maxSpan: number,
+  ) {}
+
+  async seek(time: number): Promise<void> {
+    const t = Math.max(this.firstTimestamp, time);
+    if (!(t >= this.from - 1e-6 && t < this.to)) await this.load(t);
+    let pick: WrappedCanvas | null = null;
+    for (const f of this.frames) {
+      if (f.timestamp <= t + 1e-4) pick = f;
+      else break;
+    }
+    pick ??= this.frames[0] ?? null;
+    if (pick && pick !== this.current) {
+      this.current = pick;
+      this.version++;
+    }
+  }
+
+  private async load(time: number): Promise<void> {
+    const key = await this.packets.getKeyPacket(time, { metadataOnly: true });
+    let from = key ? key.timestamp : this.firstTimestamp;
+    if (time - from > this.maxSpan) from = time - this.maxSpan;
+    const end = time + 1e-3;
+    const frames: WrappedCanvas[] = [];
+    for await (const wc of this.sink.canvases(from, end)) frames.push(wc);
+    this.frames = frames;
+    this.from = frames.length ? Math.min(from, frames[0].timestamp) : from;
+    this.to = end;
+  }
+
+  frame(): FrameImage | null {
+    if (!this.current) return null;
+    return { source: this.current.canvas as TexImageSource, width: this.current.canvas.width, height: this.current.canvas.height, version: this.version };
+  }
+
+  async dispose(): Promise<void> {
+    this.frames = [];
+    this.current = null;
+  }
+}
+
 /** Fonts and images the project needs before its first frame can be rendered. */
 export async function prepareResources(project: Project): Promise<void> {
   const fonts: Promise<void>[] = [];
   const images = new Set<ID>();
   const animations = new Set<ID>();
-  for (const clip of Object.values(project.clips)) {
+  // Including the clips inside compound clips.
+  for (const clip of deepClips(project)) {
     if (clip.type === 'text') fonts.push(ensureFont(clip.text));
     if (clip.type === 'image') (project.assets[clip.assetId]?.kind === 'animation' ? animations : images).add(clip.assetId);
   }
@@ -119,9 +188,11 @@ export class FrameRenderer {
   readonly canvas: HTMLCanvasElement;
   compositor: Compositor | null = null;
   private inputs = new Map<ID, Input>();
-  private decoders = new Map<ID, ClipDecoder | null>();
+  private decoders = new Map<ID, FrameDecoder | null>();
   /** Project of the frame being prepared (animated assets need their asset record). */
   private project: Project | null = null;
+  /** Clip instances (top level and inside compound clips) by instance id, for decoder lifetimes. */
+  private instances: { project: Project; byId: Map<ID, MediaInstance> } | null = null;
 
   readonly provider: MediaProvider = {
     videoFrame: (clip) => this.decoders.get(clip.id)?.frame() ?? null,
@@ -157,9 +228,9 @@ export class FrameRenderer {
     this.compositor?.setSize(width, height);
   }
 
-  private async decoderFor(project: Project, clip: VideoClip): Promise<ClipDecoder | null> {
+  private async decoderFor(project: Project, clip: VideoClip): Promise<FrameDecoder | null> {
     if (this.decoders.has(clip.id)) return this.decoders.get(clip.id)!;
-    let decoder: ClipDecoder | null = null;
+    let decoder: FrameDecoder | null = null;
     const asset = project.assets[clip.assetId];
     try {
       if (asset) {
@@ -167,7 +238,15 @@ export class FrameRenderer {
         if (track && (await track.canDecode())) {
           // Keep the alpha of transparent sources (e.g. WebM with alpha) so they composite correctly.
           const alpha = await track.canBeTransparent().catch(() => false);
-          decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3, alpha }), await track.getFirstTimestamp());
+          if (clip.reverse && !clip.freeze) {
+            const w = Math.max(1, asset.width || 1920);
+            const h = Math.max(1, asset.height || 1080);
+            const fps = asset.fps > 0 ? asset.fps : 30;
+            const maxFrames = Math.min(90, Math.max(8, Math.floor(REVERSE_BUDGET_BYTES / (w * h * 4))));
+            decoder = new ReverseClipDecoder(new CanvasSink(track, { alpha }), new EncodedPacketSink(track), await track.getFirstTimestamp(), maxFrames / fps);
+          } else {
+            decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3, alpha }), await track.getFirstTimestamp());
+          }
         }
       }
     } catch (err) {
@@ -177,34 +256,43 @@ export class FrameRenderer {
     return decoder;
   }
 
-  /** Decode every video frame needed at timeline time `t`, and free decoders of finished clips. */
-  async prepare(project: Project, t: number): Promise<void> {
-    this.project = project;
-    const active = new Set<ID>();
+  /** Animated images on screen at `t` (including inside compound clips): decode their exact frame. */
+  private async prepareAnimations(project: Project, t: number, depth = 0): Promise<void> {
     for (const item of getSceneItems(project, t)) {
       const refs = item.kind === 'layer' ? [item.layer] : [item.from, item.to];
       for (const ref of refs) {
-        // Animated images: decode the exact frame before rendering (media/animated.ts).
         if (ref.clip.type === 'image') {
           const anim = project.assets[ref.clip.assetId];
           if (anim?.kind === 'animation') await ensureAnimationFrame(anim, Math.min(Math.max(ref.localTime, 0), ref.clip.duration));
-          continue;
+        } else if (ref.clip.type === 'compound' && depth < MAX_NESTING) {
+          await this.prepareAnimations(instanceView(project, ref.clip), ref.clip.trimIn + ref.localTime, depth + 1);
         }
-        if (ref.clip.type !== 'video') continue;
-        const asset = project.assets[ref.clip.assetId];
-        if (!asset) continue;
-        active.add(ref.clip.id);
-        const decoder = await this.decoderFor(project, ref.clip);
-        if (!decoder) continue;
-        const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
-        await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
       }
     }
+  }
+
+  /** Decode every video frame needed at timeline time `t`, and free decoders of finished clips. */
+  async prepare(project: Project, t: number): Promise<void> {
+    this.project = project;
+    if (this.instances?.project !== project) this.instances = { project, byId: new Map(mediaInstances(project).map((i) => [i.clip.id, i])) };
+    await this.prepareAnimations(project, t);
+    const active = new Set<ID>();
+    // Every picture on screen, including clips inside compound clips (instance ids).
+    for (const ref of pictureRefsAt(project, t)) {
+      const asset = project.assets[ref.clip.assetId];
+      if (!asset) continue;
+      active.add(ref.clip.id);
+      const decoder = await this.decoderFor(project, ref.clip);
+      if (!decoder) continue;
+      const maxT = asset.duration > 0 ? Math.max(0, asset.duration - 0.001) : Infinity;
+      await decoder.seek(Math.min(Math.max(sourceTimeAt(ref.clip, ref.localTime), 0), maxT));
+    }
+    const byId = this.instances.byId;
     for (const [id, decoder] of this.decoders) {
       if (decoder && !active.has(id)) {
-        const clip = project.clips[id];
+        const inst = byId.get(id);
         // Keep decoders for clips that will be needed again shortly (transition handles).
-        if (!clip || clipEnd(clip) + 3 < t || clip.start > t + 3) {
+        if (!inst || inst.to + 3 < t || inst.from > t + 3) {
           await decoder.dispose();
           this.decoders.delete(id);
         }

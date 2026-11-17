@@ -14,6 +14,8 @@ import * as exporter from './engine/export/exporter';
 import * as assets from './engine/media/assets';
 import * as actions from './ui/actions';
 import * as projectIO from './ui/projectIO';
+import * as time from './ui/time/probe';
+import * as timeActions from './ui/time/timeActions';
 
 /** Last line of defence: keep the window usable if a component throws while rendering. */
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -52,7 +54,7 @@ if (!hasBridge) {
   root.innerHTML = '<div class="fatal"><h1>Kinora</h1><p>This page is the Kinora editor interface. Start it with the Kinora desktop app.</p></div>';
 } else {
   // Handles for automated tests and debugging from DevTools.
-  (window as unknown as Record<string, unknown>).__kinora = { engine, actions, projectIO, exporter, assets, useProjectStore, useUI, usePlayback, LIBRARY_COUNTS };
+  (window as unknown as Record<string, unknown>).__kinora = { engine, actions, projectIO, exporter, assets, useProjectStore, useUI, usePlayback, LIBRARY_COUNTS, time: { ...time, ...timeActions } };
   void fontsReady.then(() =>
     createRoot(root).render(
       <StrictMode>

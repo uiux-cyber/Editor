@@ -16,6 +16,7 @@
 import { uid } from './factory';
 import { addTrack, cleanupRelations, cleanupTransitions, clipKind, clipsOnTrack, isFree, isMagneticTrack, mainTrackId, splitClipAt } from './project';
 import { EPS, clipEnd } from './time';
+import { maxDurationFor, maxStartExtension, retimeClip } from './timemap';
 import type { Clip, ID, Project, Track } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -26,26 +27,10 @@ import type { Clip, ID, Project, Track } from './types';
 type Trimmable = Extract<Clip, { trimIn: number }>;
 
 export const hasTrimIn = (c: Clip): c is Trimmable => c.type === 'video' || c.type === 'audio' || c.type === 'compound';
-const rateOf = (c: Clip): number => (c.type === 'video' || c.type === 'audio' ? c.speed : 1);
 const ADJ = 1e-3;
 
 function lockedTracks(p: Project): Set<ID> {
   return new Set(p.tracks.filter((t) => t.locked).map((t) => t.id));
-}
-
-/** Source length available to a clip (seconds of source), or Infinity when unbounded. */
-function sourceSpan(p: Project, c: Clip): number {
-  if (c.type === 'video' || c.type === 'audio') {
-    const asset = p.assets[c.assetId];
-    if (!asset || !(asset.duration > 0) || c.freeze || (c.speedRamp && c.speedRamp.length > 0)) return Infinity;
-    return asset.duration;
-  }
-  if (c.type === 'compound') {
-    let end = 0;
-    for (const inner of Object.values(c.sequence?.clips ?? {})) end = Math.max(end, clipEnd(inner));
-    return end > 0 ? end : Infinity;
-  }
-  return Infinity;
 }
 
 /** The clip on the same track that ends exactly where `c` starts. */
@@ -211,7 +196,12 @@ export type EditOp =
 export interface ClipEdit {
   start: number;
   duration: number;
-  trimIn?: number;
+  /**
+   * The clip's new local time t shows what its old local time t + cut showed (head trims and
+   * slips). The source in-point follows through the time mapping (speed ramps, reverse, freeze,
+   * compound clips) when the proposal is applied.
+   */
+  cut: number;
   /** Keyframes move this much earlier (head trims keep keyframes glued to the picture). */
   kfShift: number;
 }
@@ -224,7 +214,7 @@ class Builder {
   get(c: Clip): ClipEdit {
     let e = this.edits.get(c.id);
     if (!e) {
-      e = { start: c.start, duration: c.duration, trimIn: hasTrimIn(c) ? c.trimIn : undefined, kfShift: 0 };
+      e = { start: c.start, duration: c.duration, cut: 0, kfShift: 0 };
       this.edits.set(c.id, e);
     }
     return e;
@@ -235,7 +225,7 @@ class Builder {
     const e = this.get(c);
     if (!keepStart) e.start += d;
     e.duration -= d;
-    if (e.trimIn !== undefined) e.trimIn += d * rateOf(c);
+    if (hasTrimIn(c)) e.cut += d;
     e.kfShift += d;
   }
 
@@ -248,8 +238,7 @@ class Builder {
   }
 
   slip(c: Clip, d: number): void {
-    const e = this.get(c);
-    if (e.trimIn !== undefined) e.trimIn -= d * rateOf(c);
+    if (hasTrimIn(c)) this.get(c).cut -= d;
   }
 }
 
@@ -363,14 +352,11 @@ export function isValidProposal(p: Project, edits: Proposal, fps: number): boole
     if (!c) continue;
     if (e.duration < Math.min(minDur, c.duration) - EPS) return false;
     if (e.start < Math.min(0, c.start) - EPS) return false;
-    if (e.trimIn !== undefined && hasTrimIn(c)) {
-      if (e.trimIn < Math.min(0, c.trimIn) - 1e-6) return false;
-      const span = sourceSpan(p, c);
-      if (Number.isFinite(span)) {
-        const rate = rateOf(c);
-        const end = e.trimIn + e.duration * rate;
-        if (end > Math.max(span, c.trimIn + c.duration * rate) + 1e-4) return false;
-      }
+    if (hasTrimIn(c) && (Math.abs(e.cut) > 1e-9 || Math.abs(e.duration - c.duration) > 1e-9)) {
+      // The clip now shows its old local range [cut, cut + duration]: it must stay inside the
+      // media (in timeline seconds, through the clip's time mapping).
+      if (e.cut < -maxStartExtension(c, p.assets) - 1e-6) return false;
+      if (e.cut + e.duration > Math.max(maxDurationFor(c, p.assets), c.duration) + 1e-4) return false;
     }
     tracks.add(c.trackId);
   }
@@ -415,9 +401,14 @@ export function applyProposal(p: Project, edits: Proposal): void {
   for (const [id, e] of edits) {
     const c = p.clips[id];
     if (!c) continue;
+    if (hasTrimIn(c)) {
+      // Snapshot first: retimeClip reads the old mapping while writing the new one.
+      const orig = { ...c } as Clip;
+      retimeClip(c, orig, e.cut, e.duration);
+    } else {
+      c.duration = e.duration;
+    }
     c.start = Math.max(0, e.start);
-    c.duration = e.duration;
-    if (e.trimIn !== undefined && hasTrimIn(c)) c.trimIn = Math.max(0, e.trimIn);
     if (e.kfShift && c.keyframes) {
       for (const frames of Object.values(c.keyframes)) frames?.forEach((k) => (k.t = Math.max(0, k.t - e.kfShift)));
     }

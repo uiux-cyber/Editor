@@ -6,6 +6,7 @@
 import { makeTrack, uid } from './factory';
 import { splitKeyframes, baseProp } from './keyframes';
 import { EPS, clipEnd, snapToFrame } from './time';
+import { maxDurationFor, retimeClip, sanitizeRamp } from './timemap';
 import {
   DESIGN_SHORT_SIDE,
   PROJECT_FILE_VERSION,
@@ -18,6 +19,7 @@ import {
   type ProjectFile,
   type ProjectSettings,
   type ShapeClip,
+  type Sequence,
   type Track,
   type TrackKind,
   type Transition,
@@ -210,17 +212,18 @@ export function areAdjacent(a: Clip, b: Clip): boolean {
   return a.trackId === b.trackId && Math.abs(clipEnd(a) - b.start) < 1e-3;
 }
 
-/** Source media time shown at a clip-local time. */
-export function sourceTimeAt(clip: { trimIn: number; speed: number }, localTime: number): number {
-  return clip.trimIn + localTime * clip.speed;
-}
+/**
+ * Source media time shown at a clip-local time. Time remapping (speed ramps, reverse, freeze)
+ * lives in core/timemap.ts; re-exported here for existing callers.
+ */
+export { sourceTimeAt } from './timemap';
 
-/** Longest timeline duration a media clip can have from its current in-point. */
+/**
+ * Longest timeline duration a clip can have from its current in-point (media clips: the source
+ * available, honouring ramps / reverse / freeze; compound clips: the nested sequence).
+ */
 export function maxDurationFromSource(clip: Clip, assets: Record<ID, MediaAsset>): number {
-  if (clip.type !== 'video' && clip.type !== 'audio') return Infinity;
-  const asset = assets[clip.assetId];
-  if (!asset || !(asset.duration > 0)) return Infinity;
-  return Math.max(0, (asset.duration - clip.trimIn) / clip.speed);
+  return maxDurationFor(clip, assets);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -401,8 +404,15 @@ export function splitClipAt(p: Project, clipId: ID, time: number, fps: number): 
   right.duration = clip.duration - local;
   clip.duration = local;
 
-  if ((clip.type === 'video' || clip.type === 'audio') && (right.type === 'video' || right.type === 'audio')) {
-    right.trimIn = clip.trimIn + local * clip.speed;
+  if (clip.type === 'video' || clip.type === 'audio' || clip.type === 'compound') {
+    // Time mapping (speed ramps, reverse, freeze, nested time) for both halves: the left half
+    // keeps showing [0, local) and the right half what came after it.
+    const orig = JSON.parse(JSON.stringify(clip)) as Clip;
+    orig.duration = local + right.duration;
+    retimeClip(right, orig, local, right.duration);
+    retimeClip(clip, orig, 0, local);
+  }
+  if ((clip.type === 'video' || clip.type === 'audio' || clip.type === 'compound') && (right.type === 'video' || right.type === 'audio' || right.type === 'compound')) {
     right.fadeIn = 0;
     clip.fadeOut = 0;
   }
@@ -573,7 +583,7 @@ export function setTransition(p: Project, fromId: ID, toId: ID, type: string, du
 /** Mutates. Moves the audio of a video clip to its own clip on an audio track. */
 export function detachAudio(p: Project, clipId: ID): ID | null {
   const clip = p.clips[clipId];
-  if (!clip || clip.type !== 'video') return null;
+  if (!clip || clip.type !== 'video' || clip.freeze) return null;
   const asset = p.assets[clip.assetId];
   if (!asset || !asset.hasAudio) return null;
   // Already detached: its sound is the linked audio clip.
@@ -594,6 +604,10 @@ export function detachAudio(p: Project, clipId: ID): ID | null {
     fadeIn: clip.fadeIn,
     fadeOut: clip.fadeOut,
   };
+  // The detached sound keeps following the picture's time mapping.
+  if (clip.speedRamp?.length) audio.speedRamp = clip.speedRamp.map((k) => ({ ...k }));
+  if (clip.reverse) audio.reverse = true;
+  if (clip.preservePitch) audio.preservePitch = true;
   if (clip.keyframes?.volume) audio.keyframes = { volume: clip.keyframes.volume };
   // The picture and its sound stay linked: they move, trim, split and delete together.
   audio.linkId = clip.linkId ?? uid('lk_');
@@ -715,12 +729,29 @@ export function parseProjectFile(text: string): Project {
     else if (t.height !== undefined) t.height = Math.round(Math.min(240, Math.max(20, t.height)));
   }
   ensureBaseTracks(project);
-  const trackKinds = new Map(project.tracks.map((t) => [t.id, t.kind]));
+  // Clips and transitions, including the nested sequences of compound clips.
+  const seq = sanitizeSequence({ tracks: project.tracks, clips: src.clips, transitions: src.transitions }, project.assets, 0);
+  project.clips = seq.clips;
+  project.transitions = seq.transitions;
+  cleanupTransitions(project);
+  cleanupRelations(project);
+  return project;
+}
+
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
+
+/**
+ * Sanitise the clips and transitions of a (possibly nested) sequence. `tracks` must already be
+ * validated. Compound clips are sanitised recursively (nesting is capped).
+ */
+function sanitizeSequence(src: { tracks: Track[]; clips: unknown; transitions: unknown }, assets: Project['assets'], depth: number): Sequence {
+  const out: Sequence = { tracks: src.tracks, clips: {}, transitions: {} };
+  const trackKinds = new Map(src.tracks.map((t) => [t.id, t.kind]));
   for (const clip of Object.values(isObj(src.clips) ? (src.clips as Project['clips']) : {})) {
     if (!isObj(clip) || typeof clip.id !== 'string' || typeof clip.type !== 'string') continue;
     if (trackKinds.get(clip.trackId) !== clipKind(clip)) continue;
     if (!(num(clip.duration, 0) > 0) || !Number.isFinite(clip.start)) continue;
-    if ((clip.type === 'video' || clip.type === 'audio' || clip.type === 'image') && !project.assets[clip.assetId]) continue;
+    if ((clip.type === 'video' || clip.type === 'audio' || clip.type === 'image') && !assets[clip.assetId]) continue;
     clip.start = Math.max(0, clip.start);
     if (clip.groupId !== undefined && typeof clip.groupId !== 'string') delete clip.groupId;
     if (clip.linkId !== undefined && typeof clip.linkId !== 'string') delete clip.linkId;
@@ -737,14 +768,43 @@ export function parseProjectFile(text: string): Project {
         opacity: num(v.transform?.opacity, 1),
       };
     }
-    project.clips[clip.id] = clip;
+    if (clip.type === 'video' || clip.type === 'audio') {
+      // Time remapping fields (all optional).
+      clip.trimIn = Math.max(0, num(clip.trimIn, 0));
+      clip.speed = Math.min(16, Math.max(0.1, num(clip.speed, 1)));
+      const ramp = sanitizeRamp(clip.speedRamp);
+      if (ramp) clip.speedRamp = ramp;
+      else delete clip.speedRamp;
+      for (const key of ['reverse', 'freeze', 'preservePitch'] as const) {
+        if (clip[key] !== undefined && !isBool(clip[key])) delete clip[key];
+      }
+    }
+    if (clip.type === 'compound') {
+      if (depth >= 8 || !isObj(clip.sequence)) continue;
+      const raw = clip.sequence as unknown as Record<string, unknown>;
+      let tracks = (Array.isArray(raw.tracks) ? raw.tracks : []).filter((t): t is Track => isObj(t) && typeof t.id === 'string' && (t.kind === 'visual' || t.kind === 'audio'));
+      tracks = [...tracks.filter((t) => t.kind === 'visual'), ...tracks.filter((t) => t.kind === 'audio')];
+      const holder = { tracks } as Project;
+      ensureBaseTracks(holder);
+      const nested = sanitizeSequence({ tracks: holder.tracks, clips: raw.clips, transitions: raw.transitions }, assets, depth + 1);
+      const markers = Array.isArray(raw.markers) ? (raw.markers as Project['markers']).filter((m) => isObj(m) && typeof m.id === 'string' && Number.isFinite(m.time)) : [];
+      clip.sequence = markers.length ? { ...nested, markers } : nested;
+      clip.trimIn = Math.max(0, num(clip.trimIn, 0));
+      clip.volume = Math.min(2, Math.max(0, num(clip.volume, 1)));
+      clip.muted = isBool(clip.muted) ? clip.muted : false;
+      clip.fadeIn = Math.max(0, num(clip.fadeIn, 0));
+      clip.fadeOut = Math.max(0, num(clip.fadeOut, 0));
+    }
+    out.clips[clip.id] = clip;
   }
   for (const tr of Object.values(isObj(src.transitions) ? (src.transitions as Project['transitions']) : {})) {
-    if (isObj(tr) && typeof tr.id === 'string' && project.clips[tr.fromId] && project.clips[tr.toId]) {
-      project.transitions[tr.id] = { ...tr, params: isObj(tr.params) ? tr.params : {} };
+    if (isObj(tr) && typeof tr.id === 'string' && out.clips[tr.fromId] && out.clips[tr.toId]) {
+      out.transitions[tr.id] = { ...tr, params: isObj(tr.params) ? tr.params : {} };
     }
   }
-  cleanupTransitions(project);
-  cleanupRelations(project);
-  return project;
+  if (depth > 0) {
+    cleanupTransitions(out as unknown as Project);
+    cleanupRelations(out as unknown as Project);
+  }
+  return out;
 }

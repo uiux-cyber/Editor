@@ -39,6 +39,7 @@ import {
   removeTrack,
 } from '@/core/project';
 import { clipEnd, formatTimecode, snapToFrame } from '@/core/time';
+import { maxStartExtension, retimeClip } from '@/core/timemap';
 import type { Clip, ID, Project, TrackKind } from '@/core/types';
 import { engine, usePlayback } from '@/engine/engine';
 import { useAssetRuntime } from '@/engine/media/assets';
@@ -83,6 +84,7 @@ import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { InOutMarks } from '../export/InOutMarks';
+import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
 import { ClipView } from './ClipView';
 import { EditReadout, HistoryButton, MagneticButton, TrimToolButtons } from './EditToolbar';
 import { editedIds, installEditCursors, startEditGesture, useEditReadout, type GestureContext } from './editGestures';
@@ -948,6 +950,7 @@ export function Timeline(): ReactNode {
         { label: 'Copy', shortcut: 'Ctrl+C', run: () => void copySelection() },
         { label: 'Paste at playhead', shortcut: 'Ctrl+V', disabled: !ui.clipboard, run: paste },
         ...(clip?.type === 'video' ? [{ type: 'separator' as const }, { label: 'Detach audio', run: detachAudioFromSelection }] : []),
+        ...timeMenuItems(clip),
         { type: 'separator' },
         sel.some((c) => c.groupId)
           ? { label: 'Ungroup', icon: <Ungroup size={14} />, shortcut: 'Ctrl+Shift+G', run: ungroupSelection }
@@ -1152,6 +1155,7 @@ export function Timeline(): ReactNode {
   return (
     <section ref={sectionRef} className={`timeline ${tool === 'blade' ? 'is-blade' : ''} tool-${tool}`} data-timeline>
       <Toolbar onZoom={(v) => setZoom(v)} onFit={fitZoom} />
+      <CompoundBar />
       <div className="tl-body" ref={bodyRef}>
         <div className="tl-headers" style={{ width: HEADER_W }}>
           <div className="tl-headers__corner" style={{ height: RULER_H }}>
@@ -1241,7 +1245,7 @@ export function Timeline(): ReactNode {
         </div>
 
         <div className="tl-scroll" ref={scrollRef} onScroll={syncView}>
-          <div className="tl-content" style={{ width: contentW, height: contentH }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => bladeRef.current && (bladeRef.current.style.display = 'none')} onContextMenu={onContextMenu}>
+          <div className="tl-content" style={{ width: contentW, height: contentH }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerLeave={() => bladeRef.current && (bladeRef.current.style.display = 'none')} onContextMenu={onContextMenu} onDoubleClick={onTimelineDoubleClick}>
             <canvas ref={rulerRef} className="tl-ruler" style={{ width: view.width, height: RULER_H }} />
             {/* Export In / Out marks (ui/export/InOutMarks): range band + draggable handles on the ruler. */}
             <InOutMarks pps={pps} scrollEl={scrollRef} height={contentH} />
