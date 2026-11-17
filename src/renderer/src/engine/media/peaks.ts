@@ -5,7 +5,8 @@
 
 import { AudioSampleSink, CanvasSink } from 'mediabunny';
 import type { ID, MediaAsset } from '@/core/types';
-import { sharedInput } from './assets';
+// Preview visuals read the proxy when proxies are in use (performance & media area).
+import { previewInput } from './assets';
 
 type Listener = () => void;
 const listeners = new Map<ID, Set<Listener>>();
@@ -73,7 +74,7 @@ export function getFilmstrip(asset: MediaAsset): Filmstrip | null {
   strip = created;
   filmstrips.set(asset.id, created);
   schedule(async () => {
-    const input = sharedInput(asset);
+    const input = previewInput(asset);
     const track = await input.getPrimaryVideoTrack();
     if (!track) {
       created.done = true;
@@ -149,7 +150,7 @@ export function getWaveform(asset: MediaAsset): Waveform | null {
   wave = created;
   waveforms.set(asset.id, created);
   schedule(async () => {
-    const input = sharedInput(asset);
+    const input = previewInput(asset);
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) {
       created.done = true;

@@ -9,15 +9,21 @@ import { toast } from '@/store/ui';
 import { addAsset } from '../actions';
 import { openContextMenu } from '../common/overlays';
 import { startDrag } from '../dnd';
+import { MediaTileBadges, mediaTileMenu } from '../media/MediaTile';
+import { offerConversion } from '@/engine/media/ffmpeg';
 import type { FileInfo } from '@shared/ipc';
 
 /** Import files into the media bin and report the outcome. */
 export async function importFiles(files: FileInfo[]): Promise<MediaAsset[]> {
   if (files.length === 0) return [];
   const result = await importMediaFiles(files);
-  if (result.failures.length) {
-    const first = result.failures[0];
-    toast('error', result.failures.length === 1 ? `Could not import "${first.name}"` : `${result.failures.length} files could not be imported`, first.reason);
+  // Files FFmpeg could convert get the conversion dialog instead of an error toast.
+  const convertible = result.failures.filter((f) => f.convertible && f.path);
+  const failures = result.failures.filter((f) => !(f.convertible && f.path));
+  if (convertible.length) offerConversion(convertible.map((f) => ({ name: f.name, path: f.path!, reason: f.reason })));
+  if (failures.length) {
+    const first = failures[0];
+    toast('error', failures.length === 1 ? `Could not import "${first.name}"` : `${failures.length} files could not be imported`, first.reason);
   }
   return result.assets;
 }
@@ -117,6 +123,7 @@ export function MediaTab(): ReactNode {
                             { label: 'Relink file…', run: () => void relink(asset) },
                           ]
                         : []),
+                      ...mediaTileMenu(asset),
                       { type: 'separator' as const },
                       { label: 'Remove from project', icon: <Trash2 size={14} />, danger: true, run: () => removeAsset(asset.id) },
                     ])
@@ -138,6 +145,7 @@ export function MediaTab(): ReactNode {
                     <span className="media-tile__add">
                       <Plus size={14} />
                     </span>
+                    <MediaTileBadges asset={asset} />
                   </div>
                   <div className="media-tile__name truncate">{asset.name}</div>
                 </div>

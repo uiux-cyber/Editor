@@ -10,7 +10,7 @@ import { clipEnd } from '@/core/time';
 import type { AudioClip, ID, Project, VideoClip } from '@/core/types';
 import { buildChain, chainKey, type BuiltChain } from '../audio/chain';
 import type { FrameImage } from '../compositor';
-import { assetUrl } from '../media/assets';
+import { previewUrl } from '../media/assets';
 
 type MediaClip = VideoClip | AudioClip;
 
@@ -171,7 +171,8 @@ export class MediaPool {
   }
 
   private slotFor(clip: MediaClip): Slot | null {
-    const url = assetUrl(clip.assetId);
+    // The proxy when "Use proxies" is on and it is ready (a changed URL recreates the element).
+    const url = previewUrl(clip.assetId);
     if (!url) return null;
     let slot = this.slots.get(clip.id);
     if (slot && slot.url !== url) {

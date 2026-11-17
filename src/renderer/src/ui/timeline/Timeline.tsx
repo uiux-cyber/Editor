@@ -71,6 +71,7 @@ import {
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
+import { onCacheStatus, paintCacheBar } from '../media/cacheBar';
 import { ClipView } from './ClipView';
 import { HEADER_W, LEFT_PAD, MAX_PPS, MIN_PPS, RIGHT_PAD, RULER_H, TOP_ZONE, TRACK_HEIGHT, layoutTracks, rowAt, rulerStep, timeToX, xToTime, type Layout, type TrackRow } from './geometry';
 
@@ -236,6 +237,9 @@ function drawRuler(canvas: HTMLCanvasElement, width: number, scrollLeft: number,
     ctx.closePath();
     ctx.fill();
   }
+
+  // Render-cache status bar (performance & media area): green = rendered, amber = needs render.
+  paintCacheBar(ctx, width, scrollLeft, pps, RULER_H);
 
   // Playhead cap.
   const px = timeToX(time, pps) - scrollLeft;
@@ -415,6 +419,8 @@ export function Timeline(): ReactNode {
   useEffect(() => {
     placePlayhead(engine.time);
   }, [pps, placePlayhead]);
+
+  useEffect(() => onCacheStatus(paintRuler), [paintRuler]);
 
   // Keep the point under the cursor fixed while zooming.
   useLayoutEffect(() => {

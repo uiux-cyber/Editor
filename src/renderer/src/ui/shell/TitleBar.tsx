@@ -1,6 +1,9 @@
 import { Download, Home as HomeIcon } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { renderPreview } from '@/engine/cache/renderCache';
 import { engine } from '@/engine/engine';
+import { useMediaPrefs } from '@/engine/media/prefs';
+import { setUseProxies } from '@/engine/media/proxies';
 import { api } from '@/platform/api';
 import { updateProject, useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
@@ -66,6 +69,9 @@ function menus(): Record<string, MenuItem[]> {
       { label: 'Snapping', shortcut: 'N', checked: ui.snapping, run: () => ui.set({ snapping: !ui.snapping }) },
       { label: 'Safe zones', checked: ui.safeZones, run: () => ui.set({ safeZones: !ui.safeZones }) },
       { label: 'Loop playback', checked: ui.loop, run: () => ui.set({ loop: !ui.loop }) },
+      // Performance & media area.
+      { label: 'Use proxies', checked: useMediaPrefs.getState().useProxies, run: () => setUseProxies(!useMediaPrefs.getState().useProxies) },
+      { label: 'Render preview', run: () => void renderPreview() },
       { type: 'separator' },
       { type: 'label', label: 'Preview quality' },
       { label: 'Full', checked: ui.previewQuality === 1, run: () => ui.set({ previewQuality: 1 }) },

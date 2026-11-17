@@ -14,6 +14,7 @@ import { addAdjustment, addAsset, addGenerator, addShape, addSound, addSticker, 
 import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { writeProp } from '../keyframeOps';
+import { TransportMedia } from '../media/TransportMedia';
 
 const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type HandleId = (typeof HANDLE_IDS)[number];
@@ -309,6 +310,8 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
     <div className="transport">
       <div className="transport__side">
         <Timecode />
+        {/* Performance & media: proxies toggle, render preview, background tasks. */}
+        <TransportMedia />
       </div>
       <div className="transport__center">
         <button type="button" className="icon-btn" title="Previous edit point (↑)" onClick={() => jumpToEdit(-1)}>

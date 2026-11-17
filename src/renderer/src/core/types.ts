@@ -415,8 +415,19 @@ export interface TimedMediaProps {
   preservePitch?: boolean;
 }
 
+/** HDR → SDR tone-mapping of an HDR video clip (see engine/gl/ext/hdr.ts). Absent = defaults. */
+export interface ToneMapSettings {
+  operator: 'bt2390' | 'aces' | 'hable' | 'reinhard' | 'clip';
+  /** Stops, applied in linear light before the operator (-3..3). */
+  exposure: number;
+  /** Brightest highlight of the source in nits, mapped to SDR white by the operator (400..10000). */
+  peak: number;
+}
+
 export interface VideoClip extends ClipCore, VisualProps, AudioProps, TimedMediaProps {
   type: 'video';
+  /** Tone-mapping of HDR sources (performance & media area); ignored for SDR media. */
+  toneMap?: ToneMapSettings;
 }
 
 export interface ImageClip extends ClipCore, VisualProps {

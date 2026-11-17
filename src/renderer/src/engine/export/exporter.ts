@@ -36,6 +36,7 @@ import { api } from '@/platform/api';
 import { buildChain } from '../audio/chain';
 import { Compositor, type FrameImage, type MediaProvider } from '../compositor';
 import { getImage, openInput, preloadImages } from '../media/assets';
+import { canvasSinkFor } from '../media/hdr';
 import { ensureFont } from '../sources/text';
 
 export type ExportContainer = 'mp4' | 'webm' | 'mov' | 'gif' | 'mp3' | 'wav' | 'png';
@@ -428,7 +429,8 @@ export async function exportProject(
       if (asset) {
         const track = await inputFor(asset).getPrimaryVideoTrack();
         if (track && (await track.canDecode())) {
-          decoder = new ClipDecoder(new CanvasSink(track, { poolSize: 3 }), await track.getFirstTimestamp());
+          // HDR sources keep their raw signal (tone-mapped by the `hdr` layer extension, like the preview).
+          decoder = new ClipDecoder(canvasSinkFor(asset, track, { poolSize: 3 }), await track.getFirstTimestamp());
         }
       }
     } catch (err) {
