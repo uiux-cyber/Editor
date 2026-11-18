@@ -3,8 +3,16 @@
   "productName": "Kinora",
   "version": "1.1.0",
   "description": "Kinora — a GPU-accelerated, template-driven video editor for Windows.",
-  "author": "Kinora",
-  "license": "UNLICENSED",
+  "author": "Kinora contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/uiux-cyber/Editor",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/uiux-cyber/Editor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/uiux-cyber/Editor/issues"
+  },
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {

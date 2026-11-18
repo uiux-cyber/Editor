@@ -1,8 +1,11 @@
 # Kinora
 
-A GPU-accelerated video editor for Windows with a multi-track timeline and an endless,
-procedurally generated content library: templates, transitions, effects, filters, stickers,
-text styles, animations and royalty-free sounds.
+A free, open-source video editor for Windows with a multi-track timeline, on-device smart
+features and an endless, procedurally generated content library: templates, transitions,
+effects, filters, stickers, text styles, animations and royalty-free sounds.
+
+Kinora is MIT-licensed: use it, change it, build on it and ship your own versions. Everything
+runs on your own PC, including the AI features, and no footage is uploaded anywhere.
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
@@ -32,8 +35,10 @@ and [docs/PACKS.md](docs/PACKS.md).
 
 ## Install (end users)
 
-Run `Kinora-Setup-<version>.exe` from the `release` folder. The installer is not code-signed yet,
-so Windows SmartScreen may ask you to confirm with **More info → Run anyway**.
+Download `Kinora-Setup-<version>.exe` from the
+[Releases page](https://github.com/uiux-cyber/Editor/releases), or build it yourself (below).
+The installer is not code-signed yet, so Windows SmartScreen may ask you to confirm with
+**More info → Run anyway**.
 
 ## Develop
 
@@ -97,7 +102,24 @@ automatically. Contracts and GLSL conventions are documented in
 `src/renderer/src/library/types.ts`. Always run `npm run check` (and `npm run sheets` for
 templates) after adding content.
 
-## Licences
+## Contributing
 
-Bundled fonts are SIL Open Font License (via @fontsource). Media handling uses Mediabunny
-(MPL-2.0). All stickers, sounds, shaders and templates are original to this project.
+Bug reports, ideas and pull requests are welcome.
+
+- **Report a bug or suggest a feature:** open an [issue](https://github.com/uiux-cyber/Editor/issues)
+  with steps to reproduce, what you expected, and your Windows version and GPU.
+- **Send a change:** fork the repository, make your change on a branch, and open a pull request.
+  Before you do, run `npm run typecheck` and `npm test`; if you touched content packs,
+  also run `npm run check`. Describe what changed and how you tested it.
+- **Add content:** templates, stickers, effects and sounds are plain TypeScript files; see
+  [Adding content](#adding-content) and [docs/PACKS.md](docs/PACKS.md).
+
+## Licence
+
+Kinora is released under the [MIT License](LICENSE).
+
+Third-party parts keep their own licences: bundled fonts are SIL Open Font License or
+Apache 2.0 (via @fontsource), media handling uses Mediabunny (MPL-2.0), speech recognition uses
+Transformers.js (Apache 2.0) with the Whisper model (MIT), and the vision features use MediaPipe
+(Apache 2.0). The AI model files are downloaded by `npm run models` and are not stored in this
+repository. All stickers, sounds, shaders and templates are original to this project.
