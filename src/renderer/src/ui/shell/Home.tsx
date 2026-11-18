@@ -14,6 +14,7 @@ import { useSetting } from '../settings/store';
 import { startProjectFromTemplate, templateThumbSpec } from '../templates/apply';
 import { BrandToggle, MusicBadge, MusicToggle, openUserTemplateMenu, useGalleryState } from '../templates/gallery';
 import { Logo } from './TitleBar';
+import { ClaudeCard } from './ClaudeCard';
 
 /** `hint` is an English source string (translated where shown). */
 export const PROJECT_FORMATS: { id: AspectId | '21:9'; label: string; hint: string; w: number; h: number }[] = [
@@ -125,6 +126,8 @@ export function Home(): ReactNode {
             </span>
           </div>
         </section>
+
+        <ClaudeCard />
 
         <section className="home__section" aria-labelledby="home-new">
           <header className="home__head">

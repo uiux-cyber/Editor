@@ -4,15 +4,17 @@ import fsp from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import readline from 'node:readline';
-import { app } from 'electron';
+import zlib from 'node:zlib';
+import { app, shell } from 'electron';
 import { MEDIA_EXTS, PROJECT_EXT, extOf, type FileInfo } from '@shared/ipc';
 import {
   BRIDGE_FILE,
   CLAUDE_ENABLED_SETTING,
+  EXTENSION_FILE,
+  EXTENSION_LOADER,
   claudeCodeCommand,
-  kinoraEntryOf,
+  extensionManifest,
   textResult,
-  withKinoraEntry,
   withoutKinoraEntry,
   type BridgeInfo,
   type BridgeRequest,
@@ -20,6 +22,7 @@ import {
   type McpServerEntry,
   type ToolResult,
 } from '@shared/claude';
+import { writeZip } from '@shared/zip';
 import type { MainContext } from '../context';
 
 /**
@@ -31,8 +34,10 @@ import type { MainContext } from '../context';
  *    while Claude access is on (Settings → Claude).
  *  - Tool calls are forwarded to the renderer (`x:claude:call`), which runs them on the open
  *    project and answers with `x:claude:reply`.
- *  - "Connect to Claude Desktop" adds Kinora to claude_desktop_config.json (both the regular and
- *    the Microsoft Store install locations), keeping everything else in the file.
+ *  - "Connect" builds a Claude Desktop extension (Kinora.mcpb) with this installation's paths and
+ *    opens it, so Claude Desktop shows its own "Install" dialog: no config files to find or edit
+ *    (their location differs between Claude Desktop versions). It also removes the
+ *    claude_desktop_config.json entries Kinora 1.3.0 wrote, so Claude never runs Kinora twice.
  *  - File access for tools: Claude may read media / projects the user names, and write only new
  *    files; replacing an existing file needs the user's approval in Kinora first (renderer).
  */
@@ -53,10 +58,10 @@ export interface ClaudeClientInfo {
 export interface ClaudeStatus {
   enabled: boolean;
   clients: ClaudeClientInfo[];
-  /** Claude Desktop config folders found on this PC. */
-  desktopDirs: string[];
-  /** Kinora is in Claude Desktop's config (in at least one of them). */
-  desktopConnected: boolean;
+  /** Claude Desktop seems to be installed. */
+  desktopFound: boolean;
+  /** The last Claude app that connected, and when. */
+  lastSeen: { name: string; at: number } | null;
   /** Command that adds Kinora to Claude Code. */
   claudeCode: string;
   /** The bridge script exists (missing in a development build that was not fully built). */
@@ -64,6 +69,7 @@ export interface ClaudeStatus {
 }
 
 const CALL_TIMEOUT_MS = 15 * 60 * 1000;
+const LAST_SEEN_SETTING = 'claude.lastSeen';
 const WRITE_EXTS = new Set(['mp4', 'mov', 'webm', 'gif', 'mp3', 'wav', 'png', PROJECT_EXT, 'srt', 'vtt']);
 
 const norm = (p: string): string => path.normalize(p);
@@ -160,6 +166,7 @@ export default function register(ctx: MainContext): void {
         }
         client = { id: nextClient++, name: String(msg.client || 'Claude').slice(0, 60), socket, since: Date.now() };
         clients.add(client);
+        ctx.settings.set(LAST_SEEN_SETTING, { name: client.name, at: client.since });
         write(socket, { type: 'welcome', version: app.getVersion() });
         publishClients();
         return;
@@ -220,20 +227,35 @@ export default function register(ctx: MainContext): void {
     return { command: process.execPath, args: [bridgeScript()], env };
   }
 
-  /** Claude Desktop config folders: the regular install and the Microsoft Store one. */
-  function desktopDirs(): string[] {
+  /**
+   * Folders where Claude Desktop versions keep claude_desktop_config.json: the classic install,
+   * the Microsoft Store install's virtualised copy, and the Claude-Data folder of newer versions.
+   * Only used to remove the entries Kinora 1.3.0 wrote there.
+   */
+  function legacyConfigDirs(): string[] {
     if (testConfigDir) return fs.existsSync(testConfigDir) ? [testConfigDir] : [];
     const dirs: string[] = [];
+    const local = process.env.LOCALAPPDATA;
     if (process.env.APPDATA) dirs.push(path.join(process.env.APPDATA, 'Claude'));
-    if (process.env.LOCALAPPDATA) {
-      const packages = path.join(process.env.LOCALAPPDATA, 'Packages');
-      try {
-        for (const d of fs.readdirSync(packages)) if (/^Claude_/i.test(d)) dirs.push(path.join(packages, d, 'LocalCache', 'Roaming', 'Claude'));
-      } catch {
-        /* no Store apps folder */
-      }
+    if (local) {
+      const list = (dir: string): string[] => {
+        try {
+          return fs.readdirSync(dir);
+        } catch {
+          return [];
+        }
+      };
+      for (const d of list(path.join(local, 'Packages'))) if (/^Claude_/i.test(d)) dirs.push(path.join(local, 'Packages', d, 'LocalCache', 'Roaming', 'Claude'));
+      for (const d of list(path.join(local, 'Claude-Data'))) if (/^claude_/i.test(d)) dirs.push(path.join(local, 'Claude-Data', d));
     }
     return dirs.filter((d) => fs.existsSync(d));
+  }
+
+  /** Whether Claude Desktop seems installed (any of its known folders exists). */
+  function desktopFound(): boolean {
+    if (testConfigDir) return true;
+    const local = process.env.LOCALAPPDATA ?? '';
+    return legacyConfigDirs().length > 0 || fs.existsSync(path.join(local, 'AnthropicClaude')) || fs.existsSync(path.join(local, 'Claude'));
   }
 
   const configFile = (dir: string): string => path.join(dir, 'claude_desktop_config.json');
@@ -245,11 +267,55 @@ export default function register(ctx: MainContext): void {
     await fsp.rename(tmp, file);
   }
 
+  /** Remove Kinora entries from claude_desktop_config.json files (left by Kinora 1.3.0). */
+  async function removeLegacyEntries(): Promise<number> {
+    let removed = 0;
+    for (const d of legacyConfigDirs()) {
+      const file = configFile(d);
+      try {
+        const next = withoutKinoraEntry(await readText(file));
+        if (next !== null) {
+          await writeAtomic(file, next);
+          removed++;
+        }
+      } catch (err) {
+        console.warn('[claude] could not update', file, err);
+      }
+    }
+    return removed;
+  }
+
   async function status(): Promise<ClaudeStatus> {
-    const dirs = desktopDirs();
-    let connected = false;
-    for (const d of dirs) if (kinoraEntryOf(await readText(configFile(d)))) connected = true;
-    return { enabled, clients: clientList(), desktopDirs: dirs, desktopConnected: connected, claudeCode: claudeCodeCommand(serverEntry()), bridgeReady: fs.existsSync(bridgeScript()) };
+    const lastSeen = ctx.settings.get<{ name: string; at: number } | null>(LAST_SEEN_SETTING, null) ?? null;
+    return { enabled, clients: clientList(), desktopFound: desktopFound(), lastSeen, claudeCode: claudeCodeCommand(serverEntry()), bridgeReady: fs.existsSync(bridgeScript()) };
+  }
+
+  /** Build Kinora.mcpb for this installation. */
+  async function buildExtension(): Promise<string> {
+    const script = bridgeScript();
+    const enc = new TextEncoder();
+    const manifest = extensionManifest({
+      version: app.getVersion(),
+      exe: process.execPath,
+      script,
+      userData: ctx.userData(),
+      appArgs: app.isPackaged ? undefined : [app.getAppPath()],
+    });
+    const iconFile = app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.join(app.getAppPath(), 'resources', 'icon.png');
+    const icon = await fsp.readFile(iconFile).catch(() => null);
+    if (!icon) delete manifest.icon;
+    const entries = [
+      { name: 'manifest.json', data: enc.encode(JSON.stringify(manifest, null, 2) + '\n') },
+      { name: 'server/index.js', data: enc.encode(EXTENSION_LOADER) },
+      { name: 'server/kinora-mcp.cjs', data: new Uint8Array(await fsp.readFile(script)) },
+      ...(icon ? [{ name: 'icon.png', data: new Uint8Array(icon) }] : []),
+    ];
+    const zip = writeZip(entries, (d) => new Uint8Array(zlib.deflateRawSync(d, { level: 9 })));
+    const dir = ctx.e2eDir ?? ctx.userData();
+    await fsp.mkdir(dir, { recursive: true });
+    const file = path.join(dir, EXTENSION_FILE);
+    await fsp.writeFile(file, zip);
+    return file;
   }
 
   ctx.handle('x:claude:status', status);
@@ -258,36 +324,23 @@ export default function register(ctx: MainContext): void {
     return status();
   });
 
-  ctx.handle('x:claude:connectDesktop', async (): Promise<{ ok: boolean; error?: string; status: ClaudeStatus }> => {
-    const dirs = desktopDirs();
-    if (dirs.length === 0) return { ok: false, error: 'not-installed', status: await status() };
-    const entry = serverEntry();
-    const failed: string[] = [];
-    for (const d of dirs) {
-      const file = configFile(d);
-      try {
-        await writeAtomic(file, withKinoraEntry(await readText(file), entry));
-      } catch (err) {
-        console.warn('[claude] could not update', file, err);
-        failed.push(file);
-      }
-    }
-    if (failed.length === dirs.length) return { ok: false, error: 'unreadable', status: await status() };
+  /**
+   * Connect: build the extension and open it, so Claude Desktop asks to install it. Returns the
+   * file (for "Show file") and whether Windows could open it with Claude Desktop.
+   */
+  ctx.handle('x:claude:installExtension', async (): Promise<{ file: string; opened: boolean; cleaned: number; status: ClaudeStatus }> => {
+    if (!fs.existsSync(bridgeScript())) throw new Error('This build of Kinora is missing its Claude connector (resources\mcp).');
+    const file = await buildExtension();
+    const cleaned = await removeLegacyEntries();
     setEnabled(true);
-    return { ok: true, status: await status() };
+    // Tests never hand the file to Claude Desktop.
+    const opened = ctx.e2eDir ? false : (await shell.openPath(file)) === '';
+    return { file, opened, cleaned, status: await status() };
   });
 
-  ctx.handle('x:claude:disconnectDesktop', async (): Promise<ClaudeStatus> => {
-    for (const d of desktopDirs()) {
-      const file = configFile(d);
-      try {
-        const next = withoutKinoraEntry(await readText(file));
-        if (next !== null) await writeAtomic(file, next);
-      } catch (err) {
-        console.warn('[claude] could not update', file, err);
-      }
-    }
-    return status();
+  ctx.handle('x:claude:showExtension', async () => {
+    const file = path.join(ctx.e2eDir ?? ctx.userData(), EXTENSION_FILE);
+    if (fs.existsSync(file) && !ctx.e2eDir) shell.showItemInFolder(file);
   });
 
   // ---- Renderer side of tool calls ----------------------------------------------------------

@@ -9,13 +9,20 @@ Claude plan; Kinora uploads nothing and needs no API key.
 
 ### Claude Desktop
 
-1. In Kinora, open **Settings → Claude** (or Help → Connect to Claude…) and click **Connect**.
-   Kinora adds itself to Claude Desktop's `claude_desktop_config.json` (both the regular and the
-   Microsoft Store install), keeping everything else in that file.
-2. Quit Claude Desktop completely (tray icon → Quit) and open it again.
+1. In Kinora, click **Connect Claude** on the start screen (or **Connect** in Settings → Claude, or
+   Help → Connect to Claude…).
+2. Claude Desktop opens and asks to install the **Kinora** extension. Click **Install**. No restart
+   and no config files: Kinora builds the extension (`Kinora.mcpb`) with this PC's paths filled in.
 3. Ask Claude something like "What's in my Kinora project?". If Kinora isn't open, Claude starts it.
 
-**Remove** in the same place takes Kinora out of Claude Desktop's config again.
+If Claude Desktop doesn't open by itself, Settings → Claude shows **Show Kinora.mcpb**: drag that
+file onto Claude Desktop's Settings → Extensions page and click Install.
+
+To remove Kinora from Claude, uninstall it in Claude Desktop under Settings → Extensions. To stop
+Claude using Kinora without uninstalling, turn off **Let Claude control Kinora** in Kinora.
+
+The extension runs the MCP server that ships with the installed Kinora, so it stays current when
+Kinora updates itself; there is nothing to reinstall.
 
 ### Claude Code and other MCP apps
 
@@ -70,26 +77,30 @@ Run it once in a terminal. Other MCP apps can start the same command (stdio tran
 
 | Problem | Fix |
 | --- | --- |
-| Claude doesn't list Kinora's tools | Quit Claude Desktop from the tray and reopen it. Check Settings → Claude shows "Kinora is added to Claude Desktop". |
+| Claude doesn't list Kinora's tools | In Claude Desktop, check Settings → Extensions shows Kinora as enabled. If it isn't there, click **Connect** in Kinora again and click **Install**. |
+| The Install dialog doesn't appear | Open Claude Desktop first, then click **Connect** again; or use **Show Kinora.mcpb** and drag the file onto Claude Desktop's Settings → Extensions page. |
 | "Claude access is turned off in Kinora" | Turn on **Let Claude control Kinora** in Settings → Claude. |
 | "Kinora did not start in time" | Open Kinora yourself, then ask again. |
-| Kinora was moved or reinstalled elsewhere | Click **Remove**, then **Connect** again. |
+| Kinora was moved or reinstalled elsewhere | Click **Connect** again and install the new extension over the old one. |
 
 ## How it works (developers)
 
 ```
-Claude Desktop / Claude Code ──stdio (MCP)──▶ kinora-mcp.cjs ──named pipe──▶ Kinora main ──IPC──▶ renderer (tools)
-                                                 (Kinora.exe in Node mode)
+Claude Desktop ─stdio (MCP)─▶ extension server/index.js ─▶ kinora-mcp.cjs ─named pipe─▶ Kinora main ─IPC─▶ renderer (tools)
+                              (Claude's own Node.js)        (from the installed Kinora)
+Claude Code    ─stdio (MCP)─▶ Kinora.exe kinora-mcp.cjs (Node mode) ─named pipe─▶ …
 ```
 
-- `src/shared/claude.ts`: tool definitions (names, descriptions, JSON schemas), the pipe protocol and
-  the Claude Desktop config helpers. Shared by every side.
+- `src/shared/claude.ts`: tool definitions (names, descriptions, JSON schemas), the pipe protocol,
+  the Claude Desktop extension manifest and loader, and the helpers that remove the config entries
+  Kinora 1.3.0 wrote. `src/shared/zip.ts` writes the `.mcpb` (a ZIP). Shared by every side.
 - `src/mcp/`: the MCP server. `protocol.ts` is JSON-RPC over stdio (tools only, no dependencies);
   `kinora-mcp.ts` connects to the app, starting it when needed. Built by `vite.mcp.config.mts` into
   `out/mcp/kinora-mcp.cjs`, shipped unpacked as `resources\mcp\kinora-mcp.cjs`, and started as
-  `Kinora.exe kinora-mcp.cjs` with `ELECTRON_RUN_AS_NODE=1` (no separate Node install).
+  `Kinora.exe kinora-mcp.cjs` with `ELECTRON_RUN_AS_NODE=1` for Claude Code. The Claude Desktop
+  extension runs it on Claude's own Node.js and passes Kinora's executable in `KINORA_EXE`.
 - `src/main/handlers/claude.ts`: the pipe server (token check, one connection per Claude app),
-  forwarding calls to the renderer, file approvals, and Connect / Remove for Claude Desktop.
+  forwarding calls to the renderer, file approvals, and Connect (build and open `Kinora.mcpb`).
 - `src/renderer/src/ui/claude/`: `tools.ts` runs each tool with the editor's own actions;
   `store.ts` serialises calls, tracks connected apps and the user's approvals.
 

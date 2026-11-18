@@ -1,15 +1,18 @@
 /**
  * Kinora's MCP server for Claude Desktop, Claude Code and other MCP clients.
  *
- * Claude starts it with Kinora's own executable in Node mode:
+ * Claude Desktop runs it from Kinora's extension (Settings → Claude → Connect builds a .mcpb whose
+ * server/index.js loads this file) with Claude's own Node.js; Claude Code and other MCP apps start
+ * it with Kinora's own executable in Node mode:
  *   Kinora.exe <resources>\mcp\kinora-mcp.cjs      (env ELECTRON_RUN_AS_NODE=1)
  * It lists the tools by itself (so Claude sees them even while Kinora is closed) and forwards each
  * tool call over a local named pipe to the running app, starting Kinora when it isn't open.
  * The pipe and its token are in <user data>\claude-bridge.json, written by the app; only the
  * same Windows user can read that file.
  *
- * Environment: KINORA_USER_DATA (another profile), KINORA_APP_ARGS (JSON array of arguments
- * to start the app with, for development builds), KINORA_MCP_NO_LAUNCH=1 (tests: never start it).
+ * Environment: KINORA_EXE (Kinora's executable when this runs on another Node.js),
+ * KINORA_USER_DATA (another profile), KINORA_APP_ARGS (JSON array of arguments to start the app
+ * with, for development builds), KINORA_MCP_NO_LAUNCH=1 (tests: never start it).
  */
 
 import { spawn } from 'node:child_process';
@@ -69,8 +72,13 @@ function launchApp(): void {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.KINORA_APP_ARGS;
-  log('starting Kinora');
-  spawn(process.execPath, args, { detached: true, stdio: 'ignore', env }).unref();
+  delete env.KINORA_EXE;
+  delete env.KINORA_MCP_SCRIPT;
+  // In Claude's extension, Node is Claude's own: Kinora's executable comes from KINORA_EXE.
+  // Started as `Kinora.exe kinora-mcp.cjs` (Claude Code), the executable is Kinora itself.
+  const exe = process.env.KINORA_EXE || process.execPath;
+  log(`starting Kinora (${exe})`);
+  spawn(exe, args, { detached: true, stdio: 'ignore', env }).unref();
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));

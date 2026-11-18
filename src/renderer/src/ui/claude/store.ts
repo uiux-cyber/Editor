@@ -6,7 +6,9 @@
 
 import { create } from 'zustand';
 import { api, hasBridge } from '@/platform/api';
+import { useUI } from '@/store/ui';
 import { TOOLS, type ToolResult } from '@shared/claude';
+import { t } from '../i18n';
 
 export interface ClaudeClient {
   id: number;
@@ -26,6 +28,10 @@ export interface Approval {
 
 interface ClaudeState {
   clients: ClaudeClient[];
+  /** After Connect: Claude Desktop was asked to install the extension, or the user must drag it in. */
+  connectStep: 'idle' | 'opened' | 'manual';
+  /** The last Claude app that connected (null until Claude has used Kinora). */
+  lastSeen: { name: string; at: number } | null;
   /** The tool running now (title), if any. */
   running: string | null;
   /** Last finished action, for the title-bar tooltip. */
@@ -33,7 +39,26 @@ interface ClaudeState {
   approvals: Approval[];
 }
 
-export const useClaude = create<ClaudeState>()(() => ({ clients: [], running: null, last: null, approvals: [] }));
+export const useClaude = create<ClaudeState>()(() => ({ clients: [], connectStep: 'idle', lastSeen: null, running: null, last: null, approvals: [] }));
+
+/**
+ * Connect Kinora to Claude Desktop: Kinora builds its Claude extension and opens it, so Claude
+ * Desktop shows its Install dialog. Falls back to "drag Kinora.mcpb into Claude" when Windows
+ * can't open the file with Claude Desktop.
+ */
+export async function connectClaudeDesktop(): Promise<'opened' | 'manual' | 'error'> {
+  const toast = useUI.getState().toast;
+  try {
+    const res = await api.call<{ opened: boolean }>('x:claude:installExtension');
+    const step = res.opened ? 'opened' : 'manual';
+    useClaude.setState({ connectStep: step });
+    if (res.opened) toast({ kind: 'info', message: t('Claude Desktop is asking to install Kinora'), detail: t('Click Install in Claude Desktop, then ask Claude to edit in Kinora.'), timeout: 12000 });
+    return step;
+  } catch (err) {
+    toast({ kind: 'error', message: t('Couldn’t connect to Claude'), detail: err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err) });
+    return 'error';
+  }
+}
 
 const TITLES = new Map(TOOLS.map((t) => [t.name, t.title]));
 let currentClient = 'Claude';
@@ -88,11 +113,14 @@ let started = false;
 export function initClaude(): () => void {
   if (started || !hasBridge) return () => undefined;
   started = true;
-  const offClients = api.on('x:claude:clients', (clients: ClaudeClient[]) => useClaude.setState({ clients }));
+  const offClients = api.on('x:claude:clients', (clients: ClaudeClient[]) => {
+    const first = clients[0];
+    useClaude.setState(first ? { clients, lastSeen: { name: first.name, at: first.since } } : { clients });
+  });
   const offCall = api.on('x:claude:call', (call: Call) => onCall(call));
   void api
-    .call<{ clients: ClaudeClient[] }>('x:claude:status')
-    .then((s) => useClaude.setState({ clients: s.clients }))
+    .call<{ clients: ClaudeClient[]; lastSeen: ClaudeState['lastSeen'] }>('x:claude:status')
+    .then((s) => useClaude.setState({ clients: s.clients, lastSeen: s.lastSeen }))
     .catch(() => undefined);
   void api.call('x:claude:ready').catch(() => undefined);
   return () => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Claude starts Kinora: with no Kinora running, a tool call through the MCP bridge starts the app
+ * Claude starts Kinora: with no Kinora running, a tool call through the MCP server (on plain Node.js,
+ * as in Claude Desktop's extension) starts the app
  * (development build, isolated profile, off-screen) and runs once the app is up.
  *
  *   npm run build && node scripts/e2e-claude-autostart.mjs
@@ -19,10 +20,12 @@ mkdirSync(userData, { recursive: true });
 // Claude access already allowed in this profile (as after "Connect").
 writeFileSync(path.join(userData, 'settings.json'), JSON.stringify({ 'claude.enabled': true }));
 
-const bridge = spawn(electronPath, [path.join(root, 'out', 'mcp', 'kinora-mcp.cjs')], {
+// Run the server the way Claude Desktop's extension does: on plain Node.js (not Kinora's
+// executable), told where Kinora is through KINORA_EXE.
+const bridge = spawn(process.execPath, [path.join(root, 'out', 'mcp', 'kinora-mcp.cjs')], {
   env: {
     ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',
+    KINORA_EXE: electronPath,
     KINORA_USER_DATA: userData,
     KINORA_APP_ARGS: JSON.stringify([root]),
     // Inherited by the app the bridge starts: off-screen, no updates, test dialogs.

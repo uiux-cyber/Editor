@@ -139,6 +139,10 @@
         "to": "mcp"
       },
       {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      },
+      {
         "from": "resources/models",
         "to": "models",
         "filter": [

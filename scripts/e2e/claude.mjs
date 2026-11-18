@@ -1,11 +1,13 @@
 /**
- * Kinora as a Claude connector, end to end: Settings → Claude → Connect writes the Claude Desktop
- * config (a test folder, KINORA_CLAUDE_CONFIG_DIR), then the MCP bridge is started with exactly the
- * command written there and driven like Claude would: handshake, tools/list, a new project, import,
- * text, library, edits, a frame, split / undo, a command, export (with the "replace?" approval
- * denied, then given), save, delete, Claude access off, and Disconnect.
+ * Kinora as a Claude connector, end to end: Settings → Claude → Connect builds the Claude Desktop
+ * extension (Kinora.mcpb) and removes the config entries Kinora 1.3.0 wrote (a test folder,
+ * KINORA_CLAUDE_CONFIG_DIR). The extension is unpacked with Windows' own ZIP support and started
+ * the way Claude Desktop does (`node ${__dirname}/server/index.js` with the manifest's environment),
+ * then driven like Claude would: handshake, tools/list, a new project, import, text, library,
+ * edits, a frame, split / undo, a command, export (with the "replace?" approval denied, then
+ * given), save, delete, the connection status in Settings, and Claude access off.
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -17,8 +19,12 @@ export async function prepare({ outDir }) {
   configDir = path.join(outDir, 'claude-config');
   rmSync(configDir, { recursive: true, force: true });
   mkdirSync(configDir, { recursive: true });
-  // An existing config with another server and a setting: both must survive.
-  writeFileSync(path.join(configDir, 'claude_desktop_config.json'), JSON.stringify({ globalShortcut: 'Ctrl+Alt+Space', mcpServers: { other: { command: 'npx', args: ['other-server'] } } }, null, 2));
+  // A config with the entry Kinora 1.3.0 wrote, another server and a setting: Connect removes
+  // only Kinora's entry.
+  writeFileSync(
+    path.join(configDir, 'claude_desktop_config.json'),
+    JSON.stringify({ globalShortcut: 'Ctrl+Alt+Space', mcpServers: { other: { command: 'npx', args: ['other-server'] }, kinora: { command: 'old-kinora.exe', args: [] } } }, null, 2),
+  );
   return { KINORA_CLAUDE_CONFIG_DIR: configDir };
 }
 
@@ -95,18 +101,41 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   await win.waitForSelector('[data-action="claude-connect"]', { timeout: 10000 });
   let status = await run(() => window.kinora.call('x:claude:status'));
   expect(status.enabled === false, 'Claude access is off until the user connects');
+  expect((await win.getAttribute('[data-claude-state]', 'data-claude-state')) === 'new', 'Settings says Claude is not connected yet');
   await shot('claude-01-settings');
-  await win.click('[data-action="claude-connect"]');
-  await win.waitForSelector('[data-action="claude-disconnect"]', { timeout: 10000 });
-  const config = JSON.parse(readFileSync(configFile, 'utf8'));
-  const entry = config.mcpServers?.kinora;
-  expect(!!entry && entry.env?.ELECTRON_RUN_AS_NODE === '1' && entry.args[0].endsWith('kinora-mcp.cjs'), 'Connect adds Kinora to claude_desktop_config.json');
-  expect(config.globalShortcut === 'Ctrl+Alt+Space' && config.mcpServers.other?.command === 'npx', 'the rest of the Claude Desktop config is kept');
+  await win.keyboard.press('Escape');
+  // The start screen invites the user to connect; one click does it and shows the next step.
+  await win.waitForSelector('.claude-card', { timeout: 5000 });
+  expect(true, 'the start screen offers "Edit with Claude"');
+  await shot('claude-00-home-card');
+  const bundle = path.join(outDir, 'Kinora.mcpb');
+  rmSync(bundle, { force: true });
+  await win.click('[data-action="claude-card-connect"]');
+  // In tests the file is not handed to Claude Desktop, so Settings shows the manual way.
+  await win.waitForSelector('[data-action="claude-show-file"]', { timeout: 10000 });
+  expect(true, 'Connect on the card opens Settings → Claude with the next step');
+  expect(existsSync(bundle), 'Connect builds Kinora.mcpb');
   status = await run(() => window.kinora.call('x:claude:status'));
-  expect(status.enabled && status.desktopConnected, 'Claude access is on and Kinora shows as connected');
+  expect(status.enabled, 'Connect turns Claude access on');
+  const config = JSON.parse(readFileSync(configFile, 'utf8'));
+  expect(!config.mcpServers.kinora && config.mcpServers.other?.command === 'npx' && config.globalShortcut === 'Ctrl+Alt+Space', 'the old 1.3.0 config entry is removed, everything else kept');
+
+  // Unpack it the way Windows does (Expand-Archive) and read the manifest.
+  const unpacked = path.join(outDir, 'kinora-extension');
+  rmSync(unpacked, { recursive: true, force: true });
+  const zipCopy = path.join(outDir, 'kinora-extension.zip');
+  writeFileSync(zipCopy, readFileSync(bundle));
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Expand-Archive -LiteralPath "${zipCopy}" -DestinationPath "${unpacked}" -Force`], { stdio: 'ignore' });
+  const manifest = JSON.parse(readFileSync(path.join(unpacked, 'manifest.json'), 'utf8'));
+  expect(manifest.manifest_version === '0.3' && manifest.name === 'kinora' && manifest.server.type === 'node' && manifest.tools.length === 20, `the bundle unpacks with Windows' ZIP support and has a valid manifest (v${manifest.version})`);
+  expect(existsSync(path.join(unpacked, 'server', 'index.js')) && existsSync(path.join(unpacked, 'server', 'kinora-mcp.cjs')) && existsSync(path.join(unpacked, 'icon.png')), 'the bundle holds the loader, the server and the icon');
+  const cfg = manifest.server.mcp_config;
+  expect(existsSync(cfg.env.KINORA_EXE) && existsSync(cfg.env.KINORA_MCP_SCRIPT), 'the manifest points at this Kinora and its server');
+  // Claude Desktop runs `node` (its own) with ${__dirname} replaced by the unpacked folder.
+  const entry = { command: process.execPath, args: cfg.args.map((a) => a.replace('${__dirname}', unpacked)), env: cfg.env };
   await win.keyboard.press('Escape');
 
-  // ---- MCP session through the real bridge --------------------------------------------------
+  // ---- MCP session through the extension, started like Claude Desktop ------------------------
   const b = startBridge(entry);
   const init = await b.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'claude-ai', version: '1.0' } });
   expect(init.result?.serverInfo?.name === 'kinora' && init.result.protocolVersion === '2025-06-18', `handshake with Kinora ${init.result?.serverInfo?.version}`);
@@ -118,6 +147,8 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   expect(s.screen === 'home', 'get_status reports the start screen');
   await win.waitForSelector('.claude-btn', { timeout: 5000 });
   expect(true, 'the title bar shows Claude is connected');
+  await win.waitForSelector('.claude-card', { state: 'detached', timeout: 5000 });
+  expect(true, 'the start-screen card goes away once Claude is connected');
 
   let r = await b.call('add_item', { kind: 'text', text: 'too early' });
   expect(r.isError && /new_project/.test(textOf(r)), 'editing without a project explains what to do');
@@ -208,15 +239,19 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   expect(json(r).deleted.includes(textClip.id), 'delete_clips removes the text clip');
   await shot('claude-03-session');
 
-  // ---- Turning access off, and Disconnect ------------------------------------------------------
+  // ---- Status in Settings, then turning access off ---------------------------------------------
+  await win.click('[data-action="settings"]');
+  await win.click('[data-section="claude"]');
+  await win.waitForSelector('[data-claude-state="connected"]', { timeout: 5000 });
+  expect(true, 'Settings shows Claude Desktop as connected');
+  await shot('claude-04-connected');
+  await win.keyboard.press('Escape');
   await run(() => window.kinora.call('x:claude:setEnabled', false));
   await sleep(300);
   r = await b.call('get_status');
   expect(r.isError && /turned off/.test(textOf(r)), 'with Claude access off, calls are refused with a clear message');
   expect(!(await win.locator('.claude-btn').count()), 'the title-bar indicator goes away');
-
-  await run(() => window.kinora.call('x:claude:disconnectDesktop'));
-  const after = JSON.parse(readFileSync(configFile, 'utf8'));
-  expect(!after.mcpServers.kinora && after.mcpServers.other && after.globalShortcut, 'Disconnect removes only Kinora from the config');
+  status = await run(() => window.kinora.call('x:claude:status'));
+  expect(status.lastSeen?.name === 'claude-ai', 'Kinora remembers which Claude app used it last');
   b.child.stdin.end();
 }

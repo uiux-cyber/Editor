@@ -343,7 +343,8 @@ function createWindow(): void {
     backgroundColor: '#0b0c10',
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#0b0c10', symbolColor: '#aab1c0', height: 40 },
-    icon: path.join(__dirname, '../../resources/icon.png'),
+    // Shipped as resources\icon.png (extraResources); in development it is in the project's resources.
+    icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

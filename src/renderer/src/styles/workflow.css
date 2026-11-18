@@ -1160,3 +1160,79 @@
   word-break: break-all;
   user-select: text;
 }
+.claude-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+.claude-state.is-ok {
+  color: var(--text-0);
+}
+.claude-state.is-ok > svg {
+  color: #34d399;
+}
+.claude-steps--numbered {
+  list-style: decimal;
+  margin-bottom: 12px;
+}
+.claude-steps--numbered > li {
+  margin-bottom: 8px;
+}
+.claude-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.claude-step__note {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.claude-step__note p {
+  margin: 0 0 6px;
+}
+.claude-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 28px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md, 10px);
+  background: linear-gradient(100deg, var(--accent-soft), transparent 70%), var(--bg-1);
+}
+.claude-card__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+}
+.claude-card__text {
+  flex: 1;
+  min-width: 0;
+}
+.claude-card__text h2 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.claude-card__text p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.claude-card__close {
+  flex: none;
+}

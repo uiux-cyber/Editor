@@ -211,7 +211,78 @@ export const SERVER_INSTRUCTIONS = [
 ].join(' ');
 
 // ---------------------------------------------------------------------------------------------
-// Claude Desktop configuration
+// Claude Desktop extension (.mcpb): the one-click way to connect
+// ---------------------------------------------------------------------------------------------
+
+export const REPO_URL = 'https://github.com/uiux-cyber/Editor';
+export const EXTENSION_FILE = 'Kinora.mcpb';
+
+export interface ExtensionOptions {
+  version: string;
+  /** Kinora's executable (started when Claude needs Kinora and it is closed). */
+  exe: string;
+  /** The MCP server shipped with the installed Kinora (kept current by Kinora's updates). */
+  script: string;
+  userData: string;
+  /** Extra arguments to start the app with (development builds). */
+  appArgs?: string[];
+}
+
+/**
+ * manifest.json of the Claude Desktop extension Kinora builds for this PC (MCP Bundle format,
+ * manifest_version 0.3). Claude runs server/index.js with its own Node.js; the paths of this
+ * Kinora installation are filled in, so nothing has to be configured by hand.
+ */
+export function extensionManifest(o: ExtensionOptions): Record<string, unknown> {
+  return {
+    manifest_version: '0.3',
+    name: 'kinora',
+    display_name: 'Kinora',
+    version: o.version,
+    description: 'Edit, caption and export videos in Kinora, the video editor on your PC.',
+    long_description:
+      'Lets Claude work in Kinora: read the timeline, look at frames, add templates, text, music and effects, run captions and other smart features, and export for every platform. Every change is undoable in Kinora, and replacing a file always asks you first.',
+    author: { name: 'Kinora contributors', url: REPO_URL },
+    repository: { type: 'git', url: `${REPO_URL}.git` },
+    homepage: REPO_URL,
+    documentation: `${REPO_URL}/blob/main/docs/CLAUDE-CONNECTOR.md`,
+    icon: 'icon.png',
+    server: {
+      type: 'node',
+      entry_point: 'server/index.js',
+      mcp_config: {
+        command: 'node',
+        args: ['${__dirname}/server/index.js'],
+        env: {
+          KINORA_EXE: o.exe,
+          KINORA_MCP_SCRIPT: o.script,
+          KINORA_USER_DATA: o.userData,
+          ...(o.appArgs?.length ? { KINORA_APP_ARGS: JSON.stringify(o.appArgs) } : {}),
+        },
+      },
+    },
+    tools: TOOLS.map((t) => ({ name: t.name, description: t.description })),
+    keywords: ['video', 'video editor', 'captions', 'export', 'kinora'],
+    license: 'MIT',
+    compatibility: { platforms: ['win32'], runtimes: { node: '>=18.0.0' } },
+  };
+}
+
+/** server/index.js of the extension: run the installed Kinora's MCP server, else the bundled copy. */
+export const EXTENSION_LOADER = `'use strict';
+// Kinora for Claude. Runs the MCP server that ships with the installed Kinora, so it stays current
+// with Kinora's updates; falls back to the copy in this extension when Kinora's can't be found.
+const fs = require('fs');
+const path = require('path');
+const installed = process.env.KINORA_MCP_SCRIPT;
+const bundled = path.join(__dirname, 'kinora-mcp.cjs');
+const target = installed && fs.existsSync(installed) ? installed : bundled;
+if (target === bundled) process.stderr.write('[kinora] Kinora\\'s MCP server was not found at ' + installed + '; using the copy in this extension.\\n');
+require(target);
+`;
+
+// ---------------------------------------------------------------------------------------------
+// Claude Desktop configuration (Kinora 1.3.0 wrote entries here; now only cleaned up)
 // ---------------------------------------------------------------------------------------------
 
 export interface McpServerEntry {
