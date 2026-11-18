@@ -142,7 +142,7 @@ folder registers it automatically.
 1. **1.0** — everything in §2 and §3, NSIS installer for Windows x64.
 2. **Before public distribution**
    - Code-sign the installer (EV certificate) to avoid SmartScreen warnings.
-   - Auto-update channel (electron-updater with a signed feed).
+   - Auto-update channel (done in 1.2: electron-updater with GitHub releases; signing still to come).
    - Crash reporting (opt-in) and anonymous performance telemetry (opt-in).
    - Beta on a range of GPUs (Intel iGPU, AMD, NVIDIA) and on 8 GB RAM machines.
 3. **1.1 (this build)** — shipped together: editing depth (trim modes, magnetic main track, groups,
@@ -158,9 +158,10 @@ folder registers it automatically.
 4. **Later** — cloud backup and review links (needs a hosted service), translation of the
    remaining panels (library, inspector, timeline, export dialog), native-speaker review of the
    translations, more languages.
-5. **Before public distribution** (unchanged): code signing, auto-update, opt-in crash reports,
-   GPU / low-RAM beta.
-6. **Content cadence**: monthly template and sticker drops through the same pack format.
+5. **1.2** — open source (MIT) on GitHub, automatic updates from GitHub releases published by
+   a tag-triggered workflow (docs/RELEASING.md).
+6. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
+7. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 

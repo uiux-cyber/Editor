@@ -75,7 +75,7 @@ const LAYOUT: Record<MenuName, string[]> = {
     'view.focusPrevPane',
   ],
   Tools: ['tool.select', 'tool.blade'],
-  Help: ['help.shortcuts', 'help.customizeShortcuts', 'app.language', '-', 'help.about'],
+  Help: ['help.shortcuts', 'help.customizeShortcuts', 'app.language', '-', 'help.checkForUpdates', 'help.about'],
 };
 
 const LAYOUT_IDS = new Set(Object.values(LAYOUT).flat());

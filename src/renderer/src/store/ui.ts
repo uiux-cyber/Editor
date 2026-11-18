@@ -5,7 +5,7 @@ export type Screen = 'home' | 'editor';
 export type LibraryTab = 'media' | 'templates' | 'text' | 'stickers' | 'transitions' | 'effects' | 'filters' | 'audio' | 'elements' | 'tools';
 /** Tools. ripple / roll / slip / slide are the timeline trim modes (ui/timeline/editGestures.ts); `pen` draws bezier path shapes on the preview (ui/preview/pen). */
 export type Tool = 'select' | 'blade' | 'ripple' | 'roll' | 'slip' | 'slide' | 'pen';
-export type ModalId = 'export' | 'newProject' | 'shortcuts' | 'settings' | 'projectSettings' | 'collect' | null;
+export type ModalId = 'export' | 'newProject' | 'shortcuts' | 'settings' | 'projectSettings' | 'collect' | 'update' | null;
 
 export interface Toast {
   id: number;

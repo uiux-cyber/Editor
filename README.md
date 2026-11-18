@@ -9,6 +9,12 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.2
+
+- **Automatic updates:** Kinora downloads new versions from this repository's releases in the
+  background, verifies them, and installs on restart (Help → Check for updates…, Settings →
+  Updates). Maintainers: see [docs/RELEASING.md](docs/RELEASING.md).
+
 ## What's new in 1.1
 
 - **Editing:** ripple, roll, slip and slide trims; a magnetic main track; groups and linked

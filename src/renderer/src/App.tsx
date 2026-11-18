@@ -16,6 +16,7 @@ import { Home } from './ui/shell/Home';
 import { Modals } from './ui/shell/Modals';
 import { handleEditorKey } from './ui/shell/shortcuts';
 import { TitleBar } from './ui/shell/TitleBar';
+import { initUpdates } from './ui/shell/updates';
 import { Timeline } from './ui/timeline/Timeline';
 import { useProjectStore } from './store/project';
 import { t as tr, useT } from './ui/i18n';
@@ -67,6 +68,7 @@ export function App(): ReactNode {
   // Shell integration: title / dirty flag / autosave, close confirmation, file associations.
   useEffect(() => {
     const stopSync = startDocumentSync();
+    const stopUpdates = initUpdates();
     const offClose = api.app.onCloseRequested(() => {
       void confirmDiscard().then((ok) => {
         if (ok) void api.app.confirmClose();
@@ -85,6 +87,7 @@ export function App(): ReactNode {
     });
     return () => {
       stopSync();
+      stopUpdates();
       offClose();
       offOpen();
     };

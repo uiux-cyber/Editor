@@ -26,6 +26,7 @@ import {
   undo,
 } from '../../actions';
 import { startCollect } from '../../collect/collect';
+import { checkForUpdates, installUpdate, isUpdateReady } from '../../shell/updates';
 import { t } from '../../i18n';
 import { importViaDialog } from '../../library/MediaTab';
 import { openPalette } from '../../palette/store';
@@ -271,6 +272,8 @@ const commands: Command[] = [
   // ---- Help ------------------------------------------------------------------------------
   { id: 'help.shortcuts', title: 'Keyboard shortcuts', group: 'Help', shortcut: '?', keywords: ['keys', 'hotkeys', 'cheat sheet'], run: () => ui().openModal('shortcuts') },
   { id: 'help.customizeShortcuts', title: 'Customize keyboard shortcuts…', group: 'Help', keywords: ['keymap', 'hotkeys', 'rebind'], run: () => openSettings('shortcuts') },
+  { id: 'help.checkForUpdates', title: 'Check for updates…', group: 'Help', keywords: ['update', 'upgrade', 'new version', 'release'], run: () => void checkForUpdates() },
+  { id: 'help.installUpdate', title: 'Restart to update', group: 'Help', menu: false, keywords: ['update', 'install', 'upgrade'], when: isUpdateReady, run: () => void installUpdate() },
   { id: 'help.about', title: 'About Kinora', group: 'Help', keywords: ['version'], run: () => showAbout() },
 ];
 

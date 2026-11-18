@@ -14,6 +14,7 @@ import { newProject } from '../projectIO';
 import { SettingsWindow } from '../settings/SettingsWindow';
 import { openSettings, getSetting } from '../settings/store';
 import { PROJECT_FORMATS } from './Home';
+import { UpdateModal } from './UpdateButton';
 
 function NewProjectModal({ onClose }: { onClose: () => void }): ReactNode {
   const t = useT();
@@ -197,5 +198,6 @@ export function Modals(): ReactNode {
   if (modal === 'shortcuts') return <ShortcutsModal onClose={close} />;
   if (modal === 'settings') return <SettingsWindow onClose={close} />;
   if (modal === 'collect') return <CollectDialog onClose={close} />;
+  if (modal === 'update') return <UpdateModal onClose={close} />;
   return null;
 }
