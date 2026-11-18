@@ -34,6 +34,7 @@
   "include": [
     "src/renderer/src/**/*",
     "src/shared/**/*",
+    "src/mcp/protocol.ts",
     "tests/**/*"
   ]
 }

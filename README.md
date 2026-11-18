@@ -9,6 +9,12 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.3
+
+- **Works with Claude:** connect Kinora to Claude Desktop or Claude Code (Settings → Claude) and
+  ask Claude to edit, caption and export for you. It uses your own Claude plan; every change is
+  undoable and replacing a file always asks first. See [docs/CLAUDE-CONNECTOR.md](docs/CLAUDE-CONNECTOR.md).
+
 ## What's new in 1.2
 
 - **Automatic updates:** Kinora downloads new versions from this repository's releases in the
@@ -36,8 +42,9 @@ See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap
 - **Workflow:** command palette (Ctrl+K), customisable shortcuts, Settings window, light theme,
   Spanish / French / German / Portuguese / Hindi, keyboard navigation (F6), collect project.
 
-Developers: see [docs/EXTENDING.md](docs/EXTENDING.md) (extension points), [docs/I18N.md](docs/I18N.md)
-and [docs/PACKS.md](docs/PACKS.md).
+Developers: see [docs/EXTENDING.md](docs/EXTENDING.md) (extension points), [docs/I18N.md](docs/I18N.md),
+[docs/PACKS.md](docs/PACKS.md), [docs/RELEASING.md](docs/RELEASING.md) and
+[docs/CLAUDE-CONNECTOR.md](docs/CLAUDE-CONNECTOR.md).
 
 ## Install (end users)
 
@@ -78,7 +85,7 @@ node scripts/e2e.mjs ui --packaged        # same, against release/win-unpacked
 ```
 
 Scenarios: `smoke ui export export-queue graphics editing time workflow speech vision
-color-audio media templates`. Test windows run off-screen without taking focus; set
+color-audio media templates updates claude`. Test windows run off-screen without taking focus; set
 `KINORA_E2E_SHOW=1` to watch a run. Run `npm run models` once before the speech / vision
 scenarios (it downloads the bundled AI models into `resources/models/`).
 

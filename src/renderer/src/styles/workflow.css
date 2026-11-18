@@ -1072,3 +1072,91 @@
   white-space: pre-wrap;
   user-select: text;
 }
+
+/* Claude connector: title-bar indicator and file-replace approval (ui/shell/Claude.tsx). */
+.claude-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  margin-right: 4px;
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.claude-btn:hover,
+.claude-btn:focus-visible {
+  background: var(--bg-3);
+  color: var(--text-0);
+}
+.claude-btn__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+}
+.claude-btn.is-busy {
+  color: var(--accent-hi);
+}
+.claude-btn.is-busy .claude-btn__dot {
+  background: var(--accent-hi);
+  animation: claude-pulse 1s ease-in-out infinite;
+}
+@keyframes claude-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .claude-btn.is-busy .claude-btn__dot {
+    animation: none;
+  }
+}
+.claude-approval {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--text-1);
+  line-height: 1.5;
+}
+.claude-approval > svg {
+  flex: none;
+  margin-top: 2px;
+  color: #f59e0b;
+}
+.claude-approval p {
+  margin: 0 0 8px;
+}
+.claude-approval__path {
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  word-break: break-all;
+  user-select: text;
+}
+.claude-approval__note {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.claude-steps {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--text-1);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.claude-code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  word-break: break-all;
+  user-select: text;
+}

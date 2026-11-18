@@ -17,6 +17,8 @@ import { Modals } from './ui/shell/Modals';
 import { handleEditorKey } from './ui/shell/shortcuts';
 import { TitleBar } from './ui/shell/TitleBar';
 import { initUpdates } from './ui/shell/updates';
+import { ClaudeApprovals } from './ui/shell/Claude';
+import { initClaude } from './ui/claude/store';
 import { Timeline } from './ui/timeline/Timeline';
 import { useProjectStore } from './store/project';
 import { t as tr, useT } from './ui/i18n';
@@ -69,6 +71,7 @@ export function App(): ReactNode {
   useEffect(() => {
     const stopSync = startDocumentSync();
     const stopUpdates = initUpdates();
+    const stopClaude = initClaude();
     const offClose = api.app.onCloseRequested(() => {
       void confirmDiscard().then((ok) => {
         if (ok) void api.app.confirmClose();
@@ -88,6 +91,7 @@ export function App(): ReactNode {
     return () => {
       stopSync();
       stopUpdates();
+      stopClaude();
       offClose();
       offOpen();
     };
@@ -171,6 +175,7 @@ export function App(): ReactNode {
       <TitleBar />
       <main className="app__main">{screen === 'home' ? <Home /> : <Editor />}</main>
       <Modals />
+      <ClaudeApprovals />
       <CommandPalette />
       <MenuHost />
       <Toasts />

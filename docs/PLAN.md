@@ -160,8 +160,10 @@ folder registers it automatically.
    translations, more languages.
 5. **1.2** — open source (MIT) on GitHub, automatic updates from GitHub releases published by
    a tag-triggered workflow (docs/RELEASING.md).
-6. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
-7. **Content cadence**: monthly template and sticker drops through the same pack format.
+6. **1.3** — Kinora as a Claude connector (MCP): Claude Desktop / Claude Code edit, caption and
+   export in Kinora through a local, token-protected pipe (docs/CLAUDE-CONNECTOR.md).
+7. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
+8. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 

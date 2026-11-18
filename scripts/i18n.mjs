@@ -28,6 +28,7 @@ export const TRANSLATED = [
   'ui/palette',
   'ui/collect',
   'ui/commands',
+  'ui/claude',
 ];
 
 /** Strings looked up dynamically (menu names, groups, key caps, format hints, kinds). */

@@ -27,6 +27,8 @@
   },
   "include": [
     "electron.vite.config.ts",
+    "vite.mcp.config.mts",
+    "src/mcp/**/*",
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*"

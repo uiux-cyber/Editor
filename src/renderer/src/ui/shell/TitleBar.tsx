@@ -14,6 +14,7 @@ import { openSettings } from '../settings/store';
 import { closeProject } from './commands';
 import { ExportQueueButton } from '../export/QueueButton';
 import { UpdateButton } from './UpdateButton';
+import { ClaudeIndicator } from './Claude';
 
 export function Logo({ size = 20 }: { size?: number }): ReactNode {
   return (
@@ -166,6 +167,8 @@ export function TitleBar(): ReactNode {
       <div className="titlebar__right no-drag">
         {/* Automatic updates (ui/shell/updates): shown once a new version is ready. */}
         <UpdateButton />
+        {/* Claude connector (ui/claude): shown while a Claude app is connected. */}
+        <ClaudeIndicator />
         {/* Export queue (ui/export): progress ring + popover; hidden while the queue is empty. */}
         <ExportQueueButton />
         <button type="button" className="titlebar__search" onClick={() => openPalette()} title={withShortcut(t('Command palette'), 'view.palette')} aria-label={t('Command palette')} data-action="palette">

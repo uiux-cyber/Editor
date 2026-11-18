@@ -122,10 +122,15 @@ export async function openProject(path?: string, opts: { force?: boolean } = {})
   }
 }
 
-export async function saveProject(saveAs = false): Promise<boolean> {
+/**
+ * Save the document. `targetPath` saves to that (already approved) file without a dialog, as
+ * "Save as" — used by Claude's save_project tool.
+ */
+export async function saveProject(saveAs = false, targetPath?: string): Promise<boolean> {
   const store = useProjectStore.getState();
-  let path = store.filePath;
-  if (!path || saveAs) {
+  if (targetPath) saveAs = true;
+  let path = targetPath ?? store.filePath;
+  if (!path || (saveAs && !targetPath)) {
     path = await api.dialog.saveProject(store.project.name);
     if (!path) return false;
   }
