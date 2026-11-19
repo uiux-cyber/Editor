@@ -35,6 +35,7 @@
     "src/renderer/src/**/*",
     "src/shared/**/*",
     "src/mcp/protocol.ts",
+    "src/motion/runtime.ts",
     "tests/**/*"
   ]
 }

@@ -45,7 +45,7 @@ export interface MediaAsset {
   audioCodec?: string;
   addedAt: number;
   /** Animated assets: container format. */
-  format?: 'gif' | 'webp' | 'apng' | 'lottie';
+  format?: 'gif' | 'webp' | 'apng' | 'lottie' | 'motion';
   /** Lightweight editing copy used by the preview (export always uses the original). */
   proxy?: { path: string; width: number; height: number };
   /** Source uses a high-dynamic-range transfer (PQ / HLG) and is tone-mapped for display. */

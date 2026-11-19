@@ -196,6 +196,51 @@ export const TOOLS: ToolDef[] = [
     }),
     { destructive: false },
   ),
+  tool(
+    'motion_guide',
+    'Motion clip guide',
+    'How to write Motion clips: the module format, the helper kit, the bundled libraries (three.js with post-processing, GSAP with all plugins, PixiJS, anime.js, D3, Matter.js, p5.js, Lottie, simplex-noise, Rough.js), the fonts, and tested examples. Read it before your first create_motion.',
+    obj({}),
+    { readOnly: true },
+  ),
+  tool(
+    'create_motion',
+    'Create a Motion clip',
+    'Create a Motion clip: animation code (an ES module, see motion_guide) that Kinora renders frame by frame, exactly, as a transparent layer: kinetic typography, 3D scenes, animated charts, physics, generative art, logo reveals, lower thirds… Kinora runs the code first and returns a preview frame, or the error with its line so you can fix it. The clip is saved as a .kmotion file and added to the media bin and (by default) the timeline.',
+    obj(
+      {
+        name: str('Clip name, e.g. "Intro title".'),
+        code: str('The ES module: `export default async function setup(k) { …; return (t) => { /* draw frame at t */ }; }`.'),
+        duration: num('Length in seconds (default 5).', { exclusiveMinimum: 0, maximum: 600 }),
+        fps: num('Frames per second (default: the project’s).', { minimum: 1, maximum: 120 }),
+        width: num('Canvas width in pixels (default: the project’s).', { minimum: 16, maximum: 4096 }),
+        height: num('Canvas height in pixels (default: the project’s).', { minimum: 16, maximum: 4096 }),
+        images: { type: 'object', additionalProperties: { type: 'string' }, description: 'Project images to use, as { name: media id } → k.images.name.' },
+        add_to_timeline: bool('Place it on the timeline (default true).'),
+        time: num('Start time on the timeline (default: the playhead).', { minimum: 0 }),
+        track_id: str('Preferred track id.'),
+      },
+      ['name', 'code'],
+    ),
+  ),
+  tool(
+    'update_motion',
+    'Change a Motion clip',
+    'Replace the code and/or settings of a Motion clip (its media id from create_motion or get_project). Kinora tests the new version first; every timeline clip using it updates, and the change can be undone.',
+    obj(
+      {
+        media_id: str('The Motion clip’s media id.'),
+        code: str('New ES module code (omit to keep the current code).'),
+        duration: num('New length in seconds.', { exclusiveMinimum: 0, maximum: 600 }),
+        fps: num('Frames per second.', { minimum: 1, maximum: 120 }),
+        width: num('Canvas width in pixels.', { minimum: 16, maximum: 4096 }),
+        height: num('Canvas height in pixels.', { minimum: 16, maximum: 4096 }),
+        images: { type: 'object', additionalProperties: { type: 'string' }, description: 'Project images, as { name: media id }.' },
+      },
+      ['media_id'],
+    ),
+  ),
+  tool('get_motion', 'Read a Motion clip', 'The code and settings of a Motion clip, to read or change it.', obj({ media_id: str('The Motion clip’s media id.') }, ['media_id']), { readOnly: true }),
   tool('undo', 'Undo', 'Undo the last change(s), as Ctrl+Z.', obj({ steps: num('How many steps (default 1).', { minimum: 1, maximum: 50 }) })),
   tool('redo', 'Redo', 'Redo undone change(s), as Ctrl+Shift+Z.', obj({ steps: num('How many steps (default 1).', { minimum: 1, maximum: 50 }) })),
 ];
@@ -208,6 +253,7 @@ export const SERVER_INSTRUCTIONS = [
   'Every change is one undo step in Kinora\'s History panel, labelled "Claude: …", so the user can review or revert it.',
   'Captions, silence/filler detection, vision features and exports run in the background: poll get_status until they finish before relying on the result.',
   'Use capture_frame to check how things look. Replacing or deleting files on disk always asks the user in Kinora first.',
+  'For custom animation (kinetic type, 3D, charts, physics, generative art), write a Motion clip: read motion_guide, then create_motion.',
 ].join(' ');
 
 // ---------------------------------------------------------------------------------------------

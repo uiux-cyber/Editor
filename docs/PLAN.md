@@ -162,8 +162,11 @@ folder registers it automatically.
    a tag-triggered workflow (docs/RELEASING.md).
 6. **1.3** — Kinora as a Claude connector (MCP): Claude Desktop / Claude Code edit, caption and
    export in Kinora through a local, token-protected pipe (docs/CLAUDE-CONNECTOR.md).
-7. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
-8. **Content cadence**: monthly template and sticker drops through the same pack format.
+7. **1.4** — Motion clips: animation code (three.js, GSAP, PixiJS, anime.js, D3, Matter.js, p5.js,
+   Lottie…) rendered frame by frame in a sealed, out-of-process sandbox; Claude writes them with
+   create_motion / update_motion.
+8. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
+9. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 

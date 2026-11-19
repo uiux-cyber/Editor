@@ -9,6 +9,9 @@
  *   frame-accurately (goToAndStop on fractional frames) at the size the layer needs, so they stay
  *   crisp at any export resolution.
  *
+ * - Motion clips (.kmotion) are animation code rendered frame by frame in a sandboxed frame
+ *   (motion.ts).
+ *
  * `animationFrame()` is synchronous (preview, thumbnails); `ensureAnimationFrame()` awaits the
  * exact frame (export). Both loop the animation forever.
  */
@@ -18,6 +21,7 @@ import type { ID, MediaAsset } from '@/core/types';
 import { api } from '@/platform/api';
 import type { FrameImage } from '../compositor';
 import { readDotLottie } from './dotlottie';
+import { MotionAnimation } from './motion';
 
 export type AnimationFormat = NonNullable<MediaAsset['format']>;
 
@@ -31,7 +35,7 @@ export interface SizeHint {
 export class AnimationError extends Error {}
 
 /** File extensions that may hold an animation (still GIF / WebP / PNG files stay images). */
-export const ANIMATION_CANDIDATE_EXTS = ['gif', 'webp', 'png', 'apng', 'json', 'lottie'];
+export const ANIMATION_CANDIDATE_EXTS = ['gif', 'webp', 'png', 'apng', 'json', 'lottie', 'kmotion'];
 
 const RASTER_MIME: Record<string, string> = { gif: 'image/gif', webp: 'image/webp', png: 'image/png', apng: 'image/png' };
 
@@ -446,7 +450,7 @@ class LottieAnimation {
 // Registry
 // ---------------------------------------------------------------------------------------------
 
-type AnimationSource = RasterAnimation | LottieAnimation;
+type AnimationSource = RasterAnimation | LottieAnimation | MotionAnimation;
 
 const sources = new Map<ID, AnimationSource>();
 
@@ -456,6 +460,7 @@ const extOfPath = (p: string): string => {
 };
 
 function createSource(path: string, ext: string): AnimationSource {
+  if (ext === 'kmotion') return new MotionAnimation(path, notify);
   return ext === 'json' || ext === 'lottie' ? new LottieAnimation(path, ext) : new RasterAnimation(path, ext);
 }
 
@@ -484,6 +489,8 @@ function sourceFor(asset: MediaAsset): AnimationSource | null {
 
 export interface ProbedAnimation {
   format: AnimationFormat;
+  /** Display name stored in the file (Motion clips), instead of the file name. */
+  name?: string;
   width: number;
   height: number;
   /** Seconds in one loop. */
@@ -510,6 +517,7 @@ export async function probeAnimation(path: string, ext: string): Promise<ProbedA
     src.dispose();
     // A broken GIF / WebP / PNG falls back to the plain image importer.
     if (src.kind === 'raster') return null;
+    if (src.kind === 'motion') throw new AnimationError(`The Motion clip could not run: ${err instanceof Error ? err.message : String(err)}`);
     throw err;
   }
   if (src.kind === 'raster') {
@@ -528,6 +536,29 @@ export async function probeAnimation(path: string, ext: string): Promise<ProbedA
       poster: (first?.source as CanvasImageSource) ?? null,
       posterW: first?.width ?? 0,
       posterH: first?.height ?? 0,
+      handle: src,
+    };
+  }
+  if (src.kind === 'motion') {
+    const meta = src.info!;
+    try {
+      await src.ensure(meta.duration * 0.4);
+    } catch (err) {
+      src.dispose();
+      throw new AnimationError(`The Motion clip could not run: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const frame = src.frameAt(meta.duration * 0.4);
+    return {
+      format: 'motion',
+      name: meta.name,
+      width: meta.width,
+      height: meta.height,
+      duration: meta.duration,
+      fps: meta.fps,
+      frames: Math.round(meta.duration * meta.fps),
+      poster: (frame?.source as CanvasImageSource) ?? null,
+      posterW: frame?.width ?? 0,
+      posterH: frame?.height ?? 0,
       handle: src,
     };
   }
@@ -564,6 +595,7 @@ export function animationFrame(asset: MediaAsset, time: number, hint?: SizeHint)
   const src = sourceFor(asset);
   if (!src || src.failed) return null;
   if (src.kind === 'raster') return src.frameAt(time, asset.duration);
+  if (src.kind === 'motion') return src.frameAt(time);
   return src.frameAt(time, hint);
 }
 
@@ -573,8 +605,11 @@ export async function ensureAnimationFrame(asset: MediaAsset, time: number): Pro
   if (!src) return;
   try {
     if (src.kind === 'raster') await src.ensure(time, asset.duration);
+    else if (src.kind === 'motion') await src.ensure(time);
     else await src.ready;
-  } catch {
+  } catch (err) {
+    // A Motion clip that fails stops the export with its reason (it is content, not decoration).
+    if (src.kind === 'motion') throw new Error(`Motion clip “${asset.name}”: ${err instanceof Error ? err.message : String(err)}`);
     /* a broken animation renders as nothing, like a missing image */
   }
 }
@@ -593,6 +628,12 @@ export async function animationPoster(asset: MediaAsset): Promise<{ source: Canv
     await src.ensure(0, asset.duration);
     const f = src.frame(0);
     return f ? { source: f.source as CanvasImageSource, width: f.width, height: f.height } : null;
+  }
+  if (src.kind === 'motion') {
+    // A clip that fails shows no poster (it is not a missing file).
+    const ok = await src.ensure(asset.duration * 0.4).then(() => true, () => false);
+    const m = ok ? src.frameAt(asset.duration * 0.4) : null;
+    return m ? { source: m.source as CanvasImageSource, width: m.width, height: m.height } : null;
   }
   const f = src.frameAt(asset.duration * 0.4, { width: 640, height: 640 });
   return f ? { source: f.source as CanvasImageSource, width: f.width, height: f.height } : null;

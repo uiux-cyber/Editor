@@ -11,6 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
+import { pathToFileURL } from 'node:url';
 
 let configDir = null;
 const bridges = [];
@@ -127,7 +128,7 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   writeFileSync(zipCopy, readFileSync(bundle));
   execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Expand-Archive -LiteralPath "${zipCopy}" -DestinationPath "${unpacked}" -Force`], { stdio: 'ignore' });
   const manifest = JSON.parse(readFileSync(path.join(unpacked, 'manifest.json'), 'utf8'));
-  expect(manifest.manifest_version === '0.3' && manifest.name === 'kinora' && manifest.server.type === 'node' && manifest.tools.length === 20, `the bundle unpacks with Windows' ZIP support and has a valid manifest (v${manifest.version})`);
+  expect(manifest.manifest_version === '0.3' && manifest.name === 'kinora' && manifest.server.type === 'node' && manifest.tools.length === 24, `the bundle unpacks with Windows' ZIP support and has a valid manifest (v${manifest.version})`);
   expect(existsSync(path.join(unpacked, 'server', 'index.js')) && existsSync(path.join(unpacked, 'server', 'kinora-mcp.cjs')) && existsSync(path.join(unpacked, 'icon.png')), 'the bundle holds the loader, the server and the icon');
   const cfg = manifest.server.mcp_config;
   expect(existsSync(cfg.env.KINORA_EXE) && existsSync(cfg.env.KINORA_MCP_SCRIPT), 'the manifest points at this Kinora and its server');
@@ -141,7 +142,7 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   expect(init.result?.serverInfo?.name === 'kinora' && init.result.protocolVersion === '2025-06-18', `handshake with Kinora ${init.result?.serverInfo?.version}`);
   b.notify('notifications/initialized');
   const list = await b.request('tools/list');
-  expect(list.result.tools.length === 20, `Claude sees ${list.result.tools.length} tools`);
+  expect(list.result.tools.length === 24, `Claude sees ${list.result.tools.length} tools`);
 
   let s = json(await b.call('get_status'));
   expect(s.screen === 'home', 'get_status reports the start screen');
@@ -238,6 +239,61 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   r = await b.call('delete_clips', { clip_ids: [textClip.id] });
   expect(json(r).deleted.includes(textClip.id), 'delete_clips removes the text clip');
   await shot('claude-03-session');
+
+  // ---- Motion clips through Claude's tools ------------------------------------------------------
+  const { MOTION_EXAMPLES } = await import(pathToFileURL(path.join(process.cwd(), 'src/shared/motion.ts')).href);
+  r = await b.call('motion_guide');
+  expect(!r.isError && /three\.js/.test(textOf(r)) && /export default async function setup\(k\)/.test(textOf(r)), 'motion_guide explains the module format and the libraries');
+  // Save first, so starting a new project doesn't stop at Kinora's "save changes?" question.
+  await b.call('save_project');
+  r = await b.call('new_project', { name: 'Motion test', aspect: '16:9' });
+  expect(!r.isError, 'a fresh project for the Motion clip');
+  const box = MOTION_EXAMPLES.find((e) => e.name.startsWith('3D'));
+  r = await b.call('create_motion', { name: 'Glossy box', code: box.code, duration: 3, time: 0 }, 180000);
+  const created = r.isError ? null : JSON.parse(textOf(r).slice(textOf(r).indexOf('{')));
+  expect(!!created && r.content.some((c) => c.type === 'image'), `create_motion tests the code, saves it and returns a preview (media ${created?.media_id})`);
+  expect(existsSync(created.file) && created.file.endsWith('.kmotion'), 'the clip is saved as a .kmotion file');
+  let proj = json(await b.call('get_project'));
+  const motionClip = proj.clips.find((c) => c.id === created.clip_id);
+  expect(!!motionClip && motionClip.duration === 3 && proj.media.some((m) => m.id === created.media_id && m.kind === 'animation'), 'the clip is on the timeline as a 3 s animation layer');
+
+  r = await b.call('update_motion', { media_id: created.media_id, code: 'export default function setup(k) {\n  return (t) => {\n    k.ctx2d().fillRect(0, 0, missing.x, 1);\n  };\n}\n' });
+  expect(r.isError && /missing is not defined/.test(textOf(r)) && /line 3/.test(textOf(r)), 'a broken update is refused with the error and its line, and the clip is unchanged');
+  const chart = MOTION_EXAMPLES.find((e) => e.name.startsWith('Animated bar'));
+  r = await b.call('update_motion', { media_id: created.media_id, code: chart.code, duration: 4 });
+  expect(!r.isError && r.content.some((c) => c.type === 'image'), 'update_motion replaces the code and returns a new preview');
+  proj = json(await b.call('get_project'));
+  expect(proj.clips.find((c) => c.id === created.clip_id)?.duration === 4, 'the timeline clip follows the new 4 s length');
+  r = await b.call('get_motion', { media_id: created.media_id });
+  expect(/d3\.scaleBand/.test(textOf(r)), 'get_motion returns the current code');
+  r = await b.call('undo');
+  r = await b.call('get_motion', { media_id: created.media_id });
+  expect(/RoundedBoxGeometry/.test(textOf(r)), 'undo brings the previous version of the clip back');
+  r = await b.call('redo');
+
+  // The clip is rendered into exports: a still at 2.5 s shows the chart's bars.
+  await b.call('set_playhead', { time: 2.5 });
+  const still = path.join(outDir, 'claude-motion-still.png');
+  rmSync(still, { force: true });
+  r = await b.call('export_video', { path: still, format: 'png' });
+  expect(!r.isError, 'a still of the Motion clip is exported');
+  await waitExport(still);
+  const bright = await run(async (file) => {
+    const res = await fetch(window.kinora.media.toUrl(file));
+    const bmp = await createImageBitmap(await res.blob());
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const g = c.getContext('2d');
+    g.drawImage(bmp, 0, 0);
+    const px = g.getImageData(0, 0, bmp.width, bmp.height).data;
+    let n = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] > 300) n++;
+    return n / (bmp.width * bmp.height);
+  }, still);
+  if (!(bright > 0.03)) console.log('  motion state:', JSON.stringify(await run(() => window.__kinora.motion.motionDebug())), JSON.stringify(json(await b.call('get_status')).tasks.slice(-2)));
+  expect(bright > 0.03, `the exported frame contains the Motion clip (${(bright * 100).toFixed(1)}% bright pixels)`);
+  r = await b.call('capture_frame', { time: 2.5, width: 640 });
+  expect(r.content.some((c) => c.type === 'image'), 'capture_frame shows the Motion clip in the preview');
+  writeFileSync(path.join(outDir, 'claude-motion-frame.jpg'), Buffer.from(r.content.find((c) => c.type === 'image').data, 'base64'));
 
   // ---- Status in Settings, then turning access off ---------------------------------------------
   await win.click('[data-action="settings"]');

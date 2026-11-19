@@ -9,6 +9,13 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.4
+
+- **Motion clips:** Claude can write custom animation as code (three.js, GSAP, PixiJS, anime.js,
+  D3, Matter.js, p5.js, Lottie and more, all bundled) that Kinora renders frame by frame as a
+  transparent, exportable layer, in a sandbox with no network access. See
+  [docs/CLAUDE-CONNECTOR.md](docs/CLAUDE-CONNECTOR.md#motion-clips-custom-animation-written-by-claude).
+
 ## What's new in 1.3
 
 - **Works with Claude:** connect Kinora to Claude Desktop or Claude Code (Settings → Claude) and
@@ -136,3 +143,9 @@ Apache 2.0 (via @fontsource), media handling uses Mediabunny (MPL-2.0), speech r
 Transformers.js (Apache 2.0) with the Whisper model (MIT), and the vision features use MediaPipe
 (Apache 2.0). The AI model files are downloaded by `npm run models` and are not stored in this
 repository. All stickers, sounds, shaders and templates are original to this project.
+
+Motion clips bundle three.js, PixiJS, anime.js, Matter.js, Lottie, simplex-noise and Rough.js (MIT),
+D3 (ISC), p5.js (LGPL-2.1, shipped as its own replaceable file) and **GSAP**, which is not open
+source: it is distributed under GreenSock's no-charge
+[GSAP Standard License](https://gsap.com/standard-license). The full notices ship in
+`out/motion/THIRD-PARTY-LICENSES.txt` (`resources/app.asar/out/motion` when installed).

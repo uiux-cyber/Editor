@@ -191,7 +191,7 @@ async function probe(info: FileInfo): Promise<Probed> {
     }
     if (anim) {
       return {
-        asset: { ...base, kind: 'animation', format: anim.format, duration: anim.duration, width: anim.width, height: anim.height, fps: anim.fps, hasVideo: false, hasAudio: false },
+        asset: { ...base, ...(anim.name ? { name: anim.name } : {}), kind: 'animation', format: anim.format, duration: anim.duration, width: anim.width, height: anim.height, fps: anim.fps, hasVideo: false, hasAudio: false },
         thumb: anim.poster ? canvasToThumb(anim.poster, anim.posterW, anim.posterH) : null,
         animation: anim,
       };

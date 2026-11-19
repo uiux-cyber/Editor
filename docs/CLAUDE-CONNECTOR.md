@@ -58,7 +58,33 @@ Run it once in a terminal. Other MCP apps can start the same command (stdio tran
 | `delete_clips` / `split_clip` / `select_clips` / `set_playhead` | Editing basics |
 | `capture_frame` | A picture of the video at a time |
 | `export_video` | Platform presets or formats, in the background |
+| `motion_guide` / `create_motion` / `update_motion` / `get_motion` | Motion clips: custom animation as code (below) |
 | `undo` / `redo` | History |
+
+## Motion clips: custom animation written by Claude
+
+For anything the template and sticker library can't do (kinetic typography, 3D, animated charts,
+physics, generative art, logo reveals), Claude writes a **Motion clip**: a short JavaScript module
+that Kinora renders frame by frame, exactly, as a transparent layer. It can be moved, scaled,
+trimmed, layered over video and exported like any clip.
+
+- Ask, for example: "Make a 3D logo reveal with bloom", "Animate this data as a bar chart", "Add a
+  kinetic title that says MAKE IT MOVE".
+- Claude reads `motion_guide`, writes the code and calls `create_motion`. Kinora runs it first and
+  returns a preview frame, or the error with its line, so Claude can fix it before it reaches your
+  project. `update_motion` changes a clip (undo restores the previous version); `get_motion` reads it.
+- Libraries, all bundled and offline: **three.js** (with post-processing: bloom, film, glitch, bokeh,
+  halftone, pixelate; rounded boxes, SVG and glTF loading, thick lines, sky), **GSAP** with every
+  plugin (SplitText, MorphSVG, DrawSVG, MotionPath, CustomEase…), **PixiJS**, **anime.js**, **D3**,
+  **Matter.js** physics, **p5.js**, **Lottie**, **simplex-noise** and **Rough.js**, plus Kinora's
+  typefaces and a helper kit (easing, keyframes, springs, staggers, seeded randomness, text fitting,
+  physics baking, SVG drawing).
+- Clips are saved as `.kmotion` files in `Documents\Kinora\Motion`; you can also import a
+  `.kmotion` file like any media.
+- **Sandboxed:** a clip runs in an isolated frame with no network, no access to your files or to
+  Kinora, and its own process: a clip that hangs is stopped after 15 seconds and never freezes the
+  editor. Time, `requestAnimationFrame` and randomness are controlled by Kinora, so the export
+  matches the preview frame for frame.
 
 ## Safety
 

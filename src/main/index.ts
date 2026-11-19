@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, powerSaveBlocker, protocol, screen, session, shell } from 'electron';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
@@ -166,6 +167,7 @@ const MIME: Record<string, string> = {
   svg: 'image/svg+xml',
   apng: 'image/apng',
   lottie: 'application/zip',
+  kmotion: 'text/javascript; charset=utf-8',
   mp4: 'video/mp4',
   m4v: 'video/mp4',
   mov: 'video/mp4',
@@ -201,6 +203,8 @@ const CSP = [
   `connect-src 'self' data: blob: ${MEDIA_SCHEME}:`,
   "font-src 'self' data:",
   "worker-src 'self' blob:",
+  // Motion clips render in a sandboxed frame served from kinora://motion (no access to the app).
+  `frame-src ${MEDIA_SCHEME}://motion`,
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
@@ -268,6 +272,38 @@ function modelsDir(): string {
   return app.isPackaged ? path.join(process.resourcesPath, 'models') : path.join(app.getAppPath(), 'resources', 'models');
 }
 
+/**
+ * The Motion clip sandbox (out/motion, see scripts/build-motion.mjs). frame.html is loaded in an
+ * iframe with sandbox="allow-scripts" (an opaque origin: no access to the app, its storage or the
+ * bridge). Its own policy allows only the runtime, the bundled libraries and fonts from
+ * kinora://motion, plus the clip's code (a blob: module); nothing on the network.
+ */
+const motionCsp = (importMapHash: string): string => [
+  "default-src 'none'",
+  // The import map is inline; it is allowed by its hash (no other inline script runs).
+  `script-src ${MEDIA_SCHEME}://motion blob: 'unsafe-eval' 'wasm-unsafe-eval' 'sha256-${importMapHash}'`,
+  `style-src ${MEDIA_SCHEME}://motion 'unsafe-inline'`,
+  `img-src ${MEDIA_SCHEME}://motion data: blob:`,
+  `font-src ${MEDIA_SCHEME}://motion data:`,
+  `connect-src ${MEDIA_SCHEME}://motion data: blob:`,
+  'worker-src blob:',
+  'media-src data: blob:',
+  "base-uri 'none'",
+  "form-action 'none'",
+].join('; ');
+
+const motionRoot = (): string => path.join(__dirname, '../motion');
+
+let motionPolicy: string | null = null;
+/** The sandbox's policy, with the hash of the import map in frame.html (computed once). */
+function motionFramePolicy(): string {
+  if (motionPolicy) return motionPolicy;
+  const html = fs.readFileSync(path.join(motionRoot(), 'frame.html'), 'utf8');
+  const map = /<script type="importmap">([\s\S]*?)<\/script>/.exec(html)?.[1] ?? '';
+  motionPolicy = motionCsp(createHash('sha256').update(map, 'utf8').digest('base64'));
+  return motionPolicy;
+}
+
 // Cross-origin isolation enables SharedArrayBuffer (multi-threaded WebAssembly for on-device AI).
 const ISOLATION = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
 
@@ -283,6 +319,15 @@ function registerProtocol(): void {
         // JSON / .lottie are only readable when the file is a Lottie animation (lottieGuard.ts).
         if (LOTTIE_EXTS.includes(extOf(filePath)) && !(await isLottieFile(path.normalize(filePath)))) return new Response('Forbidden', { status: 403 });
         return await serveFile(request, path.normalize(filePath));
+      }
+      if (url.hostname === 'motion') {
+        const root = motionRoot();
+        const rel = decodeURIComponent(url.pathname) || '/frame.html';
+        const filePath = path.normalize(path.join(root, rel));
+        if (!filePath.startsWith(root + path.sep)) return new Response('Forbidden', { status: 403 });
+        const isHtml = extOf(filePath) === 'html';
+        // The sandbox is embedded in the cross-origin-isolated editor, so it opts into COEP too.
+        return await serveFile(request, filePath, isHtml ? { 'Content-Security-Policy': motionFramePolicy(), 'Cross-Origin-Embedder-Policy': 'require-corp' } : { 'Cache-Control': 'max-age=31536000' });
       }
       if (url.hostname === 'models') {
         const root = modelsDir();
@@ -372,6 +417,11 @@ function createWindow(): void {
   });
   win.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Frames (the Motion clip sandbox) may only ever show the sandbox page.
+  win.webContents.on('will-frame-navigate', (e) => {
+    if (!e.isMainFrame && !e.url.startsWith(`${MEDIA_SCHEME}://motion/`)) e.preventDefault();
   });
 
   // The editor is a local, single-page app: never navigate away or spawn windows.

@@ -16,7 +16,9 @@ export const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif', '
  * after checking that the file really is a Lottie animation (any other JSON stays unreadable).
  */
 export const LOTTIE_EXTS = ['json', 'lottie'];
-export const MEDIA_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS, ...LOTTIE_EXTS];
+/** Motion clips: animation code rendered frame by frame (src/shared/motion.ts). */
+export const MOTION_EXTS = ['kmotion'];
+export const MEDIA_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS, ...IMAGE_EXTS, ...LOTTIE_EXTS, ...MOTION_EXTS];
 
 export interface FileInfo {
   path: string;

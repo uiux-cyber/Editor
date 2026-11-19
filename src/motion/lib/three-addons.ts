@@ -1,0 +1,34 @@
+// The three.js addons available to Motion clips. Each one is reachable under its usual path
+// (three/addons/… and three/examples/jsm/…) through the import map in frame.html.
+export { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+export { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+export { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+export { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+export { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+export { FilmPass } from 'three/addons/postprocessing/FilmPass.js';
+export { GlitchPass } from 'three/addons/postprocessing/GlitchPass.js';
+export { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
+export { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+export { HalftonePass } from 'three/addons/postprocessing/HalftonePass.js';
+export { RenderPixelatedPass } from 'three/addons/postprocessing/RenderPixelatedPass.js';
+export { DotScreenPass } from 'three/addons/postprocessing/DotScreenPass.js';
+export { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+export { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+export { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+export { ParametricGeometry } from 'three/addons/geometries/ParametricGeometry.js';
+export { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+export { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+export { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+export { Line2 } from 'three/addons/lines/Line2.js';
+export { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+export { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+export { Sky } from 'three/addons/objects/Sky.js';
+export { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+export { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
+export { ImprovedNoise } from 'three/addons/math/ImprovedNoise.js';
+export * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+export { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+export { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
+export { VignetteShader } from 'three/addons/shaders/VignetteShader.js';
+export { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+export { CopyShader } from 'three/addons/shaders/CopyShader.js';

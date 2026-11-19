@@ -441,9 +441,12 @@ export default function register(ctx: MainContext): void {
 
   // ---- Lifecycle ----------------------------------------------------------------------------
 
+  // A reload of the editor itself (not of a frame inside it, such as a Motion clip's sandbox)
+  // means the renderer must announce itself again before it gets tool calls.
   app.on('browser-window-created', (_e, win) => {
-    win.webContents.on('did-start-loading', () => {
-      rendererReady = false;
+    win.webContents.on('did-start-navigation', (details) => {
+      const d = details as unknown as { isMainFrame?: boolean; isSameDocument?: boolean };
+      if (d.isMainFrame && !d.isSameDocument) rendererReady = false;
     });
   });
   app.on('will-quit', () => {

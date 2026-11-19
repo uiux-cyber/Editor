@@ -19,11 +19,13 @@ import { defaultCustom, outputName, planTarget, type CustomSettings, type Export
 import { EFFECTS, FILTERS, GENERATORS, SOUNDS, STICKERS, TEMPLATES, TEXT_PRESETS, TRANSITIONS, getEffect, getFilter, getGenerator, getSound, getSticker, getTemplate, getTextPreset, getTransition } from '@/library';
 import { variationFor } from '@/library/templateEngine';
 import { api } from '@/platform/api';
-import { getProject, getRootProject, useProjectStore } from '@/store/project';
+import { testMotion } from '@/engine/media/motion';
+import { getProject, getRootProject, updateProject, useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { useVision } from '@/vision/store';
 import { ASPECT_IDS, LIBRARY_KINDS, textResult, type ToolContent, type ToolResult } from '@shared/claude';
 import type { FileInfo } from '@shared/ipc';
+import { motionGuide, normalizeMotionMeta, parseMotionFile, serializeMotionFile, type MotionMeta } from '@shared/motion';
 import { addAsset, addGenerator, addSound, addSticker, addText, addTransition, applyEffect, applyFilter, deleteSelection, editClips, redo, setSpeed, splitClip, undo } from '../actions';
 import { getCommand, getCommands, runCommand } from '../commands';
 import { shortcutText } from '../commands/keymapStore';
@@ -652,6 +654,133 @@ async function exportTool(args: Args): Promise<ToolResult> {
   return textResult({ started: ids.map((id, i) => ({ job: id, label: plans[i].label, detail: plans[i].detail, output: outputs[i] })), note: 'Exports run in the background: call get_status to follow them.' });
 }
 
+// ---- Motion clips -----------------------------------------------------------------------------
+
+/** A frame as a JPEG for Claude (transparent areas on dark grey). */
+function jpegOf(bitmap: ImageBitmap, maxWidth = 720): ToolContent {
+  const k = Math.min(1, maxWidth / bitmap.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * k));
+  canvas.height = Math.max(1, Math.round(bitmap.height * k));
+  const g = canvas.getContext('2d')!;
+  g.fillStyle = '#2a2d33';
+  g.fillRect(0, 0, canvas.width, canvas.height);
+  g.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return { type: 'image', data: canvas.toDataURL('image/jpeg', 0.85).split(',')[1], mimeType: 'image/jpeg' };
+}
+
+function motionImages(args: Args): Record<string, string> | undefined {
+  const raw = args.images;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new ToolError('"images" must be an object like { "logo": "<media id>" }.');
+  const assets = getRootProject().assets;
+  const out: Record<string, string> = {};
+  for (const [name, id] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^[A-Za-z_$][\w$]{0,40}$/.test(name)) throw new ToolError(`"${name}" is not a valid image name (use letters, digits and _).`);
+    const a = typeof id === 'string' ? assets[id] : undefined;
+    if (!a || (a.kind !== 'image' && a.kind !== 'animation')) throw new ToolError(`"${String(id)}" is not an image in the media bin. Use get_project to find image ids.`);
+    out[name] = id as string;
+  }
+  return out;
+}
+
+/** Run the clip before it reaches the project; returns preview content or throws with the error. */
+async function checkMotion(code: string, meta: MotionMeta): Promise<{ preview: ToolContent; notes: string[]; logs: string[] }> {
+  if (!/export\s+default/.test(code)) throw new ToolError('The code must be an ES module with `export default function setup(k) { … }` (see motion_guide).');
+  const last = Math.max(0, meta.duration - 1 / meta.fps);
+  const test = await testMotion(code, meta, [meta.duration * 0.5, 0, last]);
+  const logs = test.logs.slice(-12);
+  if (!test.ok) {
+    test.frames.forEach((f) => f.close());
+    throw new ToolError(`The clip did not run: ${test.error}${logs.length ? `\nConsole:\n${logs.join('\n')}` : ''}`);
+  }
+  const notes: string[] = [];
+  const slowest = Math.max(...test.ms.slice(1));
+  if (slowest > 120) notes.push(`Frames take up to ${slowest} ms to render; under 50 ms keeps playback smooth.`);
+  const preview = jpegOf(test.frames[0]);
+  test.frames.forEach((f) => f.close());
+  return { preview, notes, logs };
+}
+
+async function readMotion(id: string): Promise<{ asset: MediaAsset; meta: MotionMeta; code: string }> {
+  const asset = getRootProject().assets[id];
+  if (!asset || asset.format !== 'motion' || asset.source.type !== 'file') throw new ToolError(`No Motion clip with media id "${id}". Use get_project to see the media.`);
+  const res = await fetch(api.media.toUrl(asset.source.path));
+  if (!res.ok) throw new ToolError(`The Motion clip's file could not be read (${asset.source.path}).`);
+  const parsed = parseMotionFile(await res.text());
+  const p = getRootProject().settings;
+  return { asset, meta: normalizeMotionMeta(parsed.meta, { width: p.width, height: p.height, fps: p.fps, name: asset.name }), code: parsed.code };
+}
+
+const motionGuideTool = (): ToolResult => textResult(motionGuide());
+
+async function createMotionTool(args: Args): Promise<ToolResult> {
+  requireEditor();
+  const p = getRootProject().settings;
+  const name = str(args, 'name', true)!;
+  const code = str(args, 'code', true)!;
+  const meta = normalizeMotionMeta(
+    { name, width: num(args, 'width'), height: num(args, 'height'), duration: num(args, 'duration') ?? 5, fps: num(args, 'fps'), seed: 1, images: motionImages(args) },
+    { width: p.width, height: p.height, fps: p.fps, name },
+  );
+  const { preview, notes, logs } = await checkMotion(code, meta);
+  const file = await api.call<FileInfo>('x:motion:save', meta.name, serializeMotionFile(meta, code));
+  const [asset] = await importFiles([file]);
+  if (!asset) throw new ToolError('Kinora could not add the clip to the media bin (see the message in Kinora).');
+  let clips: ID[] = [];
+  if (bool(args, 'add_to_timeline') !== false) {
+    const trackId = str(args, 'track_id');
+    await asClaude(() => {
+      clips = addAsset(asset, { time: num(args, 'time') ?? engine.time, trackId });
+      if (clips.length) editClips(clips, (c) => void (c.duration = meta.duration));
+    });
+  }
+  const info = { media_id: asset.id, ...(clips.length ? { clip_id: clips[0] } : {}), file: file.path, width: meta.width, height: meta.height, duration: meta.duration, fps: meta.fps, ...(notes.length ? { notes } : {}), ...(logs.length ? { console: logs } : {}) };
+  return { content: [preview, { type: 'text', text: `Motion clip created. Preview of the middle frame above (transparent areas shown dark grey).\n${JSON.stringify(info, null, 1)}` }] };
+}
+
+async function updateMotionTool(args: Args): Promise<ToolResult> {
+  requireEditor();
+  const id = str(args, 'media_id', true)!;
+  const current = await readMotion(id);
+  const images = args.images === undefined ? current.meta.images : motionImages(args);
+  const meta = normalizeMotionMeta(
+    { ...current.meta, width: num(args, 'width') ?? current.meta.width, height: num(args, 'height') ?? current.meta.height, duration: num(args, 'duration') ?? current.meta.duration, fps: num(args, 'fps') ?? current.meta.fps, images },
+    { width: current.meta.width, height: current.meta.height, fps: current.meta.fps, name: current.meta.name },
+  );
+  const code = str(args, 'code') ?? current.code;
+  const { preview, notes, logs } = await checkMotion(code, meta);
+  // A new file per version: undo goes back to the previous file.
+  const file = await api.call<FileInfo>('x:motion:save', meta.name, serializeMotionFile(meta, code));
+  const oldDuration = current.asset.duration;
+  await asClaude(() =>
+    updateProject(
+      (d) => {
+        const a = d.assets[id];
+        if (!a) return;
+        a.source = { type: 'file', path: file.path };
+        a.size = file.size;
+        a.duration = meta.duration;
+        a.width = meta.width;
+        a.height = meta.height;
+        a.fps = meta.fps;
+        // Clips that showed the whole animation keep doing so at its new length.
+        if (meta.duration !== oldDuration) for (const c of Object.values(d.clips)) if (c.type === 'image' && c.assetId === id && Math.abs(c.duration - oldDuration) < 1e-3) c.duration = meta.duration;
+      },
+      { label: 'Update motion clip' },
+    ),
+  );
+  const info = { media_id: id, file: file.path, width: meta.width, height: meta.height, duration: meta.duration, fps: meta.fps, ...(notes.length ? { notes } : {}), ...(logs.length ? { console: logs } : {}) };
+  return { content: [preview, { type: 'text', text: `Motion clip updated (undo in Kinora restores the previous version).\n${JSON.stringify(info, null, 1)}` }] };
+}
+
+async function getMotionTool(args: Args): Promise<ToolResult> {
+  const { asset, meta, code } = await readMotion(str(args, 'media_id', true)!);
+  const p = getRootProject();
+  const clips = Object.values(p.clips).filter((c) => c.type === 'image' && c.assetId === asset.id).map((c) => c.id);
+  return textResult(`media_id: ${asset.id}\nsettings: ${JSON.stringify(meta)}\ntimeline clips: ${clips.join(', ') || 'none'}\n\n${code}`);
+}
+
 // ---- history ----------------------------------------------------------------------------------
 
 function historyTool(dir: 'undo' | 'redo', args: Args): ToolResult {
@@ -690,6 +819,10 @@ const TOOLS: Record<string, (args: Args) => ToolResult | Promise<ToolResult>> = 
   set_playhead: setPlayheadTool,
   capture_frame: captureFrameTool,
   export_video: exportTool,
+  motion_guide: motionGuideTool,
+  create_motion: createMotionTool,
+  update_motion: updateMotionTool,
+  get_motion: getMotionTool,
   undo: (a) => historyTool('undo', a),
   redo: (a) => historyTool('redo', a),
 };
