@@ -1,7 +1,7 @@
 {
   "name": "kinora",
   "productName": "Kinora",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Kinora — a GPU-accelerated, template-driven video editor for Windows.",
   "author": "Kinora contributors",
   "license": "MIT",
