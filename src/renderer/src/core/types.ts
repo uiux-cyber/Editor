@@ -52,6 +52,8 @@ export interface MediaAsset {
   hdr?: boolean;
   /** When the file was converted on import (e.g. ProRes via FFmpeg), the original file. */
   transcodedFrom?: string;
+  /** Motion clips: settings changed in the inspector (id → value); the others use the clip's defaults. */
+  motionValues?: Record<string, string | number | boolean>;
 }
 
 // ---------------------------------------------------------------------------------------------

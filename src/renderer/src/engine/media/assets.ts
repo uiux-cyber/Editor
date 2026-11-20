@@ -436,6 +436,18 @@ async function prepareAsset(asset: MediaAsset): Promise<void> {
   })();
 }
 
+/** Get an asset that was added to the project directly (e.g. a copy of a Motion clip) ready to show. */
+export async function prepareAddedAsset(asset: MediaAsset): Promise<void> {
+  await prepareAsset(asset).catch(() => useAssetRuntime.getState().patch(asset.id, { status: 'missing', url: null }));
+}
+
+/** Redraw the media bin poster of an animated asset (e.g. after a Motion clip's settings changed). */
+export async function refreshAnimationPoster(asset: MediaAsset): Promise<void> {
+  if (asset.kind !== 'animation') return;
+  const poster = await animationPoster(asset).catch(() => null);
+  if (poster) useAssetRuntime.getState().patch(asset.id, { thumb: canvasToThumb(poster.source, poster.width, poster.height) });
+}
+
 /** Rebuild runtime state for every asset of a freshly loaded project. */
 export async function prepareProjectAssets(project: Project): Promise<{ missing: MediaAsset[] }> {
   for (const id of [...sharedInputs.keys()]) disposeInput(id);

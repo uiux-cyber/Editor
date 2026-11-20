@@ -13,6 +13,7 @@ import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { useVision, type DesignBox } from '@/vision/store';
 import { keyframePath, setDrawBox, stopDrawing } from '@/vision/tracking';
+import { useT } from '../i18n';
 import '@/styles/vision.css';
 
 interface Props {
@@ -73,6 +74,7 @@ function DrawLayer({ stageW, stageH, k }: Props): ReactNode {
 }
 
 function TrackBoxView({ stageW, stageH, k }: Props): ReactNode {
+  const t = useT();
   const draw = useVision((s) => s.draw);
   const selected = useUI((s) => s.selection[0]);
   if (!draw?.box || (!draw.active && selected !== draw.followerId)) return null;
@@ -83,7 +85,7 @@ function TrackBoxView({ stageW, stageH, k }: Props): ReactNode {
       data-vision-box
       style={{ left: stageW / 2 + (b.cx - b.w / 2) * k, top: stageH / 2 + (b.cy - b.h / 2) * k, width: b.w * k, height: b.h * k }}
     >
-      <span className="vision-box__label">Track</span>
+      <span className="vision-box__label">{t('Track', undefined, 'tracking')}</span>
     </div>
   );
 }
@@ -119,6 +121,7 @@ function TrackPath({ stageW, stageH, k }: Props): ReactNode {
 }
 
 function JobsHud(): ReactNode {
+  const t = useT();
   const jobs = useVision((s) => s.jobs);
   const list = Object.values(jobs).filter((j) => j.kind !== 'cutout');
   if (!list.length) return null;
@@ -128,7 +131,7 @@ function JobsHud(): ReactNode {
         <div key={j.key} className="vision-hud__job">
           <span className="truncate">{j.detail ?? j.label}</span>
           <span className="mono">{j.progress < 0 ? '…' : `${Math.round(j.progress * 100)}%`}</span>
-          <button type="button" className="icon-btn icon-btn--sm" title="Cancel" onClick={j.cancel}>
+          <button type="button" className="icon-btn icon-btn--sm" title={t('Cancel')} onClick={j.cancel}>
             <X size={12} />
           </button>
           <div className="vision-hud__bar" style={{ width: `${Math.max(0, j.progress) * 100}%` }} />

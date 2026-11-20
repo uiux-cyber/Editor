@@ -14,8 +14,9 @@ import { useProjectStore } from '@/store/project';
 import { editClips } from '../../../actions';
 import { Field, NumberInput, Section, Segmented, Slider, SliderField, Toggle } from '../../../common/controls';
 import { CropSection } from '../../EditTab';
-import { KeyframeButton, useLiveProp } from '../../shared';
+import { KeyframeButton, rich, useLiveProp } from '../../shared';
 import { localTimeOf } from '../../../keyframeOps';
+import { tk, useT } from '../../../i18n';
 import { CurveThumb, SpeedCurve, clipCurve, formatSpeed } from '../../../time/SpeedCurve';
 import { breakApartSelection, openCompound, setClipSpeed, setPreservePitch, setReverse } from '../../../time/timeActions';
 import type { InspectorSectionDef } from '../index';
@@ -32,6 +33,7 @@ const samePoints = (a: CurvePoint[], b: CurvePoint[]): boolean => a.length === b
 // ---------------------------------------------------------------------------------------------
 
 function SpeedSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   const asset = useProjectStore((s) => (isMedia(clip) ? s.project.assets[clip.assetId] : undefined));
   if (!isMedia(clip)) return null;
   const media = ids;
@@ -45,18 +47,18 @@ function SpeedSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
     if (mode === 'normal' && curve) setClipSpeed(media, Math.round(averageSpeed(clip) * 100) / 100, {});
   };
   return (
-    <Section title="Speed" id="speed">
+    <Section title={t('Speed')} id="speed">
       <Segmented
         value={curve ? 'curve' : 'normal'}
         options={[
-          { value: 'normal', label: 'Normal', title: 'One speed for the whole clip' },
-          { value: 'curve', label: 'Curve', title: 'Speed ramp: the speed changes along the clip' },
+          { value: 'normal', label: t('Normal'), title: t('One speed for the whole clip') },
+          { value: 'curve', label: t('Curve'), title: t('Speed ramp: the speed changes along the clip') },
         ]}
         onChange={setMode}
       />
       {!curve ? (
         <>
-          <Field label="Speed">
+          <Field label={t('Speed')}>
             <Slider value={Math.log2(clip.speed)} min={Math.log2(0.1)} max={4} step={0.01} defaultValue={0} onChange={(v) => setClipSpeed(media, Math.round(Math.pow(2, v) * 100) / 100)} />
             <NumberInput value={clip.speed} min={0.1} max={16} step={0.05} precision={2} suffix="×" onChange={(v) => setClipSpeed(media, v, {})} style={{ flex: 'none', width: 64 }} />
           </Field>
@@ -72,7 +74,7 @@ function SpeedSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
         <>
           <div className="ramp-presets">
             {RAMP_PRESETS.map((p) => (
-              <button key={p.id} type="button" className={`ramp-tile ${samePoints(p.points, points) ? 'is-active' : ''}`} title={`${p.name} (average ${formatSpeed(curveAverage(p.points))})`} onClick={() => setClipSpeed(media, p.points, {})} data-ramp={p.id}>
+              <button key={p.id} type="button" className={`ramp-tile ${samePoints(p.points, points) ? 'is-active' : ''}`} title={t('{name} (average {speed})', { name: p.name, speed: formatSpeed(curveAverage(p.points)) })} onClick={() => setClipSpeed(media, p.points, {})} data-ramp={p.id}>
                 <CurveThumb points={p.points} />
                 <span>{p.name}</span>
               </button>
@@ -81,54 +83,61 @@ function SpeedSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
           <SpeedCurve clip={clip} ids={media} />
         </>
       )}
-      <Field label="Duration">
+      <Field label={t('Duration')}>
         <span className="mono" style={{ color: 'var(--text-0)' }}>
           {formatSeconds(clip.duration)}
         </span>
         <span style={{ color: 'var(--text-3)' }}>
-          {formatSeconds(range.to - range.from)} of media{Number.isFinite(max) && max > clip.duration + 0.05 ? ` · up to ${formatSeconds(max)}` : ''}
+          {t('{duration} of media', { duration: formatSeconds(range.to - range.from) })}
+          {Number.isFinite(max) && max > clip.duration + 0.05 ? ` · ${t('up to {duration}', { duration: formatSeconds(max) })}` : ''}
         </span>
       </Field>
-      <p className="hint">The clip keeps its content when the speed changes, so its length follows. {curve ? 'Drag points on the curve; hold Alt to move them freely.' : ''}</p>
+      <p className="hint">
+        {t('The clip keeps its content when the speed changes, so its length follows.')} {curve ? t('Drag points on the curve; hold Alt to move them freely.') : ''}
+      </p>
     </Section>
   );
 }
 
 function PlaybackSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   if (!isMedia(clip)) return null;
   const changed = !!clip.speedRamp?.length || Math.abs(clip.speed - 1) > 1e-4;
   return (
-    <Section title="Playback" id="playback">
-      <Field label="Reverse" title="Play the clip backwards">
+    <Section title={t('Playback')} id="playback">
+      <Field label={t('Reverse')} title={t('Play the clip backwards')}>
         <Toggle value={!!clip.reverse} onChange={(v) => setReverse(ids, v)} />
         <Rewind size={14} style={{ color: clip.reverse ? 'var(--accent-hi)' : 'var(--text-3)' }} />
       </Field>
-      <Field label="Keep pitch" title="Preserve the pitch of the sound when the speed changes">
+      <Field label={t('Keep pitch')} title={t('Preserve the pitch of the sound when the speed changes')}>
         <Toggle value={!!clip.preservePitch} onChange={(v) => setPreservePitch(ids, v)} />
       </Field>
       <p className="hint">
         {clip.preservePitch
           ? changed
-            ? 'The sound is time-stretched so voices and music keep their pitch, also through speed ramps. Above about 4× it becomes choppy.'
-            : 'Takes effect when the speed is not 1×.'
-          : 'Off: like tape, the pitch rises when the clip is faster and drops when it is slower.'}
+            ? t('The sound is time-stretched so voices and music keep their pitch, also through speed ramps. Above about 4× it becomes choppy.')
+            : t('Takes effect when the speed is not 1×.')
+          : t('Off: like tape, the pitch rises when the clip is faster and drops when it is slower.')}
       </p>
     </Section>
   );
 }
 
 function FreezeSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   const fps = useProjectStore((s) => s.project.settings.fps);
   if (clip.type !== 'video' || !clip.freeze) return null;
   return (
-    <Section title="Freeze frame" id="freeze">
+    <Section title={t('Freeze frame')} id="freeze">
       <div className="freeze-card">
         <Snowflake size={16} />
         <span>
-          Holds the frame at <span className="mono">{formatTimecode(clip.trimIn, fps)}</span> of the source. The sound is silent while the picture is frozen.
+          {rich(t('Holds the frame at {time} of the source. The sound is silent while the picture is frozen.'), {
+            time: <span className="mono">{formatTimecode(clip.trimIn, fps)}</span>,
+          })}
         </span>
       </div>
-      <Field label="Hold for">
+      <Field label={t('Hold for')}>
         <NumberInput
           value={clip.duration}
           min={1 / fps}
@@ -152,31 +161,35 @@ function FreezeSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
 // ---------------------------------------------------------------------------------------------
 
 function CompoundSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   if (clip.type !== 'compound') return null;
   const sum = compoundSummary(clip);
   return (
     <>
-      <Section title="Compound clip" id="compound">
+      <Section title={t('Compound clip')} id="compound">
         <div className="compound-card">
           <Layers size={18} />
           <div>
-            <strong>
-              {sum.clips} clip{sum.clips === 1 ? '' : 's'} on {sum.tracks} track{sum.tracks === 1 ? '' : 's'}
-            </strong>
+            <strong>{t('{clips, plural, one {# clip} other {# clips}} on {tracks, plural, one {# track} other {# tracks}}', { clips: sum.clips, tracks: sum.tracks })}</strong>
             <span>
-              {sum.visual} visual · {sum.audio} audio · shows {formatSeconds(clip.duration)} from {formatSeconds(clip.trimIn)}
+              {t('{visual, plural, one {# visual} other {# visual}} · {audio, plural, one {# audio} other {# audio}} · shows {duration} from {start}', {
+                visual: sum.visual,
+                audio: sum.audio,
+                duration: formatSeconds(clip.duration),
+                start: formatSeconds(clip.trimIn),
+              })}
             </span>
           </div>
         </div>
         <div className="btn-row">
-          <button type="button" className="btn btn--sm btn--outline" style={{ flex: 1 }} onClick={() => openCompound(clip.id)} title="Edit the clips inside (or double-click it on the timeline)">
-            <FolderOpen size={13} /> Open
+          <button type="button" className="btn btn--sm btn--outline" style={{ flex: 1 }} onClick={() => openCompound(clip.id)} title={t('Edit the clips inside (or double-click it on the timeline)')}>
+            <FolderOpen size={13} /> {t('Open')}
           </button>
-          <button type="button" className="btn btn--sm btn--outline" style={{ flex: 1 }} onClick={breakApartSelection} title="Put its clips back on the timeline (Alt+Shift+G)">
-            <Ungroup size={13} /> Break apart
+          <button type="button" className="btn btn--sm btn--outline" style={{ flex: 1 }} onClick={breakApartSelection} title={t('Put its clips back on the timeline (Alt+Shift+G)')}>
+            <Ungroup size={13} /> {t('Break apart')}
           </button>
         </div>
-        <p className="hint">Transform, animate, grade and add effects here to treat everything inside as one layer.</p>
+        <p className="hint">{t('Transform, animate, grade and add effects here to treat everything inside as one layer.')}</p>
       </Section>
       <CropSection clip={clip} ids={ids} />
     </>
@@ -184,6 +197,7 @@ function CompoundSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
 }
 
 function CompoundAudioSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   const volume = useLiveProp(clip, 'volume');
   if (clip.type !== 'compound') return null;
   const maxFade = Math.max(0, clip.duration / 2);
@@ -198,25 +212,25 @@ function CompoundAudioSection({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNo
       else c.volume = v;
     });
   return (
-    <Section title="Volume" id="compound-volume">
-      <SliderField label="Volume" value={volume} min={0} max={2} step={0.01} scale={100} suffix="%" defaultValue={1} disabled={clip.muted} onChange={setVolume} lead={<KeyframeButton clip={clip} ids={ids} props={['volume']} />} />
-      <Field label="Mute">
+    <Section title={t('Volume')} id="compound-volume">
+      <SliderField label={t('Volume')} value={volume} min={0} max={2} step={0.01} scale={100} suffix="%" defaultValue={1} disabled={clip.muted} onChange={setVolume} lead={<KeyframeButton clip={clip} ids={ids} props={['volume']} />} />
+      <Field label={t('Mute')}>
         <Toggle value={clip.muted} onChange={(v) => edit((c) => void (c.muted = v))} />
         {clip.muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
       </Field>
-      <SliderField label="Fade in" value={Math.min(clip.fadeIn, maxFade)} min={0} max={Math.min(10, maxFade)} step={0.05} precision={2} suffix="s" defaultValue={0} onChange={(v) => edit((c) => void (c.fadeIn = v))} />
-      <SliderField label="Fade out" value={Math.min(clip.fadeOut, maxFade)} min={0} max={Math.min(10, maxFade)} step={0.05} precision={2} suffix="s" defaultValue={0} onChange={(v) => edit((c) => void (c.fadeOut = v))} />
-      <p className="hint">Applies on top of the levels of the clips inside.</p>
+      <SliderField label={t('Fade in')} value={Math.min(clip.fadeIn, maxFade)} min={0} max={Math.min(10, maxFade)} step={0.05} precision={2} suffix="s" defaultValue={0} onChange={(v) => edit((c) => void (c.fadeIn = v))} />
+      <SliderField label={t('Fade out')} value={Math.min(clip.fadeOut, maxFade)} min={0} max={Math.min(10, maxFade)} step={0.05} precision={2} suffix="s" defaultValue={0} onChange={(v) => edit((c) => void (c.fadeOut = v))} />
+      <p className="hint">{t('Applies on top of the levels of the clips inside.')}</p>
     </Section>
   );
 }
 
 const sections: InspectorSectionDef[] = [
-  { id: 'time.speed', tab: 'speed', tabLabel: 'Speed', order: 10, applies: (c) => isMedia(c) && !c.freeze, Component: SpeedSection },
+  { id: 'time.speed', tab: 'speed', tabLabel: tk('Speed'), order: 10, applies: (c) => isMedia(c) && !c.freeze, Component: SpeedSection },
   { id: 'time.playback', tab: 'speed', order: 20, applies: (c) => isMedia(c) && !c.freeze, Component: PlaybackSection },
-  { id: 'time.freeze', tab: 'speed', tabLabel: 'Speed', order: 10, applies: (c) => c.type === 'video' && !!c.freeze, Component: FreezeSection },
+  { id: 'time.freeze', tab: 'speed', tabLabel: tk('Speed'), order: 10, applies: (c) => c.type === 'video' && !!c.freeze, Component: FreezeSection },
   { id: 'compound.panel', tab: 'edit', order: 5, applies: (c) => c.type === 'compound', Component: CompoundSection },
-  { id: 'compound.audio', tab: 'sound', tabLabel: 'Audio', order: 10, applies: (c) => c.type === 'compound', Component: CompoundAudioSection },
+  { id: 'compound.audio', tab: 'sound', tabLabel: tk('Audio'), order: 10, applies: (c) => c.type === 'compound', Component: CompoundAudioSection },
 ];
 
 export default sections;

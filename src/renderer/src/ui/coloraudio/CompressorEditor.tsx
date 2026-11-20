@@ -10,6 +10,7 @@ import { compressorReduction } from '@/engine/audio/ext/compressor';
 import { usePlayback } from '@/engine/engine';
 import { editClips } from '../actions';
 import { Select, SliderField } from '../common/controls';
+import { useT } from '../i18n';
 
 type MediaClip = VideoClip | AudioClip;
 
@@ -52,6 +53,7 @@ function TransferGraph({ s }: { s: CompressorSettings }): ReactNode {
 }
 
 function ReductionMeter({ clipId }: { clipId: ID }): ReactNode {
+  const t = useT();
   const fill = useRef<HTMLDivElement>(null);
   const label = useRef<HTMLSpanElement>(null);
   const playing = usePlayback((s) => s.playing);
@@ -73,7 +75,7 @@ function ReductionMeter({ clipId }: { clipId: ID }): ReactNode {
     return () => cancelAnimationFrame(raf);
   }, [playing, clipId]);
   return (
-    <div className="comp__gr" title="Gain reduction (dB)" data-gr="0">
+    <div className="comp__gr" title={t('Gain reduction (dB)')} data-gr="0">
       <div className="comp__gr-track">
         <div ref={fill} className="comp__gr-fill" />
         {[6, 12, 18].map((db) => (
@@ -89,6 +91,7 @@ function ReductionMeter({ clipId }: { clipId: ID }): ReactNode {
 }
 
 export function CompressorEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const s = sanitizeCompressor(clip.compressor ?? { ...DEFAULT_COMPRESSOR, enabled: false });
   const on = !!clip.compressor && clip.compressor.enabled !== false;
   const L = COMPRESSOR_LIMITS;
@@ -101,7 +104,7 @@ export function CompressorEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }):
         <div className="comp__side">
           <Select
             value=""
-            options={[{ value: '', label: 'Presets…' }, ...COMPRESSOR_PRESETS.map((p) => ({ value: p.id, label: p.name }))]}
+            options={[{ value: '', label: t('Presets…') }, ...COMPRESSOR_PRESETS.map((p) => ({ value: p.id, label: p.name }))]}
             onChange={(id) => {
               const p = getCompressorPreset(id);
               if (p) setCompressor(ids, p.settings);
@@ -114,11 +117,11 @@ export function CompressorEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }):
           </div>
         </div>
       </div>
-      <SliderField label="Threshold" value={s.threshold} min={L.threshold.min} max={L.threshold.max} step={0.5} precision={1} suffix="dB" defaultValue={DEFAULT_COMPRESSOR.threshold} onChange={(v) => edit({ threshold: v })} />
-      <SliderField label="Ratio" value={s.ratio} min={L.ratio.min} max={L.ratio.max} step={0.1} precision={1} suffix=":1" defaultValue={DEFAULT_COMPRESSOR.ratio} onChange={(v) => edit({ ratio: v })} />
-      <SliderField label="Attack" value={s.attack} min={0.0005} max={0.1} step={0.0005} scale={1000} precision={1} suffix="ms" defaultValue={DEFAULT_COMPRESSOR.attack} onChange={(v) => edit({ attack: v })} />
-      <SliderField label="Release" value={s.release} min={L.release.min} max={L.release.max} step={0.005} scale={1000} precision={0} suffix="ms" defaultValue={DEFAULT_COMPRESSOR.release} onChange={(v) => edit({ release: v })} />
-      <SliderField label="Make-up" value={s.makeup} min={L.makeup.min} max={L.makeup.max} step={0.1} precision={1} suffix="dB" defaultValue={DEFAULT_COMPRESSOR.makeup} onChange={(v) => edit({ makeup: v })} />
+      <SliderField label={t('Threshold')} value={s.threshold} min={L.threshold.min} max={L.threshold.max} step={0.5} precision={1} suffix="dB" defaultValue={DEFAULT_COMPRESSOR.threshold} onChange={(v) => edit({ threshold: v })} />
+      <SliderField label={t('Ratio')} value={s.ratio} min={L.ratio.min} max={L.ratio.max} step={0.1} precision={1} suffix=":1" defaultValue={DEFAULT_COMPRESSOR.ratio} onChange={(v) => edit({ ratio: v })} />
+      <SliderField label={t('Attack')} value={s.attack} min={0.0005} max={0.1} step={0.0005} scale={1000} precision={1} suffix="ms" defaultValue={DEFAULT_COMPRESSOR.attack} onChange={(v) => edit({ attack: v })} />
+      <SliderField label={t('Release')} value={s.release} min={L.release.min} max={L.release.max} step={0.005} scale={1000} precision={0} suffix="ms" defaultValue={DEFAULT_COMPRESSOR.release} onChange={(v) => edit({ release: v })} />
+      <SliderField label={t('Make-up')} value={s.makeup} min={L.makeup.min} max={L.makeup.max} step={0.1} precision={1} suffix="dB" defaultValue={DEFAULT_COMPRESSOR.makeup} onChange={(v) => edit({ makeup: v })} />
     </div>
   );
 }

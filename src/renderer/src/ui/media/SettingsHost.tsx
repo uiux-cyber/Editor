@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { create } from 'zustand';
 import { useUI } from '@/store/ui';
 import { Modal } from '../common/overlays';
+import { tMaybe, useT } from '../i18n';
 import mediaSections from '../settings/defs/media';
 
 const useHost = create<{ open: boolean; focus: string | null }>()(() => ({ open: false, focus: null }));
@@ -31,16 +32,17 @@ export function closeMediaSettings(): void {
 }
 
 export function MediaSettingsHost(): ReactNode {
+  const t = useT();
   const open = useHost((s) => s.open);
   const focus = useHost((s) => s.focus);
   if (!open) return null;
   const list = focus ? mediaSections.filter((s) => s.id === focus) : mediaSections;
   return (
     <div className="mx-settings-host">
-      <Modal title="Performance & media" subtitle="Proxies, background rendering and FFmpeg conversion" onClose={closeMediaSettings} width={620}>
+      <Modal title={t('Performance & media')} subtitle={t('Proxies, background rendering and FFmpeg conversion')} onClose={closeMediaSettings} width={620}>
         {list.map((s) => (
           <section key={s.id} data-settings-host-section={s.id}>
-            <h3>{s.title}</h3>
+            <h3>{tMaybe(s.title)}</h3>
             <s.Component />
           </section>
         ))}

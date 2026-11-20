@@ -1,0 +1,72 @@
+/* Library ▸ Motion and Inspector ▸ Motion clip */
+
+.motion-intro {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 2px 0 10px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.motion-intro svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.motion-tile {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.motion-tile:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+/* Clips are transparent: show them on a dark stage in either theme. */
+.motion-tile__thumb {
+  background:
+    radial-gradient(120% 120% at 50% 0%, #252834 0%, #12141a 70%),
+    #12141a;
+}
+.motion-tile__loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%) 0 0 / 200% 100%;
+  animation: motion-shimmer 1.2s linear infinite;
+}
+@keyframes motion-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.motion-tile__error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-tile__loading {
+    animation: none;
+  }
+}
+
+.motion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.motion-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

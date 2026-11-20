@@ -13,10 +13,12 @@ import { hdrInfoById, hdrPassthrough } from '@/engine/media/hdr';
 import { getProject, useProjectStore } from '@/store/project';
 import { Field, Section, Select, SliderField } from '../../../common/controls';
 import { editClips } from '../../../actions';
+import { useT } from '../../../i18n';
 import type { InspectorSectionDef, InspectorSectionProps } from '../index';
 import '../../../media/media.css';
 
 function HdrSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const asset = useProjectStore((s) => (clip.type === 'video' ? s.project.assets[clip.assetId] : undefined));
   if (clip.type !== 'video' || !asset?.hdr) return null;
   const tm: ToneMapSettings = { ...DEFAULT_TONE_MAP, ...clip.toneMap };
@@ -32,10 +34,10 @@ function HdrSection({ clip, ids }: InspectorSectionProps): ReactNode {
   const op = TONE_MAP_OPERATORS.find((o) => o.id === tm.operator);
   return (
     <Section
-      title="HDR tone mapping"
+      title={t('HDR tone mapping')}
       id="hdr"
       actions={
-        <button type="button" className="icon-btn icon-btn--sm" title="Reset to defaults" onClick={() => editClips(ids, (c) => c.type === 'video' && delete c.toneMap)}>
+        <button type="button" className="icon-btn icon-btn--sm" title={t('Reset to defaults')} onClick={() => editClips(ids, (c) => c.type === 'video' && delete c.toneMap)}>
           <RotateCcw size={12} />
         </button>
       }
@@ -44,13 +46,15 @@ function HdrSection({ clip, ids }: InspectorSectionProps): ReactNode {
         <span className="mt-badge mt-badge--hdr">HDR</span>
         {info?.transfer === 'hlg' ? 'HLG' : 'PQ (HDR10)'} · {info?.wideGamut === false ? 'BT.709' : 'BT.2020'} → SDR Rec.709
       </div>
-      {!hdrPassthrough() && <p className="hint">This PC's video decoder already converts HDR to SDR; these controls have no effect.</p>}
-      <Field label="Operator" title={op?.hint}>
+      {!hdrPassthrough() && <p className="hint">{t("This PC's video decoder already converts HDR to SDR; these controls have no effect.")}</p>}
+      <Field label={t('Operator')} title={op?.hint}>
         <Select value={tm.operator} onChange={(v) => edit({ operator: v })} options={TONE_MAP_OPERATORS.map((o) => ({ value: o.id, label: o.label }))} />
       </Field>
-      <SliderField label="Exposure" value={tm.exposure} min={-3} max={3} step={0.05} defaultValue={0} bipolar precision={2} suffix=" EV" onChange={(v) => edit({ exposure: v }, 'hdr-exposure')} />
-      <SliderField label="Peak (nits)" value={tm.peak} min={400} max={10000} step={50} defaultValue={1000} onChange={(v) => edit({ peak: v }, 'hdr-peak')} />
-      <p className="hint">{op?.hint}. The same mapping is used for the preview and the export.</p>
+      <SliderField label={t('Exposure')} value={tm.exposure} min={-3} max={3} step={0.05} defaultValue={0} bipolar precision={2} suffix=" EV" onChange={(v) => edit({ exposure: v }, 'hdr-exposure')} />
+      <SliderField label={t('Peak (nits)')} value={tm.peak} min={400} max={10000} step={50} defaultValue={1000} onChange={(v) => edit({ peak: v }, 'hdr-peak')} />
+      <p className="hint">
+        {op?.hint}. {t('The same mapping is used for the preview and the export.')}
+      </p>
     </Section>
   );
 }

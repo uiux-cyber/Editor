@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react';
 import { useProjectStore } from '@/store/project';
+import { formatNumber, useLocale } from '../i18n';
 import { timeToX } from '../timeline/geometry';
 import { DOWNBEAT_COLOR, isBeatMarker } from './beats';
 import { useSpeech } from './store';
@@ -12,6 +13,7 @@ export const SpeechTimelineOverlay = memo(function SpeechTimelineOverlay({ pps, 
   const silences = useSpeech((s) => s.silences);
   const fillers = useSpeech((s) => s.fillers);
   const markers = useProjectStore((s) => s.project.markers);
+  useLocale(); // decimal separator of the silence lengths
   const lo = viewLeft - 400;
   const hi = viewLeft + viewWidth + 400;
   const beats = markers.filter(isBeatMarker);
@@ -29,7 +31,7 @@ export const SpeechTimelineOverlay = memo(function SpeechTimelineOverlay({ pps, 
         if (x1 < lo || x0 > hi) return null;
         return (
           <span key={`s${r.start}`} className={`sp-silence ${silences.selected[i] ? 'is-on' : ''}`} style={{ left: x0, width: Math.max(2, x1 - x0) }}>
-            {x1 - x0 > 46 && <em>{(r.end - r.start).toFixed(1)}s</em>}
+            {x1 - x0 > 46 && <em>{formatNumber(r.end - r.start, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}s</em>}
           </span>
         );
       })}

@@ -6,6 +6,7 @@ import { FILTERS, getEffect, getFilter } from '@/library';
 import { useUI } from '@/store/ui';
 import { editVisual } from '../actions';
 import { ColorInput, Field, Section, Select, SliderField, Toggle } from '../common/controls';
+import { tk, tMaybe, useT } from '../i18n';
 import { ParamControls } from './shared';
 
 type ScalarKey = Exclude<keyof Grade, 'shadowTint' | 'highlightTint' | 'monoTint' | 'curves' | 'wheels'>;
@@ -22,28 +23,29 @@ interface SliderSpec {
 }
 
 const LIGHT: SliderSpec[] = [
-  { key: 'exposure', label: 'Exposure', min: -2, max: 2, precision: 2 },
-  { key: 'brightness', label: 'Brightness', min: -1, max: 1, scale: 100 },
-  { key: 'contrast', label: 'Contrast', min: -1, max: 1, scale: 100 },
-  { key: 'highlights', label: 'Highlights', min: -1, max: 1, scale: 100 },
-  { key: 'shadows', label: 'Shadows', min: -1, max: 1, scale: 100 },
-  { key: 'gamma', label: 'Midtones', min: -1, max: 1, scale: 100 },
+  { key: 'exposure', label: tk('Exposure'), min: -2, max: 2, precision: 2 },
+  { key: 'brightness', label: tk('Brightness'), min: -1, max: 1, scale: 100 },
+  { key: 'contrast', label: tk('Contrast'), min: -1, max: 1, scale: 100 },
+  { key: 'highlights', label: tk('Highlights'), min: -1, max: 1, scale: 100 },
+  { key: 'shadows', label: tk('Shadows'), min: -1, max: 1, scale: 100 },
+  { key: 'gamma', label: tk('Midtones'), min: -1, max: 1, scale: 100 },
 ];
 const COLOR: SliderSpec[] = [
-  { key: 'saturation', label: 'Saturation', min: -1, max: 1, scale: 100 },
-  { key: 'vibrance', label: 'Vibrance', min: -1, max: 1, scale: 100 },
-  { key: 'temperature', label: 'Temperature', min: -1, max: 1, scale: 100 },
-  { key: 'tint', label: 'Tint', min: -1, max: 1, scale: 100 },
-  { key: 'hue', label: 'Hue', min: -180, max: 180, suffix: '°' },
+  { key: 'saturation', label: tk('Saturation'), min: -1, max: 1, scale: 100 },
+  { key: 'vibrance', label: tk('Vibrance'), min: -1, max: 1, scale: 100 },
+  { key: 'temperature', label: tk('Temperature'), min: -1, max: 1, scale: 100 },
+  { key: 'tint', label: tk('Tint'), min: -1, max: 1, scale: 100 },
+  { key: 'hue', label: tk('Hue'), min: -180, max: 180, suffix: '°' },
 ];
 const DETAIL: SliderSpec[] = [
-  { key: 'fade', label: 'Fade', min: 0, max: 1, scale: 100 },
-  { key: 'sharpen', label: 'Sharpen', min: 0, max: 1, scale: 100 },
-  { key: 'vignette', label: 'Vignette', min: 0, max: 1, scale: 100 },
-  { key: 'grain', label: 'Grain', min: 0, max: 1, scale: 100 },
+  { key: 'fade', label: tk('Fade'), min: 0, max: 1, scale: 100 },
+  { key: 'sharpen', label: tk('Sharpen'), min: 0, max: 1, scale: 100 },
+  { key: 'vignette', label: tk('Vignette'), min: 0, max: 1, scale: 100 },
+  { key: 'grain', label: tk('Grain'), min: 0, max: 1, scale: 100 },
 ];
 
 export function AdjustTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   if (clip.type === 'audio') return null;
   const visual = clip as VisualClip;
   const g: Grade = { ...NEUTRAL_GRADE, ...(visual.adjust ?? {}) };
@@ -59,7 +61,7 @@ export function AdjustTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
     specs.map((s) => (
       <SliderField
         key={s.key}
-        label={s.label}
+        label={tMaybe(s.label)}
         value={g[s.key]}
         min={s.min}
         max={s.max}
@@ -75,11 +77,11 @@ export function AdjustTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
 
   return (
     <>
-      <Section title="Filter" id="filter">
-        <Field label="Look">
+      <Section title={t('Filter')} id="filter">
+        <Field label={t('Look')}>
           <Select
             value={filter?.id ?? ''}
-            options={[{ value: '', label: 'None' }, ...FILTERS.map((f) => ({ value: f.id, label: f.name }))]}
+            options={[{ value: '', label: t('None') }, ...FILTERS.map((f) => ({ value: f.id, label: f.name }))]}
             onChange={(id) =>
               editVisual(ids, (c) => {
                 if (id) c.filter = { id, intensity: c.filter?.intensity ?? 1 };
@@ -89,19 +91,19 @@ export function AdjustTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
           />
         </Field>
         {filter && filterDef && (
-          <SliderField label="Intensity" value={filter.intensity} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={1} onChange={(v) => editVisual(ids, (c) => c.filter && void (c.filter.intensity = v))} />
+          <SliderField label={t('Intensity')} value={filter.intensity} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={1} onChange={(v) => editVisual(ids, (c) => c.filter && void (c.filter.intensity = v))} />
         )}
         <button type="button" className="btn btn--sm btn--outline btn--block" onClick={() => useUI.getState().setLibraryTab('filters')}>
-          Browse all filters
+          {t('Browse all filters')}
         </button>
       </Section>
 
       <Section
-        title="Light"
+        title={t('Light', undefined, 'grade')}
         id="light"
         actions={
           dirty ? (
-            <button type="button" className="icon-btn icon-btn--sm" title="Reset all adjustments" onClick={() => editVisual(ids, (c) => void delete c.adjust)}>
+            <button type="button" className="icon-btn icon-btn--sm" title={t('Reset all adjustments')} onClick={() => editVisual(ids, (c) => void delete c.adjust)}>
               <RotateCcw size={12} />
             </button>
           ) : undefined
@@ -109,24 +111,24 @@ export function AdjustTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
       >
         {sliders(LIGHT)}
       </Section>
-      <Section title="Color" id="color">
+      <Section title={t('Color')} id="color">
         {sliders(COLOR)}
       </Section>
-      <Section title="Detail" id="detail">
+      <Section title={t('Detail')} id="detail">
         {sliders(DETAIL)}
       </Section>
-      <Section title="Color toning" id="toning" defaultOpen={g.shadowTintAmount > 0 || g.highlightTintAmount > 0 || g.mono > 0}>
-        <Field label="Shadows">
+      <Section title={t('Color toning')} id="toning" defaultOpen={g.shadowTintAmount > 0 || g.highlightTintAmount > 0 || g.mono > 0}>
+        <Field label={t('Shadows')}>
           <ColorInput value={g.shadowTint} onChange={(v) => setGrade('shadowTint', v.slice(0, 7))} />
         </Field>
-        <SliderField label="Amount" value={g.shadowTintAmount} min={0} max={1} step={0.01} scale={100} defaultValue={0} onChange={(v) => setGrade('shadowTintAmount', v)} />
-        <Field label="Highlights">
+        <SliderField label={t('Amount')} value={g.shadowTintAmount} min={0} max={1} step={0.01} scale={100} defaultValue={0} onChange={(v) => setGrade('shadowTintAmount', v)} />
+        <Field label={t('Highlights')}>
           <ColorInput value={g.highlightTint} onChange={(v) => setGrade('highlightTint', v.slice(0, 7))} />
         </Field>
-        <SliderField label="Amount" value={g.highlightTintAmount} min={0} max={1} step={0.01} scale={100} defaultValue={0} onChange={(v) => setGrade('highlightTintAmount', v)} />
-        <SliderField label="Monochrome" value={g.mono} min={0} max={1} step={0.01} scale={100} defaultValue={0} onChange={(v) => setGrade('mono', v)} />
+        <SliderField label={t('Amount')} value={g.highlightTintAmount} min={0} max={1} step={0.01} scale={100} defaultValue={0} onChange={(v) => setGrade('highlightTintAmount', v)} />
+        <SliderField label={t('Monochrome')} value={g.mono} min={0} max={1} step={0.01} scale={100} defaultValue={0} onChange={(v) => setGrade('mono', v)} />
         {g.mono > 0 && (
-          <Field label="Tone">
+          <Field label={t('Tone')}>
             <ColorInput value={g.monoTint} onChange={(v) => setGrade('monoTint', v.slice(0, 7))} />
           </Field>
         )}
@@ -136,6 +138,7 @@ export function AdjustTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
 }
 
 export function EffectsTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   if (clip.type === 'audio') return null;
   const visual = clip as VisualClip;
   // Effects are edited on the primary clip only: instances are not shared between clips.
@@ -150,8 +153,8 @@ export function EffectsTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
     <>
       {visual.effects.length === 0 && (
         <div className="empty">
-          <div className="empty__title">No effects yet</div>
-          <p>Pick an effect from the library to stylise {clip.type === 'adjustment' ? 'everything beneath this layer' : 'this clip'}.</p>
+          <div className="empty__title">{t('No effects yet')}</div>
+          <p>{clip.type === 'adjustment' ? t('Pick an effect from the library to stylise everything beneath this layer.') : t('Pick an effect from the library to stylise this clip.')}</p>
         </div>
       )}
       {visual.effects.map((fx, i) => {
@@ -160,35 +163,35 @@ export function EffectsTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
           <Section
             key={fx.uid}
             id={`fx-${fx.uid}`}
-            title={def?.name ?? 'Unavailable effect'}
+            title={def?.name ?? t('Unavailable effect')}
             actions={
               <>
-                <button type="button" className="icon-btn icon-btn--sm" title="Apply earlier" disabled={i === 0} onClick={() => move(i, -1)}>
+                <button type="button" className="icon-btn icon-btn--sm" title={t('Apply earlier')} disabled={i === 0} onClick={() => move(i, -1)}>
                   <ChevronUp size={13} />
                 </button>
-                <button type="button" className="icon-btn icon-btn--sm" title="Apply later" disabled={i === visual.effects.length - 1} onClick={() => move(i, 1)}>
+                <button type="button" className="icon-btn icon-btn--sm" title={t('Apply later')} disabled={i === visual.effects.length - 1} onClick={() => move(i, 1)}>
                   <ChevronDown size={13} />
                 </button>
-                <button type="button" className="icon-btn icon-btn--sm" title="Remove effect" onClick={() => editVisual(target, (c) => void c.effects.splice(i, 1))}>
+                <button type="button" className="icon-btn icon-btn--sm" title={t('Remove effect')} onClick={() => editVisual(target, (c) => void c.effects.splice(i, 1))}>
                   <Trash2 size={12} />
                 </button>
-                <Toggle value={fx.enabled} title="Enable effect" onChange={(v) => editVisual(target, (c) => c.effects[i] && void (c.effects[i].enabled = v))} />
+                <Toggle value={fx.enabled} title={t('Enable effect')} onChange={(v) => editVisual(target, (c) => c.effects[i] && void (c.effects[i].enabled = v))} />
               </>
             }
           >
             {def ? (
               <ParamControls defs={def.params} values={fx.params} onChange={(key, value) => editVisual(target, (c) => c.effects[i] && void (c.effects[i].params[key] = value))} />
             ) : (
-              <p className="hint">This effect is not available in this version of Kinora.</p>
+              <p className="hint">{t('This effect is not available in this version of Kinora.')}</p>
             )}
           </Section>
         );
       })}
       <div className="tab-footer">
         <button type="button" className="btn btn--outline btn--block" onClick={() => useUI.getState().setLibraryTab('effects')}>
-          <Plus size={14} /> Add an effect
+          <Plus size={14} /> {t('Add an effect')}
         </button>
-        {ids.length > 1 && <p className="hint">Effects are edited on one clip at a time.</p>}
+        {ids.length > 1 && <p className="hint">{t('Effects are edited on one clip at a time.')}</p>}
       </div>
     </>
   );

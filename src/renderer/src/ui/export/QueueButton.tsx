@@ -5,6 +5,7 @@ import { formatDuration } from '@/core/time';
 import { cancelAll, clearFinished, initExportQueue, setPreviewMode, useExportQueue } from '@/engine/export/queue';
 import { isBusy, isFinished, totalProgress } from '@/engine/export/queueState';
 import { Segmented } from '../common/controls';
+import { useT } from '../i18n';
 import { JobRow } from './JobRow';
 import { loadExportPrefs } from './prefs';
 import './export.css';
@@ -32,6 +33,7 @@ function Ring({ ratio, state }: { ratio: number; state: 'running' | 'done' | 'fa
 
 /** The queue popover, anchored under the title-bar button. */
 function QueuePopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () => void }): ReactNode {
+  const tr = useT();
   const jobs = useExportQueue((s) => s.jobs);
   const batch = useExportQueue((s) => s.batch);
   const previewMode = useExportQueue((s) => s.previewMode);
@@ -67,19 +69,25 @@ function QueuePopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () =>
   }, [anchor, onClose]);
 
   return createPortal(
-    <div className="xq-pop" ref={ref} role="dialog" aria-label="Export queue" style={{ top: pos.top, right: pos.right }}>
+    <div className="xq-pop" ref={ref} role="dialog" aria-label={tr('Export queue')} style={{ top: pos.top, right: pos.right }}>
       <div className="xq-pop__head">
-        <span className="xq-pop__title">Export queue</span>
+        <span className="xq-pop__title">{tr('Export queue')}</span>
         <span className="xq-pop__total">
-          {busy ? `${total.finished} of ${total.total} done · ${Math.round(total.ratio * 100)}%${total.eta > 1 ? ` · ${formatDuration(total.eta)} left` : ''}` : jobs.length ? `${jobs.length} export${jobs.length === 1 ? '' : 's'}` : ''}
+          {busy
+            ? total.eta > 1
+              ? tr('{done} of {total} done · {percent}% · {time} left', { done: total.finished, total: total.total, percent: Math.round(total.ratio * 100), time: formatDuration(total.eta) })
+              : tr('{done} of {total} done · {percent}%', { done: total.finished, total: total.total, percent: Math.round(total.ratio * 100) })
+            : jobs.length
+              ? tr('{count, plural, one {# export} other {# exports}}', { count: jobs.length })
+              : ''}
         </span>
         {busy ? (
           <button type="button" className="btn btn--sm btn--ghost" onClick={cancelAll}>
-            Cancel all
+            {tr('Cancel all')}
           </button>
         ) : (
           <button type="button" className="btn btn--sm btn--ghost" disabled={finished === 0} onClick={clearFinished}>
-            Clear finished
+            {tr('Clear finished')}
           </button>
         )}
       </div>
@@ -92,7 +100,7 @@ function QueuePopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () =>
       )}
       <div className="xq-pop__body">
         {jobs.length === 0 ? (
-          <div className="xq-pop__empty">No exports yet. Add one from the Export dialog.</div>
+          <div className="xq-pop__empty">{tr('No exports yet. Add one from the Export dialog.')}</div>
         ) : (
           <div className="xq-list">
             {jobs.map((j) => (
@@ -102,12 +110,12 @@ function QueuePopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () =>
         )}
       </div>
       <div className="xq-pop__foot">
-        <span title="Rendering the preview while exporting shares the GPU with the export.">Preview while exporting</span>
+        <span title={tr('Rendering the preview while exporting shares the GPU with the export.')}>{tr('Preview while exporting')}</span>
         <Segmented
           value={previewMode}
           options={[
-            { value: 'live', label: 'Live', title: 'Keep the preview playable while exports run' },
-            { value: 'paused', label: 'Paused (faster)', title: 'Pause the preview so exports finish sooner' },
+            { value: 'live', label: tr('Live'), title: tr('Keep the preview playable while exports run') },
+            { value: 'paused', label: tr('Paused (faster)'), title: tr('Pause the preview so exports finish sooner') },
           ]}
           onChange={setPreviewMode}
         />
@@ -119,6 +127,7 @@ function QueuePopover({ anchor, onClose }: { anchor: HTMLElement; onClose: () =>
 
 /** Title-bar entry point of the export queue: progress ring, total percentage and popover. */
 export function ExportQueueButton(): ReactNode {
+  const tr = useT();
   const jobs = useExportQueue((s) => s.jobs);
   const batch = useExportQueue((s) => s.batch);
   const [open, setOpen] = useState(false);
@@ -140,8 +149,9 @@ export function ExportQueueButton(): ReactNode {
   const batchJobs = jobs.filter((j) => j.batch === batch);
   const failed = batchJobs.some((j) => j.status === 'failed');
   const ringState = busy ? 'running' : failed ? 'failed' : batchJobs.some((j) => j.status === 'done') ? 'done' : 'idle';
-  const label = busy ? `${Math.round(total.ratio * 100)}%` : failed ? 'Failed' : ringState === 'done' ? 'Done' : 'Exports';
-  const title = busy ? `Exporting ${Math.min(total.total, total.finished + 1)} of ${total.total} — ${Math.round(total.ratio * 100)}%${total.eta > 1 ? `, ${formatDuration(total.eta)} left` : ''}` : 'Export queue';
+  const label = busy ? `${Math.round(total.ratio * 100)}%` : failed ? tr('Failed') : ringState === 'done' ? tr('Done') : tr('Exports');
+  const progress = { current: Math.min(total.total, total.finished + 1), total: total.total, percent: Math.round(total.ratio * 100), time: formatDuration(total.eta) };
+  const title = busy ? (total.eta > 1 ? tr('Exporting {current} of {total} — {percent}%, {time} left', progress) : tr('Exporting {current} of {total} — {percent}%', progress)) : tr('Export queue');
 
   return (
     <>

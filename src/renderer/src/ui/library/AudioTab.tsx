@@ -12,21 +12,23 @@ import { getProject, updateProject } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
 import { addSound } from '../actions';
 import { startDrag } from '../dnd';
+import { useT } from '../i18n';
 import { Chips, SearchBox, labelOf, unique } from './common';
 import { importFiles } from './MediaTab';
 
 function SoundRow({ def, playing, onToggle }: { def: SoundDef; playing: boolean; onToggle: () => void }): ReactNode {
+  const t = useT();
   const duration = soundAssetDuration(def);
   return (
     <div
       className={`sound-row ${playing ? 'is-playing' : ''}`}
-      title="Click + to add at the playhead, or drag to the timeline"
+      title={t('Click + to add at the playhead, or drag to the timeline')}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('button')) return;
         startDrag(e, { kind: 'sound', soundId: def.id, duration }, def.name);
       }}
     >
-      <button type="button" className="sound-row__play" onClick={onToggle} title={playing ? 'Stop' : 'Preview'}>
+      <button type="button" className="sound-row__play" onClick={onToggle} title={playing ? t('Stop') : t('Preview')}>
         {playing ? <Pause size={13} /> : <Play size={13} />}
       </button>
       <div className="sound-row__body">
@@ -34,15 +36,15 @@ function SoundRow({ def, playing, onToggle }: { def: SoundDef; playing: boolean;
         <div className="sound-row__meta">
           <span className="mono">{formatDuration(Math.max(1, duration))}</span>
           {def.loop && (
-            <span title="Seamless loop">
-              <Repeat size={10} /> loop
+            <span title={t('Seamless loop')}>
+              <Repeat size={10} /> {t('loop')}
             </span>
           )}
           {def.bpm && <span>{def.bpm} BPM</span>}
           <span>{labelOf(def.category)}</span>
         </div>
       </div>
-      <button type="button" className="icon-btn icon-btn--sm" onClick={() => void addSound(def.id)} title="Add at the playhead">
+      <button type="button" className="icon-btn icon-btn--sm" onClick={() => void addSound(def.id)} title={t('Add at the playhead')}>
         <Plus size={14} />
       </button>
     </div>
@@ -51,6 +53,7 @@ function SoundRow({ def, playing, onToggle }: { def: SoundDef; playing: boolean;
 
 /** Record the microphone while the timeline plays, then drop the take at the start position. */
 function VoiceoverButton(): ReactNode {
+  const t = useT();
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const session = useRef<{ recorder: MediaRecorder; stream: MediaStream; chunks: Blob[]; startTime: number; timer: number } | null>(null);
@@ -62,7 +65,7 @@ function VoiceoverButton(): ReactNode {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
     } catch {
-      toast('error', 'Microphone unavailable', 'Check that a microphone is connected and allowed in Windows privacy settings.');
+      toast('error', t('Microphone unavailable'), t('Check that a microphone is connected and allowed in Windows privacy settings.'));
       return;
     }
     const recorder = new MediaRecorder(stream);
@@ -98,10 +101,10 @@ function VoiceoverButton(): ReactNode {
           id = clip.id;
         });
         if (id) useUI.getState().select([id]);
-        toast('success', 'Voiceover added to the timeline');
+        toast('success', t('Voiceover added to the timeline'));
       } catch (err) {
         console.error(err);
-        toast('error', 'The recording could not be saved');
+        toast('error', t('The recording could not be saved'));
       }
     };
     session.current = { recorder, stream, chunks, startTime, timer };
@@ -123,12 +126,12 @@ function VoiceoverButton(): ReactNode {
   );
 
   return recording ? (
-    <button type="button" className="btn btn--danger btn--sm" onClick={stop} title="Stop recording">
+    <button type="button" className="btn btn--danger btn--sm" onClick={stop} title={t('Stop recording')}>
       <Square size={11} fill="currentColor" /> <span className="mono">{formatDuration(elapsed)}</span>
     </button>
   ) : (
-    <button type="button" className="btn btn--outline btn--sm" onClick={() => void start()} title="Record a voiceover from the playhead">
-      <Mic size={13} /> Record
+    <button type="button" className="btn btn--outline btn--sm" onClick={() => void start()} title={t('Record a voiceover from the playhead')}>
+      <Mic size={13} /> {t('Record')}
     </button>
   );
 }
@@ -136,6 +139,7 @@ function VoiceoverButton(): ReactNode {
 const ORDER: SoundCategory[] = ['music', 'whoosh', 'impact', 'riser', 'ui', 'notification', 'glitch', 'cartoon', 'ambience'];
 
 export function AudioTab(): ReactNode {
+  const t = useT();
   const [category, setCategory] = useState<SoundCategory | 'all'>('all');
   const [search, setSearch] = useState('');
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -165,17 +169,17 @@ export function AudioTab(): ReactNode {
   return (
     <div className="lib">
       <header className="lib__head">
-        <h3>Audio</h3>
+        <h3>{t('Audio')}</h3>
         <VoiceoverButton />
       </header>
       <div className="lib__search">
-        <SearchBox value={search} onChange={setSearch} placeholder="Search sounds & music" />
+        <SearchBox value={search} onChange={setSearch} placeholder={t('Search sounds & music')} />
       </div>
-      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: 'All' }, ...categories.map((c) => ({ value: c, label: c === 'ui' ? 'Interface' : labelOf(c) }))]} />
+      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: t('All') }, ...categories.map((c) => ({ value: c, label: c === 'ui' ? 'Interface' : labelOf(c) }))]} />
       <div className="lib__scroll">
         {list.length === 0 ? (
           <div className="empty">
-            <div className="empty__title">No sounds found</div>
+            <div className="empty__title">{t('No sounds found')}</div>
           </div>
         ) : (
           <div className="sound-list">
@@ -184,7 +188,7 @@ export function AudioTab(): ReactNode {
             ))}
           </div>
         )}
-        <p className="lib__note">Every sound is synthesised by Kinora — royalty-free for any use. Import your own music from the Media tab.</p>
+        <p className="lib__note">{t('Every sound is synthesised by Kinora — royalty-free for any use. Import your own music from the Media tab.')}</p>
       </div>
     </div>
   );

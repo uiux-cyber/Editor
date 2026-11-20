@@ -14,6 +14,7 @@ import { engine, usePlayback } from '@/engine/engine';
 import { useProjectStore } from '@/store/project';
 import { useElementSize } from '../common/controls';
 import { openContextMenu } from '../common/overlays';
+import { useT } from '../i18n';
 import { setClipSpeed } from './timeActions';
 import './time.css';
 
@@ -50,6 +51,7 @@ export function CurveThumb({ points, width = 64, height = 26 }: { points: CurveP
 }
 
 export function SpeedCurve({ clip, ids }: { clip: VideoClip | AudioClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const [boxRef, size] = useElementSize<HTMLDivElement>();
   const svgRef = useRef<SVGSVGElement>(null);
   const time = usePlayback((s) => s.time);
@@ -187,8 +189,8 @@ export function SpeedCurve({ clip, ids }: { clip: VideoClip | AudioClip; ids: ID
                 e.stopPropagation();
                 setActive(i);
                 openContextMenu(e, [
-                  { label: 'Remove point', icon: <Minus size={14} />, disabled: i === 0 || i === points.length - 1, run: () => removePoint(i) },
-                  { label: 'Set to 1×', run: () => commitPoints(points.map((q, k) => (k === i ? { ...q, v: 1 } : q)), false) },
+                  { label: t('Remove point'), icon: <Minus size={14} />, disabled: i === 0 || i === points.length - 1, run: () => removePoint(i) },
+                  { label: t('Set to 1×'), run: () => commitPoints(points.map((q, k) => (k === i ? { ...q, v: 1 } : q)), false) },
                 ]);
               }}
             >
@@ -207,17 +209,17 @@ export function SpeedCurve({ clip, ids }: { clip: VideoClip | AudioClip; ids: ID
         })}
       </svg>
       <div className="speed-curve__bar">
-        <button type="button" className="btn btn--sm btn--ghost" title="Add a point at the playhead" disabled={!(uPlay > 0.02 && uPlay < 0.98)} onClick={() => addPointAt(uPlay)}>
-          <Plus size={13} /> Point
+        <button type="button" className="btn btn--sm btn--ghost" title={t('Add a point at the playhead')} disabled={!(uPlay > 0.02 && uPlay < 0.98)} onClick={() => addPointAt(uPlay)}>
+          <Plus size={13} /> {t('Point')}
         </button>
-        <button type="button" className="btn btn--sm btn--ghost" title="Remove the selected point" disabled={active === null || active === 0 || active === points.length - 1} onClick={() => active !== null && removePoint(active)}>
-          <Minus size={13} /> Point
+        <button type="button" className="btn btn--sm btn--ghost" title={t('Remove the selected point')} disabled={active === null || active === 0 || active === points.length - 1} onClick={() => active !== null && removePoint(active)}>
+          <Minus size={13} /> {t('Point')}
         </button>
-        <span className="speed-curve__readout mono">{active !== null && points[active] ? `${formatSpeed(points[active].v)} at ${Math.round(points[active].u * 100)}%` : 'Double-click to add'}</span>
+        <span className="speed-curve__readout mono">{active !== null && points[active] ? t('{speed} at {percent}%', { speed: formatSpeed(points[active].v), percent: Math.round(points[active].u * 100) }) : t('Double-click to add')}</span>
         <button
           type="button"
           className="icon-btn icon-btn--sm"
-          title="Flatten the curve at 1×"
+          title={t('Flatten the curve at 1×')}
           onClick={() => {
             commitPoints(
               points.map((p) => ({ ...p, v: 1 })),

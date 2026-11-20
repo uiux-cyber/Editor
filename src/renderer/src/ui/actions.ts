@@ -40,6 +40,7 @@ import { getEffect, getFilter, getGenerator, getSticker, getTextPreset, getTrans
 import type { TemplateVariation } from '@/library/templateEngine';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { t } from './i18n';
 import { TRACK_SIZES, clampTrackHeight, type TrackSize } from './timeline/geometry';
 import { applyTemplateVariation } from './templates/apply';
 
@@ -257,7 +258,7 @@ export async function addSound(soundId: string, where: Placement = {}): Promise<
     const asset = await addSoundAsset(soundId);
     return commitNew((p) => place(p, makeAudio(p.assets[asset.id] ?? asset), where, 'audio'), 'Add sound');
   } catch (err) {
-    toast('error', 'Could not add the sound', (err as Error).message);
+    toast('error', t('Could not add the sound'), (err as Error).message);
     return [];
   }
 }
@@ -321,7 +322,7 @@ export function addTransition(type: string, fromId?: ID, toId?: ID): boolean {
     pair ??= nearestCut(project, engine.time);
   }
   if (!pair || !pair.from || !pair.to) {
-    toast('info', 'Transitions go between two clips', 'Place two clips side by side on the same track, then add a transition.');
+    toast('info', t('Transitions go between two clips'), t('Place two clips side by side on the same track, then add a transition.'));
     return false;
   }
   let id: ID | null = null;
@@ -352,7 +353,7 @@ export function applyEffect(effectId: string, clipId?: ID): void {
   const targets = clipId ? [clipId] : selectedClips().filter((c) => c.type !== 'audio').map((c) => c.id);
   if (targets.length === 0) {
     addAdjustment({}, { effectId });
-    toast('info', `${def.name} added as an adjustment layer`, 'It affects everything beneath it. Select a clip first to apply an effect to that clip only.');
+    toast('info', t('{name} added as an adjustment layer', { name: def.name }), t('It affects everything beneath it. Select a clip first to apply an effect to that clip only.'));
     return;
   }
   updateProject(
@@ -372,7 +373,7 @@ export function applyFilter(filterId: string | null, clipId?: ID): void {
     if (!filterId) return;
     const def = getFilter(filterId);
     addAdjustment({}, { filterId });
-    if (def) toast('info', `${def.name} added as an adjustment layer`, 'It grades everything beneath it. Select a clip first to filter that clip only.');
+    if (def) toast('info', t('{name} added as an adjustment layer', { name: def.name }), t('It grades everything beneath it. Select a clip first to filter that clip only.'));
     return;
   }
   updateProject(
@@ -425,7 +426,7 @@ export function splitAtPlayhead(): void {
     (c) => !lockedTracks.has(c.trackId) && time > c.start + 1e-6 && time < clipEnd(c) - 1e-6,
   );
   if (candidates.length === 0) {
-    toast('info', 'Nothing to split here', 'Move the playhead over a clip first.');
+    toast('info', t('Nothing to split here'), t('Move the playhead over a clip first.'));
     return;
   }
   let created: ID[] = [];
@@ -586,7 +587,7 @@ export function detachAudioFromSelection(): void {
     { label: 'Detach audio' },
   );
   if (made.length) useUI.getState().select([...clips.map((c) => c.id), ...made]);
-  else toast('info', 'Nothing to detach', 'The selected clips have no sound, or it is already on its own clip.');
+  else toast('info', t('Nothing to detach'), t('The selected clips have no sound, or it is already on its own clip.'));
 }
 
 /** Change clip speed, keeping the in-point and clamping to the available media. */
@@ -646,7 +647,7 @@ export function tidyTracks(): void {
 export function groupSelection(): void {
   const ids = useUI.getState().selection.filter((id) => getProject().clips[id]);
   if (ids.length < 2) {
-    toast('info', 'Select two or more clips to group them', 'Shift-click the clips or drag a box around them first.');
+    toast('info', t('Select two or more clips to group them'), t('Shift-click the clips or drag a box around them first.'));
     return;
   }
   updateProject((p) => void groupClips(p, ids), { label: 'Group clips' });
@@ -661,7 +662,7 @@ export function ungroupSelection(): void {
 export function linkSelection(): void {
   const ids = useUI.getState().selection.filter((id) => getProject().clips[id]);
   if (ids.length < 2) {
-    toast('info', 'Select two or more clips to link them', 'Linked clips select, move, trim, split and delete together.');
+    toast('info', t('Select two or more clips to link them'), t('Linked clips select, move, trim, split and delete together.'));
     return;
   }
   updateProject((p) => void linkClips(p, ids), { label: 'Link clips' });

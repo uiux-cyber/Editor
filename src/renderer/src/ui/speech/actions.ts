@@ -33,7 +33,11 @@ import { api } from '@/platform/api';
 import type { FileInfo } from '@shared/ipc';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { formatNumber, t, tk, tMaybe } from '../i18n';
 import { speechPrefs, useSpeech, type JobKind, type Scope } from './store';
+
+/** A number with a fixed count of decimals in the interface language ("12.3", "12,3"). */
+export const fixed = (n: number, digits: number): string => formatNumber(n, { minimumFractionDigits: digits, maximumFractionDigits: digits, useGrouping: false });
 
 // ---------------------------------------------------------------------------------------------
 // Jobs
@@ -49,11 +53,14 @@ let jobCounter = 1;
 const isCancel = (err: unknown): boolean =>
   err instanceof TranscriptionCancelled || err instanceof ExtractCancelled || err instanceof DspCancelled || (err instanceof DOMException && err.name === 'AbortError');
 
-/** Run long work as the (single) speech job: progress, cancel, taskbar progress and toasts. */
+/**
+ * Run long work as the (single) speech job: progress, cancel, taskbar progress and toasts.
+ * `label` is English marked with tk(); it is translated where it is shown.
+ */
 export async function runJob<T>(kind: JobKind, label: string, fn: (ctl: JobControl) => Promise<T>): Promise<T | null> {
   const current = useSpeech.getState().job;
   if (current) {
-    toast('info', `${current.label} is still running`, 'Wait for it to finish or cancel it first.');
+    toast('info', t('{label} is still running', { label: tMaybe(current.label) }), t('Wait for it to finish or cancel it first.'));
     return null;
   }
   const controller = new AbortController();
@@ -74,10 +81,10 @@ export async function runJob<T>(kind: JobKind, label: string, fn: (ctl: JobContr
   try {
     return await fn({ signal: controller.signal, progress });
   } catch (err) {
-    if (isCancel(err) || controller.signal.aborted) toast('info', `${label} cancelled`);
+    if (isCancel(err) || controller.signal.aborted) toast('info', t('{label} cancelled', { label: tMaybe(label) }));
     else {
       console.warn(`[speech] ${kind} failed`, err);
-      toast('error', `${label} failed`, err instanceof Error ? err.message : String(err));
+      toast('error', t('{label} failed', { label: tMaybe(label) }), err instanceof Error ? err.message : String(err));
     }
     return null;
   } finally {
@@ -140,7 +147,7 @@ export async function transcribeScope(scope: Scope, ctl: JobControl, share = 1, 
   const p = getProject();
   const prefs = speechPrefs();
   const clips = scope === 'selection' ? selectedSoundClips(p) : null;
-  if (scope === 'timeline' && !hasTimelineAudio(p)) throw new Error('The timeline has no sound to transcribe.');
+  if (scope === 'timeline' && !hasTimelineAudio(p)) throw new Error(t('The timeline has no sound to transcribe.'));
   const key = `${scope}|${prefs.language}|${scopeSignature(p, clips)}`;
   const trackIds = clips ? [...linkedTrackIds(p, clips.map((c) => c.id))] : p.tracks.filter((t) => !t.locked).map((t) => t.id);
   const cached = useSpeech.getState().transcripts.find((t) => t.key === key);
@@ -156,19 +163,19 @@ export async function transcribeScope(scope: Scope, ctl: JobControl, share = 1, 
   let device = '';
   const pieces: { start: number; duration: number; get: () => Promise<Float32Array> }[] = clips
     ? clips.map((c) => ({ start: c.start, duration: c.duration, get: async () => (await decodeClip(p, c, { sampleRate: 16000, channels: 1, signal: ctl.signal })).channels[0] }))
-    : [{ start: 0, duration: projectDuration(p), get: async () => (await mixTimeline(p, 0, projectDuration(p), { sampleRate: 16000, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress(base + share * 0.1 * r, 'Mixing the timeline sound…') })).channels[0] }];
+    : [{ start: 0, duration: projectDuration(p), get: async () => (await mixTimeline(p, 0, projectDuration(p), { sampleRate: 16000, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress(base + share * 0.1 * r, t('Mixing the timeline sound…')) })).channels[0] }];
   const total = pieces.reduce((s, x) => s + x.duration, 0) || 1;
   let done = 0;
   for (const piece of pieces) {
     const w = piece.duration / total;
-    ctl.progress(base + share * done, 'Reading audio…');
+    ctl.progress(base + share * done, t('Reading audio…'));
     const audio = await piece.get();
     const res = await transcribe(audio, {
       language: prefs.language,
       device: prefs.device,
       signal: ctl.signal,
-      onLoading: (r) => ctl.progress(base + share * done, `Loading the speech model… ${Math.round(r * 100)}%`),
-      onProgress: (r) => ctl.progress(base + share * (done + w * (0.1 + 0.9 * r)), 'Transcribing…'),
+      onLoading: (r) => ctl.progress(base + share * done, t('Loading the speech model… {percent}%', { percent: Math.round(r * 100) })),
+      onProgress: (r) => ctl.progress(base + share * (done + w * (0.1 + 0.9 * r)), t('Transcribing…')),
     });
     // Trimmed tokens with punctuation attached to its word ("Um," not " Um" + ",").
     for (const word of cleanWords(res.words)) words.push({ text: word.text, start: piece.start + word.start, end: piece.start + word.end });
@@ -193,10 +200,10 @@ export function captionMaxChars(p: Project = getProject()): number {
 /** Transcribe and add captions to the captions track. Resolves with the number of captions. */
 export function autoCaptions(scope: Scope): Promise<number | null> {
   const used = effectiveScope(scope);
-  return runJob('captions', 'Auto captions', async (ctl) => {
+  return runJob('captions', tk('Auto captions'), async (ctl) => {
     const { words, language } = await transcribeScope(used, ctl, 0.95);
     if (words.length === 0) {
-      toast('info', 'No speech was found', used === 'selection' ? 'The selected clips seem to have no spoken words.' : 'The timeline seems to have no spoken words.');
+      toast('info', t('No speech was found'), used === 'selection' ? t('The selected clips seem to have no spoken words.') : t('The timeline seems to have no spoken words.'));
       return 0;
     }
     const prefs = speechPrefs();
@@ -211,7 +218,11 @@ export function autoCaptions(scope: Scope): Promise<number | null> {
     });
     ctl.progress(1);
     const run = useSpeech.getState().lastRun;
-    toast('success', `Added ${ids.length} caption${ids.length === 1 ? '' : 's'}`, `${languageName(language)}${run ? ` · ${run.audioSeconds.toFixed(0)} s of audio in ${run.seconds.toFixed(1)} s` : ''}`);
+    toast(
+      'success',
+      t('{count, plural, one {Added # caption} other {Added # captions}}', { count: ids.length }),
+      run ? t('{language} · {audio} s of audio in {seconds} s', { language: languageName(language), audio: fixed(run.audioSeconds, 0), seconds: fixed(run.seconds, 1) }) : languageName(language),
+    );
     return ids.length;
   });
 }
@@ -303,7 +314,7 @@ export async function importSubtitles(testPath?: string): Promise<number | null>
     if (!file) return null;
     const cues = parseSubtitles(file.text);
     if (cues.length === 0) {
-      toast('error', 'No captions found', `"${file.name}" does not contain SRT or WebVTT cues.`);
+      toast('error', t('No captions found'), t('"{name}" does not contain SRT or WebVTT cues.', { name: file.name }));
       return 0;
     }
     const prefs = speechPrefs();
@@ -311,10 +322,10 @@ export async function importSubtitles(testPath?: string): Promise<number | null>
     updateProject((p) => {
       ids = placeCaptions(p, cues, { presetId: prefs.captionPreset, position: prefs.captionPosition, replace: prefs.replaceCaptions });
     });
-    toast('success', `Imported ${ids.length} caption${ids.length === 1 ? '' : 's'}`, file.name);
+    toast('success', t('{count, plural, one {Imported # caption} other {Imported # captions}}', { count: ids.length }), file.name);
     return ids.length;
   } catch (err) {
-    toast('error', 'Could not import captions', err instanceof Error ? err.message : String(err));
+    toast('error', t('Could not import captions'), err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -324,17 +335,17 @@ export async function exportSubtitles(format: 'srt' | 'vtt'): Promise<string | n
   const range = p.inPoint !== undefined && p.outPoint !== undefined && p.outPoint > p.inPoint ? { start: p.inPoint, end: p.outPoint } : undefined;
   const cues = collectCaptionCues(p, range);
   if (cues.length === 0) {
-    toast('info', 'There are no captions to export', 'Add captions with Auto captions or import a subtitle file first.');
+    toast('info', t('There are no captions to export'), t('Add captions with Auto captions or import a subtitle file first.'));
     return null;
   }
   try {
     const path = await api.call<string | null>('x:speech:saveSubtitles', p.name || 'captions', format, format === 'vtt' ? toVtt(cues) : toSrt(cues));
     if (path) {
-      useUI.getState().toast({ kind: 'success', message: `Exported ${cues.length} captions`, detail: path, action: { label: 'Show', run: () => void api.app.showItemInFolder(path) } });
+      useUI.getState().toast({ kind: 'success', message: t('{count, plural, one {Exported # caption} other {Exported # captions}}', { count: cues.length }), detail: path, action: { label: t('Show'), run: () => void api.app.showItemInFolder(path) } });
     }
     return path;
   } catch (err) {
-    toast('error', 'Could not export captions', err instanceof Error ? err.message : String(err));
+    toast('error', t('Could not export captions'), err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -380,11 +391,11 @@ export function previewRange(start: number, end: number, lead = 0.8, tail = 0.6)
 
 export function findFillers(scope: Scope): Promise<number | null> {
   const used = effectiveScope(scope);
-  return runJob('fillers', 'Filler word search', async (ctl) => {
+  return runJob('fillers', tk('Filler word search'), async (ctl) => {
     const { words, trackIds } = await transcribeScope(used, ctl);
     const candidates = detectFillers(words);
     useSpeech.getState().set({ fillers: { words, candidates, selected: candidates.map((c) => c.confidence >= 0.6), scope: used, trackIds } });
-    if (candidates.length === 0) toast('info', 'No filler words found', words.length ? `Checked ${words.length} words.` : 'No speech was found.');
+    if (candidates.length === 0) toast('info', t('No filler words found'), words.length ? t('{count, plural, one {Checked # word.} other {Checked # words.}}', { count: words.length }) : t('No speech was found.'));
     return candidates.length;
   });
 }
@@ -405,7 +416,7 @@ export function removeSelectedFillers(): void {
   });
   useSpeech.getState().set({ fillers: null, transcripts: [] });
   useUI.getState().clearSelection();
-  toast('success', `Removed ${ranges.length} filler word${ranges.length === 1 ? '' : 's'}`, `${removed.toFixed(1)} s shorter`);
+  toast('success', t('{count, plural, one {Removed # filler word} other {Removed # filler words}}', { count: ranges.length }), t('{seconds} s shorter', { seconds: fixed(removed, 1) }));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -414,7 +425,7 @@ export function removeSelectedFillers(): void {
 
 export function detectSilence(scope: Scope): Promise<number | null> {
   const used = effectiveScope(scope);
-  return runJob('silence', 'Silence detection', async (ctl) => {
+  return runJob('silence', tk('Silence detection'), async (ctl) => {
     const p = getProject();
     const prefs = speechPrefs();
     const opts = { thresholdDb: prefs.silenceThreshold, minDuration: prefs.silenceMin, padding: prefs.silencePadding };
@@ -426,22 +437,22 @@ export function detectSilence(scope: Scope): Promise<number | null> {
       const total = clips.reduce((s, c) => s + c.duration, 0) || 1;
       let done = 0;
       for (const c of clips) {
-        const audio = await decodeClip(p, c, { sampleRate: 16000, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress((done + r * c.duration * 0.8) / total, 'Reading audio…') });
+        const audio = await decodeClip(p, c, { sampleRate: 16000, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress((done + r * c.duration * 0.8) / total, t('Reading audio…')) });
         const found = await analyseSilence(audio.channels[0], 16000, opts, ctl.signal);
         ranges.push(...found.map((r) => ({ start: c.start + r.start, end: Math.min(clipEnd(c), c.start + r.end) })));
         done += c.duration;
       }
     } else {
-      if (!hasTimelineAudio(p)) throw new Error('The timeline has no sound to analyse.');
-      trackIds = p.tracks.filter((t) => !t.locked).map((t) => t.id);
+      if (!hasTimelineAudio(p)) throw new Error(t('The timeline has no sound to analyse.'));
+      trackIds = p.tracks.filter((tr) => !tr.locked).map((tr) => tr.id);
       const end = projectDuration(p);
-      const audio = await mixTimeline(p, 0, end, { sampleRate: 16000, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.9, 'Reading audio…') });
+      const audio = await mixTimeline(p, 0, end, { sampleRate: 16000, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.9, t('Reading audio…')) });
       ranges = await analyseSilence(audio.channels[0], 16000, opts, ctl.signal);
     }
     ranges = ranges.filter((r) => r.end - r.start > 0.05).sort((a, b) => a.start - b.start);
     useSpeech.getState().set({ silences: { ranges, selected: ranges.map(() => true), scope: used, trackIds } });
     ctl.progress(1);
-    if (ranges.length === 0) toast('info', 'No silences found', 'Try a higher threshold or a shorter minimum length.');
+    if (ranges.length === 0) toast('info', t('No silences found'), t('Try a higher threshold or a shorter minimum length.'));
     return ranges.length;
   });
 }
@@ -457,7 +468,7 @@ export function removeSelectedSilences(): void {
   });
   useSpeech.getState().set({ silences: null, transcripts: [] });
   useUI.getState().clearSelection();
-  toast('success', `Removed ${ranges.length} silence${ranges.length === 1 ? '' : 's'}`, `${removed.toFixed(1)} s shorter`);
+  toast('success', t('{count, plural, one {Removed # silence} other {Removed # silences}}', { count: ranges.length }), t('{seconds} s shorter', { seconds: fixed(removed, 1) }));
 }
 
 export const selectedLength = (ranges: TimeRange[], selected: boolean[]): number => rangesLength(ranges.filter((_, i) => selected[i]));
@@ -475,20 +486,21 @@ export function musicClipForBeats(p: Project = getProject()): SoundClip | null {
 }
 
 export function detectBeatsFor(clipId?: ID, beatsPerBar = 4): Promise<{ bpm: number; beats: number } | null> {
-  return runJob('beats', 'Beat detection', async (ctl) => {
+  return runJob('beats', tk('Beat detection'), async (ctl) => {
     const p = getProject();
     const clip = clipId ? (p.clips[clipId] as SoundClip | undefined) : musicClipForBeats(p);
-    if (!clip || (clip.type !== 'audio' && clip.type !== 'video')) throw new Error('Select a music clip first.');
-    const audio = await decodeClip(p, clip, { sampleRate: 22050, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.6, 'Reading audio…') });
-    ctl.progress(0.65, 'Finding the beat…');
+    if (!clip || (clip.type !== 'audio' && clip.type !== 'video')) throw new Error(t('Select a music clip first.'));
+    const audio = await decodeClip(p, clip, { sampleRate: 22050, channels: 1, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.6, t('Reading audio…')) });
+    ctl.progress(0.65, t('Finding the beat…'));
     const res = await analyseBeats(audio.channels[0], 22050, { beatsPerBar }, ctl.signal);
-    if (res.beats.length < 2) throw new Error('No steady beat was found in this clip.');
+    if (res.beats.length < 2) throw new Error(t('No steady beat was found in this clip.'));
     const down = new Set(res.downbeats.map((d) => d.toFixed(4)));
     updateProject((draft) => {
       const fps = draft.settings.fps;
       const a = clip.start;
       const b = clipEnd(clip);
       // Replace earlier beat markers in this clip's range; keep the user's own markers.
+      // Marker labels ("Beat", "Bar 3") stay English: they are saved and isBeatMarker() matches them.
       draft.markers = draft.markers.filter((m) => !(isBeatMarker(m) && m.time >= a - 1e-6 && m.time <= b + 1e-6));
       let bar = 0;
       for (const t of res.beats) {
@@ -502,7 +514,7 @@ export function detectBeatsFor(clipId?: ID, beatsPerBar = 4): Promise<{ bpm: num
       draft.markers.sort((x, y) => x.time - y.time);
     });
     ctl.progress(1);
-    toast('success', `${Math.round(res.bpm)} BPM · ${res.beats.length} beats`, `${res.downbeats.length} bars marked on the timeline.`);
+    toast('success', t('{bpm} BPM · {count, plural, one {# beat} other {# beats}}', { bpm: Math.round(res.bpm), count: res.beats.length }), t('{count, plural, one {# bar marked on the timeline.} other {# bars marked on the timeline.}}', { count: res.downbeats.length }));
     return { bpm: res.bpm, beats: res.beats.length };
   });
 }
@@ -529,11 +541,11 @@ export function splitAtBeats(unit: 'beat' | 'bar'): number {
   const beats = beatTimes(unit, p);
   const clips = visualSelection(p);
   if (!beats.length) {
-    toast('info', 'Detect the beat first', 'Run Beat detection on a music clip to place beat markers.');
+    toast('info', t('Detect the beat first'), t('Run Beat detection on a music clip to place beat markers.'));
     return 0;
   }
   if (!clips.length) {
-    toast('info', 'Select the clips to cut', 'Select one or more video or image clips on the timeline.');
+    toast('info', t('Select the clips to cut'), t('Select one or more video or image clips on the timeline.'));
     return 0;
   }
   let cuts = 0;
@@ -553,8 +565,8 @@ export function splitAtBeats(unit: 'beat' | 'bar'): number {
       }
     }
   });
-  if (cuts) toast('success', `Cut at ${cuts} ${unit === 'bar' ? 'bar' : 'beat'}${cuts === 1 ? '' : 's'}`);
-  else toast('info', 'No beats fall inside the selected clips');
+  if (cuts) toast('success', unit === 'bar' ? t('{count, plural, one {Cut at # bar} other {Cut at # bars}}', { count: cuts }) : t('{count, plural, one {Cut at # beat} other {Cut at # beats}}', { count: cuts }));
+  else toast('info', t('No beats fall inside the selected clips'));
   return cuts;
 }
 
@@ -564,18 +576,18 @@ export function sequenceOnBeats(unit: 'beat' | 'bar', every = 1): number {
   const beats = beatTimes(unit, p);
   const clips = visualSelection(p).sort((a, b) => a.start - b.start || p.tracks.findIndex((t) => t.id === a.trackId) - p.tracks.findIndex((t) => t.id === b.trackId));
   if (beats.length < 2) {
-    toast('info', 'Detect the beat first', 'Run Beat detection on a music clip to place beat markers.');
+    toast('info', t('Detect the beat first'), t('Run Beat detection on a music clip to place beat markers.'));
     return 0;
   }
   if (!clips.length) {
-    toast('info', 'Select the clips to arrange', 'Select the images or clips to place on the beat.');
+    toast('info', t('Select the clips to arrange'), t('Select the images or clips to place on the beat.'));
     return 0;
   }
   const first = Math.max(0, beats.findIndex((t) => t >= clips[0].start - 1e-6));
   const slots: { start: number; end: number }[] = [];
   for (let i = first; i + every < beats.length && slots.length < clips.length; i += every) slots.push({ start: beats[i], end: beats[i + every] });
   if (!slots.length) {
-    toast('info', 'Not enough beats after the selected clips');
+    toast('info', t('Not enough beats after the selected clips'));
     return 0;
   }
   const placed = Math.min(slots.length, clips.length);
@@ -598,7 +610,7 @@ export function sequenceOnBeats(unit: 'beat' | 'bar', every = 1): number {
     if (draft.tracks.some((t) => t.role === 'captions')) ensureCaptionTrack(draft);
   });
   useUI.getState().select(ids);
-  toast('success', `Placed ${placed} clip${placed === 1 ? '' : 's'} on the ${unit === 'bar' ? 'bars' : 'beat'}`);
+  toast('success', unit === 'bar' ? t('{count, plural, one {Placed # clip on the bars} other {Placed # clips on the bars}}', { count: placed }) : t('{count, plural, one {Placed # clip on the beat} other {Placed # clips on the beat}}', { count: placed }));
   return placed;
 }
 
@@ -628,10 +640,10 @@ export interface DenoisePreview {
 
 /** Process ~8 s of the clip (around the playhead) for A/B listening. */
 export function denoisePreview(strength: number): Promise<DenoisePreview | null> {
-  return runJob('denoise', 'Noise reduction preview', async (ctl) => {
+  return runJob('denoise', tk('Noise reduction preview'), async (ctl) => {
     const p = getProject();
     const clip = denoiseTarget(p);
-    if (!clip) throw new Error('Select a clip with sound first.');
+    if (!clip) throw new Error(t('Select a clip with sound first.'));
     const asset = p.assets[clip.assetId];
     const local = engine.time > clip.start && engine.time < clipEnd(clip) - 1 ? engine.time - clip.start : 0;
     const len = Math.min(8, clip.duration - local);
@@ -642,26 +654,26 @@ export function denoisePreview(strength: number): Promise<DenoisePreview | null>
     const range = denoiseRange(clip, asset);
     const pf0 = Math.max(range.from, s0 - 20);
     const pf1 = Math.min(range.to, s1 + 20);
-    const profile = await decodeAsset(asset, pf0, pf1, { sampleRate: sr, channels: 2, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.5, 'Reading audio…') });
+    const profile = await decodeAsset(asset, pf0, pf1, { sampleRate: sr, channels: 2, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.5, t('Reading audio…')) });
     const i0 = Math.round((s0 - pf0) * sr);
     const i1 = Math.round((s1 - pf0) * sr);
     const original = profile.channels.map((ch) => ch.slice(i0, i1));
-    const cleaned = await denoiseAudio(original, { strength }, { signal: ctl.signal, profileFrom: profile.channels, onProgress: (r) => ctl.progress(0.5 + r * 0.5, 'Cleaning…') });
+    const cleaned = await denoiseAudio(original, { strength }, { signal: ctl.signal, profileFrom: profile.channels, onProgress: (r) => ctl.progress(0.5 + r * 0.5, t('Cleaning…')) });
     return { original, cleaned, sampleRate: sr, start: clip.start + local };
   });
 }
 
 /** Clean the clip's sound, save it as a new WAV asset and swap it in (one undo step). */
 export function applyDenoise(strength: number): Promise<boolean | null> {
-  return runJob('denoise', 'Noise reduction', async (ctl) => {
+  return runJob('denoise', tk('Noise reduction'), async (ctl) => {
     const p = getProject();
     const clip = denoiseTarget(p);
-    if (!clip) throw new Error('Select a clip with sound first.');
+    if (!clip) throw new Error(t('Select a clip with sound first.'));
     const asset = p.assets[clip.assetId];
     const range = denoiseRange(clip, asset);
-    const decoded = await decodeAsset(asset, range.from, range.to, { sampleRate: 48000, channels: 2, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.3, 'Reading audio…') });
-    const cleaned = await denoiseAudio(decoded.channels, { strength }, { signal: ctl.signal, onProgress: (r) => ctl.progress(0.3 + r * 0.6, 'Removing noise…') });
-    ctl.progress(0.92, 'Saving…');
+    const decoded = await decodeAsset(asset, range.from, range.to, { sampleRate: 48000, channels: 2, signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.3, t('Reading audio…')) });
+    const cleaned = await denoiseAudio(decoded.channels, { strength }, { signal: ctl.signal, onProgress: (r) => ctl.progress(0.3 + r * 0.6, t('Removing noise…')) });
+    ctl.progress(0.92, t('Saving…'));
     const wav = encodeWav(cleaned, decoded.sampleRate);
     const info = await api.call<FileInfo>('x:speech:saveAudio', 'denoise', `${asset.name.replace(/\.[^.]+$/, '')} (clean)`, new Uint8Array(await wav.arrayBuffer()));
     if (ctl.signal.aborted) throw new ExtractCancelled();
@@ -670,7 +682,7 @@ export function applyDenoise(strength: number): Promise<boolean | null> {
     try {
       const res = await importMediaFiles([info]);
       const clean = res.assets[0];
-      if (!clean) throw new Error(res.failures[0]?.reason ?? 'The cleaned audio could not be imported.');
+      if (!clean) throw new Error(res.failures[0]?.reason ?? t('The cleaned audio could not be imported.'));
       updateProject((draft) => {
         draft.assets[clean.id] = { ...draft.assets[clean.id], name: `${asset.name.replace(/\.[^.]+$/, '')} (noise reduced).wav` };
         const c = draft.clips[clip.id] as SoundClip | undefined;
@@ -702,7 +714,7 @@ export function applyDenoise(strength: number): Promise<boolean | null> {
       throw err;
     }
     ctl.progress(1);
-    toast('success', 'Noise reduced', 'The clip now uses the cleaned sound. Undo restores the original.');
+    toast('success', t('Noise reduced'), t('The clip now uses the cleaned sound. Undo restores the original.'));
     return true;
   });
 }
@@ -736,8 +748,8 @@ export async function synthesize(text: string, purpose: 'preview' | 'clip'): Pro
 /** Speak `text` with the chosen voice and place it at the playhead (optionally captioned). */
 export async function addSpeech(text: string): Promise<ID | null> {
   const prefs = speechPrefs();
-  const clipId = await runJob('tts', 'Text to speech', async (ctl) => {
-    ctl.progress(-1, 'Generating speech…');
+  const clipId = await runJob('tts', tk('Text to speech'), async (ctl) => {
+    ctl.progress(-1, t('Generating speech…'));
     const onAbort = (): void => void api.call('x:speech:cancelSynthesis');
     ctl.signal.addEventListener('abort', onAbort);
     let info: FileInfo;
@@ -752,7 +764,7 @@ export async function addSpeech(text: string): Promise<ID | null> {
     try {
       const res = await importMediaFiles([info]);
       const asset = res.assets[0];
-      if (!asset) throw new Error(res.failures[0]?.reason ?? 'The speech could not be imported.');
+      if (!asset) throw new Error(res.failures[0]?.reason ?? t('The speech could not be imported.'));
       const voice = prefs.ttsVoice.replace(/^Microsoft\s+|\s+Desktop$/g, '') || 'Voice';
       let id: ID | null = null;
       updateProject((p) => {
@@ -773,7 +785,7 @@ export async function addSpeech(text: string): Promise<ID | null> {
   if (!clipId) return null;
   useUI.getState().select([clipId]);
   if (prefs.ttsCaptions) await autoCaptions('selection');
-  else toast('success', 'Speech added at the playhead');
+  else toast('success', t('Speech added at the playhead'));
   return clipId;
 }
 
@@ -790,20 +802,20 @@ export function duckTargets(p: Project = getProject()): AudioClip[] {
 }
 
 export function autoDuck(trackId?: ID): Promise<number | null> {
-  return runJob('duck', 'Auto-ducking', async (ctl) => {
+  return runJob('duck', tk('Auto-ducking'), async (ctl) => {
     const p = getProject();
     const prefs = speechPrefs();
     const music = trackId ? clipsOnTrack(p, trackId).filter((c): c is AudioClip => c.type === 'audio') : duckTargets(p);
-    if (!music.length) throw new Error('Select the music clips (or pick a music track) to duck.');
+    if (!music.length) throw new Error(t('Select the music clips (or pick a music track) to duck.'));
     const musicIds = new Set(music.map((m) => m.id));
     const voices = getAudioClips(p).filter((c) => !musicIds.has(c.id));
-    if (!voices.length) throw new Error('There is no dialogue to duck under: add voice or video clips with sound.');
+    if (!voices.length) throw new Error(t('There is no dialogue to duck under: add voice or video clips with sound.'));
     const t0 = Math.min(...music.map((m) => m.start));
     const t1 = Math.max(...music.map(clipEnd));
-    const audio = await mixTimeline(p, t0, t1, { sampleRate: 16000, channels: 1, only: new Set(voices.map((v) => v.id)), signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.8, 'Listening for speech…') });
+    const audio = await mixTimeline(p, t0, t1, { sampleRate: 16000, channels: 1, only: new Set(voices.map((v) => v.id)), signal: ctl.signal, onProgress: (r) => ctl.progress(r * 0.8, t('Listening for speech…')) });
     const regions = (await analyseSpeech(audio.channels[0], 16000, {}, ctl.signal)).map((r) => ({ start: t0 + r.start, end: t0 + r.end }));
     if (!regions.length) {
-      toast('info', 'No speech found under the music', 'Nothing was changed.');
+      toast('info', t('No speech found under the music'), t('Nothing was changed.'));
       return 0;
     }
     updateProject((draft) => {
@@ -816,7 +828,7 @@ export function autoDuck(trackId?: ID): Promise<number | null> {
       }
     });
     ctl.progress(1);
-    toast('success', `Ducked ${music.length} music clip${music.length === 1 ? '' : 's'}`, `${regions.length} speech passage${regions.length === 1 ? '' : 's'} · −${prefs.duckDepth} dB`);
+    toast('success', t('{count, plural, one {Ducked # music clip} other {Ducked # music clips}}', { count: music.length }), t('{count, plural, one {# speech passage} other {# speech passages}} · −{depth} dB', { count: regions.length, depth: prefs.duckDepth }));
     return regions.length;
   });
 }

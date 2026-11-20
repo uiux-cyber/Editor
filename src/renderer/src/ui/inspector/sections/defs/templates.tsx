@@ -8,21 +8,23 @@ import type { ReactNode } from 'react';
 import { isBrandStylable } from '@/library/brandStyle';
 import { useUI } from '@/store/ui';
 import { Section } from '../../../common/controls';
+import { useT } from '../../../i18n';
 import { applyBrandToSelection } from '../../../templates/apply';
 import { useTemplates } from '../../../templates/store';
 import { openTemplatesWindow } from '../../../templates/windows';
 import type { InspectorSectionDef, InspectorSectionProps } from '../index';
 
 function BrandSection({ clip }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const brandSet = useTemplates((s) => s.brandSet);
   const colors = useTemplates((s) => s.brand.colors);
   const count = useUI((s) => s.selection.length);
   return (
-    <Section title="Brand & template" id="brand-template">
+    <Section title={t('Brand & template')} id="brand-template">
       <div className="btn-row btn-row--wrap">
         {isBrandStylable(clip) && (
-          <button type="button" className="btn btn--sm btn--outline" onClick={() => (brandSet ? applyBrandToSelection() : openTemplatesWindow({ kind: 'brand' }))} title={brandSet ? 'Restyle the selection with your brand colours and fonts' : 'Set up your brand kit'}>
-            <SwatchBook size={13} /> {brandSet ? 'Apply brand' : 'Set up brand kit…'}
+          <button type="button" className="btn btn--sm btn--outline" onClick={() => (brandSet ? applyBrandToSelection() : openTemplatesWindow({ kind: 'brand' }))} title={brandSet ? t('Restyle the selection with your brand colours and fonts') : t('Set up your brand kit')}>
+            <SwatchBook size={13} /> {brandSet ? t('Apply brand') : t('Set up brand kit…')}
             {brandSet && (
               <span className="tpl-toggle__swatches" aria-hidden>
                 <i style={{ background: colors.primary }} />
@@ -32,8 +34,8 @@ function BrandSection({ clip }: InspectorSectionProps): ReactNode {
             )}
           </button>
         )}
-        <button type="button" className="btn btn--sm btn--outline" onClick={() => openTemplatesWindow({ kind: 'save' })} title="Save the selected layers as a reusable template">
-          <LayoutTemplate size={13} /> Save {count > 1 ? `${count} layers` : 'as template'}…
+        <button type="button" className="btn btn--sm btn--outline" onClick={() => openTemplatesWindow({ kind: 'save' })} title={t('Save the selected layers as a reusable template')}>
+          <LayoutTemplate size={13} /> {count > 1 ? t('Save {count, plural, one {# layer} other {# layers}}…', { count }) : t('Save as template…')}
         </button>
       </div>
     </Section>

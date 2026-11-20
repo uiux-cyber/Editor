@@ -5,7 +5,7 @@
  */
 
 import { AlertTriangle, FolderInput, Pencil, Trash2 } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { sampleCube } from '@shared/cube';
 import type { ID, VisualClip } from '@/core/types';
@@ -13,7 +13,16 @@ import { allLuts, deleteLut, getLutData, importLutFiles, lutDisplayName, lutInfo
 import { toast, useUI } from '@/store/ui';
 import { SliderField } from '../common/controls';
 import { Modal, openContextMenu } from '../common/overlays';
+import { t, useT } from '../i18n';
 import { setLut, setLutIntensity } from './gradeEdit';
+
+/** Put React nodes where a translated message has `{name}` placeholders. */
+function richText(message: string, nodes: Record<string, ReactNode>): ReactNode {
+  return message.split(/(\{\w+\})/).map((part, i) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1];
+    return name && name in nodes ? <Fragment key={i}>{nodes[name]}</Fragment> : part;
+  });
+}
 
 const THUMB_W = 96;
 const THUMB_H = 54;
@@ -97,6 +106,7 @@ function lutThumb(id: string | null): string | null {
 }
 
 function LutTile({ info, active, onPick, onRename, owner }: { info: LutInfo | null; active: boolean; onPick: () => void; onRename?: () => void; owner?: string }): ReactNode {
+  const tr = useT();
   useLutLibrary((s) => s.revision);
   const url = lutThumb(info?.id ?? null);
   const status = info ? lutStatus(info.id) : 'ready';
@@ -105,22 +115,22 @@ function LutTile({ info, active, onPick, onRename, owner }: { info: LutInfo | nu
       type="button"
       className={`lut-tile ${active ? 'is-active' : ''}`}
       data-lut={info?.id ?? 'none'}
-      title={info ? `${info.name}${info.description ? ` — ${info.description}` : ''}${info.builtin ? '' : ` · ${info.kind.toUpperCase()} ${info.size}`}` : 'No LUT'}
+      title={info ? `${info.name}${info.description ? ` — ${info.description}` : ''}${info.builtin ? '' : ` · ${info.kind.toUpperCase()} ${info.size}`}` : tr('No LUT')}
       onClick={onPick}
       onContextMenu={(e) => {
         if (!info || info.builtin) return;
         openContextMenu(e, [
-          { label: 'Rename…', icon: <Pencil size={14} />, run: () => onRename?.() },
+          { label: tr('Rename…'), icon: <Pencil size={14} />, run: () => onRename?.() },
           { type: 'separator' },
-          { label: 'Delete from library…', icon: <Trash2 size={14} />, danger: true, run: () => useLutDelete.setState({ info, owner: owner ?? null }) },
+          { label: tr('Delete from library…'), icon: <Trash2 size={14} />, danger: true, run: () => useLutDelete.setState({ info, owner: owner ?? null }) },
         ]);
       }}
     >
       <span className="lut-tile__img">
         {url ? <img src={url} alt="" draggable={false} /> : <span className={`lut-tile__ph ${status === 'error' ? 'is-error' : ''}`} />}
-        {!info && <span className="lut-tile__none">None</span>}
+        {!info && <span className="lut-tile__none">{tr('None')}</span>}
       </span>
-      <span className="lut-tile__name truncate">{info ? info.name : 'None'}</span>
+      <span className="lut-tile__name truncate">{info ? info.name : tr('None')}</span>
     </button>
   );
 }
@@ -129,18 +139,19 @@ function LutTile({ info, active, onPick, onRename, owner }: { info: LutInfo | nu
 const useLutDelete = create<{ info: LutInfo | null; owner: string | null }>()(() => ({ info: null, owner: null }));
 
 function DeleteDialog({ owner }: { owner: string }): ReactNode {
+  const tr = useT();
   const info = useLutDelete((s) => (s.owner === owner ? s.info : null));
   if (!info) return null;
   const close = (): void => useLutDelete.setState({ info: null, owner: null });
   return (
     <Modal
-      title="Delete LUT?"
+      title={tr('Delete LUT?')}
       onClose={close}
       width={400}
       footer={
         <>
           <button type="button" className="btn btn--ghost" onClick={close}>
-            Cancel
+            {tr('Cancel')}
           </button>
           <button
             type="button"
@@ -149,18 +160,18 @@ function DeleteDialog({ owner }: { owner: string }): ReactNode {
             onClick={() => {
               close();
               void deleteLut(info.id).then(
-                () => toast('success', `Deleted “${info.name}”`),
-                (err) => toast('error', 'Could not delete the LUT', (err as Error).message),
+                () => toast('success', tr('Deleted “{name}”', { name: info.name })),
+                (err) => toast('error', tr('Could not delete the LUT'), (err as Error).message),
               );
             }}
           >
-            Delete
+            {tr('Delete')}
           </button>
         </>
       }
     >
       <p className="hint" style={{ color: 'var(--text-1)', fontSize: 12.5 }}>
-        “{info.name}” will be removed from your LUT library. Clips that use it will show without the look until you import it again.
+        {tr('“{name}” will be removed from your LUT library. Clips that use it will show without the look until you import it again.', { name: info.name })}
       </p>
     </Modal>
   );
@@ -170,17 +181,18 @@ export async function importLutsWithFeedback(applyTo?: ID[]): Promise<void> {
   try {
     const res = await importLutFiles();
     if (res.imported.length) {
-      toast('success', res.imported.length === 1 ? `Imported “${res.imported[0].name}”` : `Imported ${res.imported.length} LUTs`);
+      toast('success', res.imported.length === 1 ? t('Imported “{name}”', { name: res.imported[0].name }) : t('Imported {count} LUTs', { count: res.imported.length }));
       if (applyTo?.length) setLut(applyTo, res.imported[0].id);
     }
-    for (const f of res.failures) useUI.getState().toast({ kind: 'error', message: `Could not import ${f.name}`, detail: f.error });
+    for (const f of res.failures) useUI.getState().toast({ kind: 'error', message: t('Could not import {name}', { name: f.name }), detail: f.error });
   } catch (err) {
-    toast('error', 'Could not import the LUT', (err as Error).message);
+    toast('error', t('Could not import the LUT'), (err as Error).message);
   }
 }
 
 /** Library grid (also used by the Settings page, without a clip). */
 export function LutGrid({ activeId, onPick, showNone = true }: { activeId: string | null; onPick: (id: string | null) => void; showNone?: boolean }): ReactNode {
+  const tr = useT();
   const user = useLutLibrary((s) => s.user);
   const loaded = useLutLibrary((s) => s.loaded);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -193,12 +205,12 @@ export function LutGrid({ activeId, onPick, showNone = true }: { activeId: strin
   return (
     <>
       <div className="lut-grid">
-        <span className="lut-grid__label">Built-in looks</span>
+        <span className="lut-grid__label">{tr('Built-in looks')}</span>
         {showNone && <LutTile info={null} active={!activeId} onPick={() => onPick(null)} />}
         {luts.map((l) => [
           l.id === firstImported ? (
             <span key="label-imported" className="lut-grid__label">
-              Imported
+              {tr('Imported')}
             </span>
           ) : null,
           renaming === l.id ? (
@@ -211,7 +223,7 @@ export function LutGrid({ activeId, onPick, showNone = true }: { activeId: strin
                 onBlur={(e) => {
                   const name = e.target.value.trim();
                   setRenaming(null);
-                  if (name && name !== l.name) void renameLut(l.id, name).catch((err) => toast('error', 'Could not rename the LUT', (err as Error).message));
+                  if (name && name !== l.name) void renameLut(l.id, name).catch((err) => toast('error', tr('Could not rename the LUT'), (err as Error).message));
                 }}
                 onKeyDown={(e) => {
                   e.stopPropagation();
@@ -231,6 +243,7 @@ export function LutGrid({ activeId, onPick, showNone = true }: { activeId: strin
 }
 
 export function LutPanel({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const tr = useT();
   useLutLibrary((s) => s.revision);
   useLutLibrary((s) => s.user);
   const ref = clip.lut;
@@ -243,27 +256,21 @@ export function LutPanel({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactN
         <div className="lut-missing" data-lut-missing>
           <AlertTriangle size={14} />
           <span>
-            {lutInfo(ref.id) ? (
-              <>
-                <strong>{lutDisplayName(ref.id)}</strong> could not be read.
-              </>
-            ) : (
-              <>This clip's LUT is not in your library (deleted, or imported on another computer).</>
-            )}{' '}
-            The clip is shown without it.
+            {lutInfo(ref.id) ? richText(tr('{name} could not be read.'), { name: <strong>{lutDisplayName(ref.id)}</strong> }) : tr("This clip's LUT is not in your library (deleted, or imported on another computer).")}{' '}
+            {tr('The clip is shown without it.')}
           </span>
           <button type="button" className="btn btn--sm btn--outline" onClick={() => setLut(ids, null)}>
-            Remove
+            {tr('Remove')}
           </button>
         </div>
       )}
       <LutGrid activeId={ref?.id ?? null} onPick={(id) => setLut(ids, id)} />
-      {ref && <SliderField label="Intensity" value={ref.intensity} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={1} onChange={(v) => setLutIntensity(ids, v)} />}
+      {ref && <SliderField label={tr('Intensity')} value={ref.intensity} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={1} onChange={(v) => setLutIntensity(ids, v)} />}
       <div className="lut-panel__actions">
         <button type="button" className="btn btn--sm btn--outline" data-action="import-lut" onClick={() => void importLutsWithFeedback(ids)}>
-          <FolderInput size={13} /> Import .cube…
+          <FolderInput size={13} /> {tr('Import .cube…')}
         </button>
-        <span className="hint">Right-click an imported LUT to rename or delete it.</span>
+        <span className="hint">{tr('Right-click an imported LUT to rename or delete it.')}</span>
       </div>
     </div>
   );

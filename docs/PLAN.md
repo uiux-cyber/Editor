@@ -155,9 +155,8 @@ folder registers it automatically.
    captions), performance & media (proxies, render cache, optional FFmpeg, HDR) and workflow
    (command palette, custom shortcuts, settings, light theme, 5 translations, accessibility,
    collect project). See the README for a summary.
-4. **Later** — cloud backup and review links (needs a hosted service), translation of the
-   remaining panels (library, inspector, timeline, export dialog), native-speaker review of the
-   translations, more languages.
+4. **Later** — cloud backup and review links (needs a hosted service), native-speaker review of
+   the translations, more languages.
 5. **1.2** — open source (MIT) on GitHub, automatic updates from GitHub releases published by
    a tag-triggered workflow (docs/RELEASING.md).
 6. **1.3** — Kinora as a Claude connector (MCP): Claude Desktop / Claude Code edit, caption and
@@ -165,8 +164,11 @@ folder registers it automatically.
 7. **1.4** — Motion clips: animation code (three.js, GSAP, PixiJS, anime.js, D3, Matter.js, p5.js,
    Lottie…) rendered frame by frame in a sealed, out-of-process sandbox; Claude writes them with
    create_motion / update_motion.
-8. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
-9. **Content cadence**: monthly template and sticker drops through the same pack format.
+8. **1.5** — the Motion library (16 ready-made Motion clips), Motion clip settings in the
+   inspector (k.params, brand kit, Make unique), ready-made Claude requests (MCP prompts), and the
+   whole interface translated.
+9. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
+10. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 
@@ -182,9 +184,9 @@ folder registers it automatically.
 - Only built-in music beds can be attached to templates (`TemplateDef.music`); user templates keep
   built-in sounds, and other audio only when the template embeds its media.
 - Projects that use fonts installed on one PC fall back to a default font on PCs without them.
-- The interface is translated in the menus, command palette, settings, start screen and dialogs of
-  the shell; the library, inspector, timeline and export panels are still English. Translations
-  have not been reviewed by native speakers.
+- The whole interface is translated, but content names (templates, effects, sounds…), undo labels
+  made outside the panels and a few progress messages from the smart features stay English.
+  Translations have not been reviewed by native speakers.
 - Smart features were tested on synthetic and sample footage; accuracy on real-world material
   (filler words in natural speech, segmentation of real people, non-English captions) varies.
 - FFmpeg conversion was tested against a stand-in executable, and HDR against synthetic PQ clips.

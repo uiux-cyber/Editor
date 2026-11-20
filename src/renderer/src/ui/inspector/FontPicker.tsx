@@ -2,6 +2,10 @@ import { Check, ChevronDown } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { BUNDLED_FONTS, cssFamily } from '@/library/fonts';
+import { tk, tMaybe, useT } from '../i18n';
+
+/** Font category tags shown next to bundled fonts (display with tMaybe). */
+const CATEGORY_LABEL: Record<string, string> = { sans: tk('sans'), serif: tk('serif'), display: tk('display'), script: tk('script'), mono: tk('mono') };
 
 let systemFonts: string[] | null = null;
 
@@ -21,6 +25,7 @@ async function loadSystemFonts(): Promise<string[]> {
 }
 
 export function FontPicker({ value, onChange }: { value: string; onChange: (family: string) => void }): ReactNode {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [system, setSystem] = useState<string[]>(systemFonts ?? []);
@@ -81,18 +86,18 @@ export function FontPicker({ value, onChange }: { value: string; onChange: (fami
         pos &&
         createPortal(
           <div ref={panel} className="font-panel" style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight }}>
-            <input autoFocus className="input" placeholder="Search fonts" value={search} spellCheck={false} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+            <input autoFocus className="input" placeholder={t('Search fonts')} value={search} spellCheck={false} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
             <div className="font-panel__list">
-              {bundled.length > 0 && <div className="menu__label">Kinora fonts</div>}
+              {bundled.length > 0 && <div className="menu__label">{t('Kinora fonts')}</div>}
               {bundled.map((f) => (
                 <button key={f.family} type="button" className={`font-item ${f.family === value ? 'is-active' : ''}`} onClick={() => pick(f.family)}>
                   <span className="truncate" style={{ fontFamily: cssFamily(f.family), fontSize: 15 }}>
                     {f.family}
                   </span>
-                  {f.family === value ? <Check size={13} /> : <small>{f.category}</small>}
+                  {f.family === value ? <Check size={13} /> : <small>{CATEGORY_LABEL[f.category] ? tMaybe(CATEGORY_LABEL[f.category]) : f.category}</small>}
                 </button>
               ))}
-              {installed.length > 0 && <div className="menu__label">Installed on this PC</div>}
+              {installed.length > 0 && <div className="menu__label">{t('Installed on this PC')}</div>}
               {installed.map((f) => (
                 <button key={f} type="button" className={`font-item ${f === value ? 'is-active' : ''}`} onClick={() => pick(f)}>
                   <span className="truncate" style={{ fontFamily: `"${f}", sans-serif`, fontSize: 14 }}>
@@ -101,7 +106,7 @@ export function FontPicker({ value, onChange }: { value: string; onChange: (fami
                   {f === value && <Check size={13} />}
                 </button>
               ))}
-              {bundled.length === 0 && installed.length === 0 && <p className="hint" style={{ padding: 10 }}>No fonts match “{search}”.</p>}
+              {bundled.length === 0 && installed.length === 0 && <p className="hint" style={{ padding: 10 }}>{t('No fonts match “{query}”.', { query: search })}</p>}
             </div>
           </div>,
           document.body,

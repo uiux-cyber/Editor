@@ -6,6 +6,7 @@ import { TEXT_PRESETS } from '@/library';
 import type { TextPresetCategory, TextPresetDef } from '@/library/types';
 import { addText } from '../actions';
 import { startDrag } from '../dnd';
+import { useT } from '../i18n';
 import { Chips, SearchBox, labelOf, unique, useIncremental } from './common';
 import { LiveThumb, projectFromLayers, type ThumbSpec } from './thumbs';
 
@@ -23,6 +24,7 @@ function luminance(hex: string): number {
 }
 
 function PresetTile({ preset }: { preset: TextPresetDef }): ReactNode {
+  const t = useT();
   const build = useCallback((): ThumbSpec | null => {
     const style = { ...DEFAULT_TEXT_STYLE, ...preset.style, content: preset.sample };
     // The demo frame is 1920×1080 design px: scale the text so it fills the tile nicely.
@@ -39,7 +41,7 @@ function PresetTile({ preset }: { preset: TextPresetDef }): ReactNode {
   return (
     <div
       className="tile"
-      title={`${preset.name}\nClick to add at the playhead, or drag to the timeline`}
+      title={`${preset.name}\n${t('Click to add at the playhead, or drag to the timeline')}`}
       onPointerDown={(e) => startDrag(e, { kind: 'text', presetId: preset.id }, preset.name, () => addText(preset.id))}
     >
       <div className="tile__thumb" style={{ aspectRatio: `${THUMB_W} / ${THUMB_H}` }}>
@@ -51,6 +53,7 @@ function PresetTile({ preset }: { preset: TextPresetDef }): ReactNode {
 }
 
 export function TextTab(): ReactNode {
+  const t = useT();
   const [category, setCategory] = useState<TextPresetCategory | 'all'>('all');
   const [search, setSearch] = useState('');
   const categories = useMemo(() => unique(TEXT_PRESETS.map((p) => p.category)), []);
@@ -63,19 +66,19 @@ export function TextTab(): ReactNode {
   return (
     <div className="lib">
       <header className="lib__head">
-        <h3>Text</h3>
-        <button type="button" className="btn btn--primary btn--sm" onPointerDown={(e) => startDrag(e, { kind: 'text', presetId: null }, 'Text', () => addText(null))}>
-          <Type size={13} /> Add text
+        <h3>{t('Text')}</h3>
+        <button type="button" className="btn btn--primary btn--sm" onPointerDown={(e) => startDrag(e, { kind: 'text', presetId: null }, t('Text'), () => addText(null))}>
+          <Type size={13} /> {t('Add text')}
         </button>
       </header>
       <div className="lib__search">
-        <SearchBox value={search} onChange={setSearch} placeholder="Search text styles" />
+        <SearchBox value={search} onChange={setSearch} placeholder={t('Search text styles')} />
       </div>
-      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: 'All' }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
+      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: t('All') }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
       <div className="lib__scroll">
         {list.length === 0 ? (
           <div className="empty">
-            <div className="empty__title">No styles found</div>
+            <div className="empty__title">{t('No styles found')}</div>
           </div>
         ) : (
           <div className="grid grid--2">

@@ -42,6 +42,24 @@ Run it once in a terminal. Other MCP apps can start the same command (stdio tran
 - "For every video in this folder, add my intro and captions, then export them."
 - "Look at the frame at 0:12 — is the title readable? Make it bigger if not."
 
+### Ready-made requests
+
+Kinora also offers ready-made requests (MCP prompts) that start a whole task with one click. In
+Claude Desktop, click **+** in the message box, choose **Kinora** and pick one; in Claude Code, type
+`/mcp__kinora__` and pick one. Settings → Claude lists them too, with a button to copy each one.
+
+| Request | What Claude does |
+| --- | --- |
+| Turn a long video into shorts | Finds the strongest moments and makes vertical shorts with captions and a hook title |
+| Caption and clean up a talking-head video | Removes silences and filler words, adds captions and a name lower third, evens out the audio |
+| Make a promo video from photos | Photos with motion, transitions, music cut to the beat, an animated title and an end card |
+| Add an animated title | A custom title as a Motion clip, with editable words, colours and font |
+| Turn numbers into an animated chart | An animated D3 chart from your numbers, as a Motion clip |
+| Make a logo intro | A logo reveal from your brand kit |
+| Cut clips to the beat of a song | Detects the beats and puts every cut on one |
+| Export for a platform | The right presets per platform, auto-reframed when the shape differs |
+| Review my edit | Looks through the project and suggests improvements without changing anything |
+
 ## What Claude can do
 
 | Tool | What it does |
@@ -79,6 +97,15 @@ trimmed, layered over video and exported like any clip.
   **Matter.js** physics, **p5.js**, **Lottie**, **simplex-noise** and **Rough.js**, plus Kinora's
   typefaces and a helper kit (easing, keyframes, springs, staggers, seeded randomness, text fitting,
   physics baking, SVG drawing).
+- **Settings you can change without Claude.** Claude declares a clip's settings (the words,
+  colours, fonts, speed, a logo…) with `params`; they appear at the top of the inspector when you
+  select the clip, and the clip restarts with your values. Claude can change them too
+  (`update_motion` with `values`) without rewriting the code. Settings linked to your brand kit
+  follow it with **Use my brand**. When several clips share one Motion clip, **Make unique** gives
+  one of them its own copy.
+- **The Motion library.** Library ▸ Motion has ready-made clips (titles, lower thirds, subscribe and
+  follow buttons, counters, charts, a progress ring, 3D logo reveals, confetti, particles, a colour
+  wipe) that work the same way: click or drag one onto the timeline and change it in the inspector.
 - Clips are saved as `.kmotion` files in `Documents\Kinora\Motion`; you can also import a
   `.kmotion` file like any media.
 - **Sandboxed:** a clip runs in an isolated frame with no network, no access to your files or to

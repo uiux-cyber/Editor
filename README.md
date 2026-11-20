@@ -9,6 +9,20 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.5
+
+- **Motion library:** Library ▸ Motion has 16 ready-made animated clips (titles, lower thirds,
+  subscribe and follow buttons, counters, charts, 3D logo reveals, confetti, particles and a colour
+  wipe). Click or drag one onto the timeline.
+- **Motion clip settings:** change a Motion clip's words, colours, fonts, speed or logo at the top
+  of the inspector, without code. Settings can follow your brand kit, and clips Claude writes get
+  them too.
+- **Ready-made requests for Claude:** start a whole task in one click from Claude's **+** menu, such
+  as "Turn a long video into shorts", "Caption and clean up a talking-head video" or "Make a logo
+  intro". See Settings → Claude.
+- **Fully translated:** the library, inspector, timeline, export and every other panel now follow
+  the interface language (Spanish, French, German, Portuguese, Hindi).
+
 ## What's new in 1.4
 
 - **Motion clips:** Claude can write custom animation as code (three.js, GSAP, PixiJS, anime.js,
@@ -92,7 +106,8 @@ node scripts/e2e.mjs ui --packaged        # same, against release/win-unpacked
 ```
 
 Scenarios: `smoke ui export export-queue graphics editing time workflow speech vision
-color-audio media templates updates claude`. Test windows run off-screen without taking focus; set
+color-audio media templates updates claude motion`. `node scripts/e2e.mjs motion-sheet` renders a
+contact sheet of the Motion library to `.e2e/motion-sheet.png` for visual review. Test windows run off-screen without taking focus; set
 `KINORA_E2E_SHOW=1` to watch a run. Run `npm run models` once before the speech / vision
 scenarios (it downloads the bundled AI models into `resources/models/`).
 

@@ -6,6 +6,7 @@ import { setInPoint, setOutPoint, shiftInOut } from '@/engine/export/range';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { openContextMenu } from '../common/overlays';
+import { useT } from '../i18n';
 import { RULER_H, timeToX, xToTime } from '../timeline/geometry';
 import { clearMarks, goToIn, goToOut, openExportDialog } from './actions';
 import './export.css';
@@ -35,6 +36,7 @@ function snapTime(t: number, pps: number): number {
  * follows vertical scrolling so it stays on the sticky ruler.
  */
 export function InOutMarks({ pps, scrollEl, height }: { pps: number; scrollEl: React.RefObject<HTMLDivElement | null>; height: number }): ReactNode {
+  const tr = useT();
   const inPoint = useProjectStore((s) => s.project.inPoint);
   const outPoint = useProjectStore((s) => s.project.outPoint);
   const duration = useProjectStore((s) => projectDuration(s.project));
@@ -105,11 +107,11 @@ export function InOutMarks({ pps, scrollEl, height }: { pps: number; scrollEl: R
   const menu = (e: React.MouseEvent): void => {
     e.stopPropagation();
     openContextMenu(e, [
-      { label: 'Export this range…', run: openExportDialog },
+      { label: tr('Export this range…'), run: openExportDialog },
       { type: 'separator' },
-      { label: 'Go to In', shortcut: 'Shift+I', disabled: inPoint === undefined, run: goToIn },
-      { label: 'Go to Out', shortcut: 'Shift+O', disabled: outPoint === undefined, run: goToOut },
-      { label: 'Clear In / Out', shortcut: 'Alt+X', run: clearMarks },
+      { label: tr('Go to In'), shortcut: 'Shift+I', disabled: inPoint === undefined, run: goToIn },
+      { label: tr('Go to Out'), shortcut: 'Shift+O', disabled: outPoint === undefined, run: goToOut },
+      { label: tr('Clear In / Out'), shortcut: 'Alt+X', run: clearMarks },
     ]);
   };
 
@@ -123,13 +125,13 @@ export function InOutMarks({ pps, scrollEl, height }: { pps: number; scrollEl: R
       </div>
       <div className="io-layer" ref={layer} data-inout>
         <div className="io-band" style={{ left: x0, width: Math.max(1, x1 - x0) }}>
-          <div className="io-bar" title={`In–Out ${formatTimecode(len, fps)} — drag to move, right-click for options`} onPointerDown={(e) => startDrag(e, 'both')} onContextMenu={menu} />
+          <div className="io-bar" title={tr('In–Out {duration} — drag to move, right-click for options', { duration: formatTimecode(len, fps) })} onPointerDown={(e) => startDrag(e, 'both')} onContextMenu={menu} />
         </div>
         {inPoint !== undefined && (
-          <div className={`io-handle io-handle--in ${drag === 'in' ? 'is-dragging' : ''}`} style={{ left: x0 }} data-handle="in" title={`In ${formatTimecode(a, fps)} (I)`} onPointerDown={(e) => startDrag(e, 'in')} onContextMenu={menu} />
+          <div className={`io-handle io-handle--in ${drag === 'in' ? 'is-dragging' : ''}`} style={{ left: x0 }} data-handle="in" title={tr('In {time} (I)', { time: formatTimecode(a, fps) })} onPointerDown={(e) => startDrag(e, 'in')} onContextMenu={menu} />
         )}
         {outPoint !== undefined && (
-          <div className={`io-handle io-handle--out ${drag === 'out' ? 'is-dragging' : ''}`} style={{ left: x1 }} data-handle="out" title={`Out ${formatTimecode(b, fps)} (O)`} onPointerDown={(e) => startDrag(e, 'out')} onContextMenu={menu} />
+          <div className={`io-handle io-handle--out ${drag === 'out' ? 'is-dragging' : ''}`} style={{ left: x1 }} data-handle="out" title={tr('Out {time} (O)', { time: formatTimecode(b, fps) })} onPointerDown={(e) => startDrag(e, 'out')} onContextMenu={menu} />
         )}
         {drag && (
           <div className="io-tip" style={{ left: drag === 'out' ? x1 : x0, top: RULER_H + 4 }}>

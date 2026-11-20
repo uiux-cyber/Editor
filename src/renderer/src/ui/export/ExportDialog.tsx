@@ -1,9 +1,9 @@
 import { AlertTriangle, Captions, Check, CircleCheck, FolderOpen, Info, ListPlus, Music, Play, Scissors, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { captionTracks } from '@/core/captions';
 import { projectDuration } from '@/core/project';
 import { getAudioClips } from '@/core/scene';
-import { formatBytes, formatDuration, formatSeconds, formatTimecode } from '@/core/time';
+import { formatDuration, formatSeconds, formatTimecode } from '@/core/time';
 import { engine } from '@/engine/engine';
 import { canEncodeSize, estimateSize, exportCaptionCues, exportWarnings, getCapabilities, supportsEmbeddedSubtitles, supportsSidecars, withoutBurnedCaptions, type Capabilities, type SubtitleFormat } from '@/engine/export/exporter';
 import { FramingPreview } from '@/engine/export/framingPreview';
@@ -18,11 +18,20 @@ import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { Field, Segmented, Select, Toggle } from '../common/controls';
 import { Modal } from '../common/overlays';
+import { formatNumber, formatSize, tk, tMaybe, useT } from '../i18n';
 import { JobRow, baseName } from './JobRow';
 import { getExportPrefs, saveExportPrefs } from './prefs';
 import './export.css';
 
 const LABEL_W = 110;
+
+/** Put React nodes where a translated message has `{name}` placeholders. */
+function richText(message: string, nodes: Record<string, ReactNode>): ReactNode {
+  return message.split(/(\{\w+\})/).map((part, i) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1];
+    return name && name in nodes ? <Fragment key={i}>{nodes[name]}</Fragment> : part;
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Preset gallery
@@ -62,6 +71,7 @@ function presetSpecLines(p: PlatformPreset, settings: { width: number; height: n
 // ---------------------------------------------------------------------------------------------
 
 function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; time: number; renderer: FramingPreview | null; box: { w: number; h: number } }): ReactNode {
+  const tr = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
   const { width, height } = plan.settings;
   const k = Math.min(box.w / width, box.h / height);
@@ -97,10 +107,10 @@ function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; tim
           </div>
         )}
       </div>
-      <span className="xd-preview__label" title={plan.label}>
-        {plan.label}
+      <span className="xd-preview__label" title={tMaybe(plan.label)}>
+        {tMaybe(plan.label)}
       </span>
-      <span className="xd-preview__sub">{plan.reframed ? 'Reframed to fit' : audioOnly ? 'Sound only' : transparent ? 'Transparent background' : 'Original framing'}</span>
+      <span className="xd-preview__sub">{plan.reframed ? tr('Reframed to fit') : audioOnly ? tr('Sound only') : transparent ? tr('Transparent background') : tr('Original framing')}</span>
     </div>
   );
 }
@@ -110,6 +120,7 @@ function TargetPreview({ plan, time, renderer, box }: { plan: PlannedTarget; tim
 // ---------------------------------------------------------------------------------------------
 
 function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => void; onBack: () => void }): ReactNode {
+  const tr = useT();
   const all = useExportQueue((s) => s.jobs);
   const previewMode = useExportQueue((s) => s.previewMode);
   const jobs = useMemo(() => all.filter((j) => ids.includes(j.id)), [all, ids]);
@@ -152,8 +163,9 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
     const failed = jobs.filter((j) => j.status === 'failed');
     const single = jobs.length === 1 ? jobs[0] : null;
     const ok = failed.length === 0 && done.length > 0;
+    const extraFiles = single?.result?.extraFiles.map((f) => baseName(f)).join(', ') ?? '';
     return (
-      <Modal title={ok ? 'Export complete' : done.length ? 'Some exports failed' : 'Export failed'} onClose={onClose} width={520}>
+      <Modal title={ok ? tr('Export complete') : done.length ? tr('Some exports failed') : tr('Export failed')} onClose={onClose} width={520}>
         <div className="export-done">
           <span className={`export-done__icon ${ok ? '' : 'export-done__icon--error'}`}>{ok ? <CircleCheck size={30} /> : <AlertTriangle size={28} />}</span>
           {single ? (
@@ -163,17 +175,15 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
               </strong>
               {single.status === 'done' ? (
                 <span>
-                  {formatBytes(single.result?.bytes ?? 0)} · exported in {formatDuration(Math.max(1, single.result?.seconds ?? 0))}
-                  {single.result?.extraFiles.length ? ` · with ${single.result.extraFiles.map((f) => baseName(f)).join(', ')}` : ''}
+                  {tr('{size} · exported in {time}', { size: formatSize(single.result?.bytes ?? 0), time: formatDuration(Math.max(1, single.result?.seconds ?? 0)) })}
+                  {extraFiles ? ` · ${tr('with {files}', { files: extraFiles })}` : ''}
                 </span>
               ) : (
-                <span style={{ userSelect: 'text' }}>{single.error ?? 'The export was cancelled.'}</span>
+                <span style={{ userSelect: 'text' }}>{single.error ?? tr('The export was cancelled.')}</span>
               )}
             </>
           ) : (
-            <strong>
-              {done.length} of {jobs.length} exports finished
-            </strong>
+            <strong>{tr('{done} of {total} exports finished', { done: done.length, total: jobs.length })}</strong>
           )}
         </div>
         {!single && (
@@ -186,21 +196,21 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
         <div className="modal__foot modal__foot--inline">
           {single && single.status !== 'done' && (
             <button type="button" className="btn btn--outline" onClick={onBack}>
-              Back to settings
+              {tr('Back to settings')}
             </button>
           )}
           {done[0] && (
             <button type="button" className="btn btn--outline" onClick={() => void api.app.showItemInFolder(done[0].output.path)}>
-              <FolderOpen size={14} /> Show in folder
+              <FolderOpen size={14} /> {tr('Show in folder')}
             </button>
           )}
           {single?.status === 'done' && (
             <button type="button" className="btn btn--outline" onClick={() => void api.app.openPath(single.output.path)}>
-              <Play size={14} /> Open
+              <Play size={14} /> {tr('Open')}
             </button>
           )}
           <button type="button" className="btn btn--primary" onClick={onClose}>
-            Done
+            {tr('Done')}
           </button>
         </div>
       </Modal>
@@ -212,7 +222,7 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
   const p = running?.progress;
   const audioOnly = running && (running.settings.container === 'mp3' || running.settings.container === 'wav');
   return (
-    <Modal title={jobs.length > 1 ? `Exporting ${jobs.length} files…` : 'Exporting…'} subtitle={running ? `${running.label} · ${running.detail}` : 'Waiting in the export queue'} onClose={onClose} width={600}>
+    <Modal title={jobs.length > 1 ? tr('Exporting {count} files…', { count: jobs.length }) : tr('Exporting…')} subtitle={running ? `${tMaybe(running.label)} · ${running.detail}` : tr('Waiting in the export queue')} onClose={onClose} width={600}>
       <div className="xd-watch">
         <div className="xd-watch__stage">{audioOnly ? <Music size={28} color="var(--text-3)" /> : <canvas ref={stage} />}</div>
         <div className="progress">
@@ -221,12 +231,12 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
         <div className="xd-watch__stats">
           <strong className="mono">{pct}%</strong>
           {running ? (
-            <span>{!p || p.phase === 'preparing' ? 'Preparing media…' : p.phase === 'finalizing' ? 'Finishing the file…' : audioOnly ? 'Mixing audio…' : `Frame ${p.frame.toLocaleString()} of ${p.totalFrames.toLocaleString()}`}</span>
+            <span>{!p || p.phase === 'preparing' ? tr('Preparing media…') : p.phase === 'finalizing' ? tr('Finishing the file…') : audioOnly ? tr('Mixing audio…') : tr('Frame {frame} of {total}', { frame: formatNumber(p.frame), total: formatNumber(p.totalFrames) })}</span>
           ) : (
-            <span>{ahead > 0 ? `Waiting for ${ahead} export${ahead === 1 ? '' : 's'} ahead in the queue…` : 'Starting…'}</span>
+            <span>{ahead > 0 ? tr('{count, plural, one {Waiting for # export ahead in the queue…} other {Waiting for # exports ahead in the queue…}}', { count: ahead }) : tr('Starting…')}</span>
           )}
-          {p && p.speed > 0 && !audioOnly && <span className="mono">{p.speed.toFixed(1)} fps</span>}
-          {p && p.eta > 1 && <span>{formatDuration(p.eta)} left</span>}
+          {p && p.speed > 0 && !audioOnly && <span className="mono">{formatNumber(p.speed, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} fps</span>}
+          {p && p.eta > 1 && <span>{tr('{time} left', { time: formatDuration(p.eta) })}</span>}
         </div>
         {jobs.length > 1 && (
           <div className="xq-list">
@@ -238,18 +248,19 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
         <div className="xd-note">
           <Info size={13} />
           <span>
-            Exports run in the background — choose <b>Continue editing</b> to keep working; progress stays in the title bar. {previewMode === 'paused' ? 'The preview is paused while exporting so exports finish sooner.' : 'The preview stays live while exporting; pause it for faster exports.'}
+            {richText(tr('Exports run in the background — choose {button} to keep working; progress stays in the title bar.'), { button: <b>{tr('Continue editing')}</b> })}{' '}
+            {previewMode === 'paused' ? tr('The preview is paused while exporting so exports finish sooner.') : tr('The preview stays live while exporting; pause it for faster exports.')}
           </span>
         </div>
       </div>
       <div className="modal__foot modal__foot--inline">
         <div className="xd-watch__mode">
-          <span>Preview</span>
+          <span>{tr('Preview')}</span>
           <Segmented
             value={previewMode}
             options={[
-              { value: 'live', label: 'Live', title: 'Keep the preview playable while exporting' },
-              { value: 'paused', label: 'Paused (faster)', title: 'Pause the preview so exports finish sooner' },
+              { value: 'live', label: tr('Live'), title: tr('Keep the preview playable while exporting') },
+              { value: 'paused', label: tr('Paused (faster)'), title: tr('Pause the preview so exports finish sooner') },
             ]}
             onChange={setPreviewMode}
           />
@@ -261,10 +272,10 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
             for (const j of jobs) if (j.status === 'queued' || j.status === 'running') cancelJob(j.id);
           }}
         >
-          {jobs.length > 1 ? 'Cancel all' : 'Cancel export'}
+          {jobs.length > 1 ? tr('Cancel all') : tr('Cancel export')}
         </button>
         <button type="button" className="btn btn--outline" data-continue onClick={onClose}>
-          Continue editing
+          {tr('Continue editing')}
         </button>
       </div>
     </Modal>
@@ -276,12 +287,29 @@ function WatchView({ ids, onClose, onBack }: { ids: string[]; onClose: () => voi
 // ---------------------------------------------------------------------------------------------
 
 const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
-  { value: 'all', label: 'Whole project' },
-  { value: 'inout', label: 'In–Out' },
-  { value: 'selection', label: 'Selected clips' },
+  { value: 'all', label: tk('Whole project') },
+  { value: 'inout', label: tk('In–Out') },
+  { value: 'selection', label: tk('Selected clips') },
 ];
 
+/** Range messages and preset group / aspect names from engine/export, translated where shown. */
+const ENGINE_TEXT = new Set<string>([
+  tk('The timeline is empty.'),
+  tk('The range is shorter than one frame.'),
+  tk('Mark an In and / or Out point first (I / O at the playhead).'),
+  tk('Select one or more clips on the timeline first.'),
+  tk('Social'),
+  tk('Video platforms'),
+  tk('General'),
+  tk('Landscape 16:9'),
+  tk('Vertical 9:16'),
+  tk('Square 1:1'),
+  tk('Portrait 4:5'),
+]);
+const engineText = (s: string): string => (ENGINE_TEXT.has(s) ? tMaybe(s) : s);
+
 export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
+  const tr = useT();
   const project = useProjectStore((s) => s.project);
   const runtime = useAssetRuntime((s) => s.items);
   const selection = useUI((s) => s.selection);
@@ -353,15 +381,17 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
     const s = t.settings;
     const out: string[] = [];
     const video = ['mp4', 'webm', 'mov'].includes(s.container);
-    if (video && caps && !caps.video[s.videoCodec]) out.push(`${t.label}: this PC has no ${s.videoCodec.toUpperCase()} encoder — choose MP4 · H.264 instead.`);
-    else if (video && sizeOk[`${s.videoCodec}:${s.width}x${s.height}`] === false) out.push(`${t.label}: this PC cannot encode ${s.videoCodec.toUpperCase()} at ${s.width} × ${s.height}.`);
-    if ((s.container === 'mp3' || s.container === 'wav') && !hasAudio) out.push(`${t.label}: this project has no audio to export.`);
+    const target = tMaybe(t.label);
+    const codec = s.videoCodec.toUpperCase();
+    if (video && caps && !caps.video[s.videoCodec]) out.push(tr('{target}: this PC has no {codec} encoder — choose MP4 · H.264 instead.', { target, codec }));
+    else if (video && sizeOk[`${s.videoCodec}:${s.width}x${s.height}`] === false) out.push(tr('{target}: this PC cannot encode {codec} at {width} × {height}.', { target, codec, width: String(s.width), height: String(s.height) }));
+    if ((s.container === 'mp3' || s.container === 'wav') && !hasAudio) out.push(tr('{target}: this project has no audio to export.', { target }));
     return out;
   };
   const blocking = plans.flatMap(problems);
   const notes: string[] = [];
   for (const t of plans) {
-    if (t.maxDuration && range.end - range.start > t.maxDuration + 0.01) notes.push(`${t.label} accepts videos up to ${formatDuration(t.maxDuration)} — this export is ${formatDuration(range.end - range.start)}.`);
+    if (t.maxDuration && range.end - range.start > t.maxDuration + 0.01) notes.push(tr('{target} accepts videos up to {max} — this export is {length}.', { target: tMaybe(t.label), max: formatDuration(t.maxDuration), length: formatDuration(range.end - range.start) }));
   }
   const stillOnly = plans.length > 0 && plans.every((t) => t.settings.container === 'png');
   const rangeOk = stillOnly || range.valid;
@@ -386,7 +416,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
       if (!batch) {
         const t = plans[0];
         if (t.kind === 'folder') {
-          const dir = await api.call<string | null>('x:export:pickFolder', 'Choose where to save the PNG sequence');
+          const dir = await api.call<string | null>('x:export:pickFolder', tr('Choose where to save the PNG sequence'));
           if (!dir) return;
           outputs.push({ path: await api.call<string>('x:export:subfolder', dir, outputName(project.name, t, true)), kind: 'folder' });
         } else {
@@ -395,7 +425,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           outputs.push({ path, kind: 'file' });
         }
       } else {
-        const dir = await api.call<string | null>('x:export:pickFolder', `Choose a folder for the ${plans.length} exports`);
+        const dir = await api.call<string | null>('x:export:pickFolder', tr('Choose a folder for the {count} exports', { count: plans.length }));
         if (!dir) return;
         for (const t of plans) {
           const name = outputName(project.name, t, true);
@@ -419,10 +449,10 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
       if (watch) setView({ name: 'watch', ids });
       else {
         onClose();
-        useUI.getState().toast({ kind: 'info', message: plans.length === 1 ? 'Added to the export queue' : `Added ${plans.length} exports to the queue`, detail: 'Follow the progress from the title bar.' });
+        useUI.getState().toast({ kind: 'info', message: tr('{count, plural, =1 {Added to the export queue} other {Added # exports to the queue}}', { count: plans.length }), detail: tr('Follow the progress from the title bar.') });
       }
     } catch (err) {
-      useUI.getState().toast({ kind: 'error', message: 'Could not start the export', detail: (err as Error).message });
+      useUI.getState().toast({ kind: 'error', message: tr('Could not start the export'), detail: (err as Error).message });
     } finally {
       setBusy(false);
     }
@@ -435,7 +465,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
   const customFrame = frameFor(custom.aspect, project.settings, custom.shortSide || undefined);
   const resolutions = (() => {
     const list = [2160, 1440, 1080, 720, 480, 360].filter((r) => r <= Math.max(projShort, 1080) * 2 && r !== projShort);
-    const opts = [{ value: 0, label: `Project — ${frameFor(custom.aspect, project.settings).width} × ${frameFor(custom.aspect, project.settings).height}` }, ...list.map((r) => {
+    const opts = [{ value: 0, label: tr('Project — {width} × {height}', { width: String(frameFor(custom.aspect, project.settings).width), height: String(frameFor(custom.aspect, project.settings).height) }) }, ...list.map((r) => {
       const f = frameFor(custom.aspect, project.settings, r);
       return { value: r, label: `${r === 2160 ? '4K' : `${r}p`} — ${f.width} × ${f.height}` };
     })];
@@ -445,9 +475,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
   const fpsOptions = (() => {
     const base = isGif ? [8, 10, 12, 15, 20, 24, 30] : [24, 25, 30, 50, 60];
     const all = [...new Set([...base, ...(isGif ? [] : [pfps])])].sort((a, b) => a - b);
-    return all.map((f) => ({ value: f, label: `${f} fps${f === pfps ? ' (project)' : ''}` }));
+    return all.map((f) => ({ value: f, label: f === pfps ? tr('{fps} fps (project)', { fps: String(f) }) : `${f} fps` }));
   })();
-  const formatOptions = (custom.transparent ? ALPHA_FORMATS : FORMATS).map((f) => ({ value: f.id, label: f.label + (f.kind === 'video' && caps && !caps.video[f.codec] ? ' — not available on this PC' : '') }));
+  const formatOptions = (custom.transparent ? ALPHA_FORMATS : FORMATS).map((f) => ({ value: f.id, label: f.kind === 'video' && caps && !caps.video[f.codec] ? tr('{format} — not available on this PC', { format: f.label }) : f.label }));
   const totalSize = plans.reduce((sum, t) => sum + estimateSize(t.settings, hasAudio), 0);
   const visualPlans = plans.filter((t) => !(t.settings.container === 'mp3' || t.settings.container === 'wav'));
   const box = plans.length <= 1 ? { w: 274, h: 230 } : { w: 129, h: 132 };
@@ -458,7 +488,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
 
   return (
     <Modal
-      title="Export"
+      title={tr('Export')}
       subtitle={`${project.name} · ${formatDuration(duration)} · ${pw} × ${ph} · ${pfps} fps`}
       onClose={onClose}
       width={980}
@@ -467,35 +497,34 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           <div className="xd-estimate">
             {plans.length > 0 && duration > 0 && !stillOnly && (
               <>
-                {plans.length > 1 ? `${plans.length} exports · about ` : 'Estimated size '}
-                <strong>{formatBytes(totalSize)}</strong>
-                {rangeMode !== 'all' && range.valid && <> · {formatSeconds(range.end - range.start)} section</>}
+                {richText(plans.length > 1 ? tr('{count} exports · about {size}', { count: plans.length }) : tr('Estimated size {size}'), { size: <strong>{formatSize(totalSize)}</strong> })}
+                {rangeMode !== 'all' && range.valid && <> · {tr('{duration} section', { duration: formatSeconds(range.end - range.start) })}</>}
               </>
             )}
           </div>
           <button type="button" className="btn btn--outline" onClick={onClose}>
-            Cancel
+            {tr('Cancel')}
           </button>
-          <button type="button" className="btn btn--outline" disabled={!canExport} title="Render in the background and keep editing" data-add-to-queue onClick={() => void submit(false)}>
-            <ListPlus size={14} /> Add to queue
+          <button type="button" className="btn btn--outline" disabled={!canExport} title={tr('Render in the background and keep editing')} data-add-to-queue onClick={() => void submit(false)}>
+            <ListPlus size={14} /> {tr('Add to queue')}
           </button>
           <button type="button" className="btn btn--primary" disabled={!canExport} data-export onClick={() => void submit(true)}>
-            <Sparkles size={14} /> {plans.length > 1 ? `Export ${plans.length} files` : 'Export'}
+            <Sparkles size={14} /> {plans.length > 1 ? tr('Export {count} files', { count: plans.length }) : tr('Export')}
           </button>
         </>
       }
     >
       {duration <= 0 && (
         <div className="callout callout--warn">
-          <AlertTriangle size={15} /> The timeline is empty. Add something to the timeline before exporting.
+          <AlertTriangle size={15} /> {tr('The timeline is empty. Add something to the timeline before exporting.')}
         </div>
       )}
       {(warnings.slots > 0 || warnings.missing > 0) && (
         <div className="callout callout--warn">
           <AlertTriangle size={15} />
           <span>
-            {warnings.slots > 0 && `${warnings.slots} media placeholder${warnings.slots === 1 ? ' is' : 's are'} still empty and will appear as grey boxes. `}
-            {warnings.missing > 0 && `${warnings.missing} clip${warnings.missing === 1 ? ' uses' : 's use'} media that could not be found and will be skipped.`}
+            {warnings.slots > 0 && `${tr('{count, plural, one {# media placeholder is still empty and will appear as grey boxes.} other {# media placeholders are still empty and will appear as grey boxes.}}', { count: warnings.slots })} `}
+            {warnings.missing > 0 && tr('{count, plural, one {# clip uses media that could not be found and will be skipped.} other {# clips use media that could not be found and will be skipped.}}', { count: warnings.missing })}
           </span>
         </div>
       )}
@@ -504,23 +533,23 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           {/* ---- Formats ---- */}
           <section className="xd-sec">
             <div className="xd-sec__head">
-              <span className="xd-sec__title">Formats</span>
-              <span className="xd-sec__meta">{selected.length === 0 ? 'Pick one or more — each becomes its own file' : `${selected.length} selected${selected.length > 1 ? ' · exported one after another' : ''}`}</span>
+              <span className="xd-sec__title">{tr('Formats')}</span>
+              <span className="xd-sec__meta">{selected.length === 0 ? tr('Pick one or more — each becomes its own file') : tr('{count, plural, =1 {# selected} other {# selected · exported one after another}}', { count: selected.length })}</span>
               <span className="xd-sec__actions">
                 {selected.length > 0 && (
                   <button type="button" className="btn btn--sm btn--ghost" onClick={() => setSelected([])}>
-                    Clear
+                    {tr('Clear')}
                   </button>
                 )}
               </span>
             </div>
             {PRESET_GROUPS.map((g) => (
               <div key={g.id} className="xd-sec" style={{ gap: 6 }}>
-                <div className="xd-group">{g.label}</div>
+                <div className="xd-group">{engineText(g.label)}</div>
                 <div className="xd-grid">
                   {PLATFORM_PRESETS.filter((p) => p.group === g.id).map((p) => {
                     const f = presetFrame(p, project.settings);
-                    return <Tile key={p.id} id={p.id} selected={selected.includes(p.id)} onToggle={() => toggle(p.id)} w={f.width} h={f.height} tint={p.tint} name={p.name} spec={presetSpecLines(p, project.settings)} title={p.hint} />;
+                    return <Tile key={p.id} id={p.id} selected={selected.includes(p.id)} onToggle={() => toggle(p.id)} w={f.width} h={f.height} tint={p.tint} name={p.name} spec={presetSpecLines(p, project.settings)} title={tMaybe(p.hint)} />;
                   })}
                   {g.id === 'general' && (
                     <Tile
@@ -529,15 +558,15 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
                       onToggle={() => toggle('custom')}
                       w={fmt.kind === 'audio' ? 1 : customFrame.width}
                       h={fmt.kind === 'audio' ? 1 : customFrame.height}
-                      name="Custom"
+                      name={tr('Custom')}
                       spec={
                         <>
-                          {fmt.kind === 'audio' ? 'Sound only' : `${customFrame.width} × ${customFrame.height}`}
+                          {fmt.kind === 'audio' ? tr('Sound only') : `${customFrame.width} × ${customFrame.height}`}
                           <br />
                           {fmt.label.replace(' with transparency', ' + alpha')}
                         </>
                       }
-                      title="Choose the format, size and quality yourself"
+                      title={tr('Choose the format, size and quality yourself')}
                     />
                   )}
                 </div>
@@ -549,46 +578,46 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           {customSelected && (
             <section className="xd-sec">
               <div className="xd-sec__head">
-                <span className="xd-sec__title">Custom</span>
-                <span className="xd-sec__meta">{fmt.hint}</span>
+                <span className="xd-sec__title">{tr('Custom')}</span>
+                <span className="xd-sec__meta">{tMaybe(fmt.hint)}</span>
               </div>
               <div className="xd-card">
-                <Field label="Transparent" labelWidth={LABEL_W} title="Export without a background — only the layers are kept (WebM VP9 with alpha or PNG).">
+                <Field label={tr('Transparent')} labelWidth={LABEL_W} title={tr('Export without a background — only the layers are kept (WebM VP9 with alpha or PNG).')}>
                   <Toggle value={custom.transparent} onChange={(v) => setC({ transparent: v, formatId: v ? (getFormatAlpha(custom.formatId) ? custom.formatId : 'webm-alpha') : custom.formatId === 'webm-alpha' ? 'webm-vp9' : custom.formatId })} />
-                  <span className="xd-row__hint">{custom.transparent ? 'Areas no layer covers stay see-through. Full-frame videos and backgrounds remain opaque.' : 'Transparent background (WebM · VP9 alpha or PNG)'}</span>
+                  <span className="xd-row__hint">{custom.transparent ? tr('Areas no layer covers stay see-through. Full-frame videos and backgrounds remain opaque.') : tr('Transparent background (WebM · VP9 alpha or PNG)')}</span>
                 </Field>
-                <Field label="Format" labelWidth={LABEL_W}>
+                <Field label={tr('Format')} labelWidth={LABEL_W}>
                   <Select value={fmt.id} options={formatOptions} onChange={(id) => setC({ formatId: id })} />
                 </Field>
                 {fmt.kind !== 'audio' && (
                   <>
-                    <Field label="Frame" labelWidth={LABEL_W}>
+                    <Field label={tr('Frame', undefined, 'framing')} labelWidth={LABEL_W}>
                       <Select
                         value={custom.aspect}
-                        options={[{ value: 'source' as AspectId, label: `Project — ${pw} × ${ph}` }, ...ASPECTS.map((a) => ({ value: a.id as AspectId, label: a.label + (Math.abs(a.w / a.h - pw / ph) < 0.01 ? ' (project)' : ' — reframed') }))]}
+                        options={[{ value: 'source' as AspectId, label: tr('Project — {width} × {height}', { width: String(pw), height: String(ph) }) }, ...ASPECTS.map((a) => ({ value: a.id as AspectId, label: Math.abs(a.w / a.h - pw / ph) < 0.01 ? tr('{aspect} (project)', { aspect: engineText(a.label) }) : tr('{aspect} — reframed', { aspect: engineText(a.label) }) }))]}
                         onChange={(v) => setC({ aspect: v })}
                       />
                     </Field>
-                    <Field label="Resolution" labelWidth={LABEL_W}>
+                    <Field label={tr('Resolution')} labelWidth={LABEL_W}>
                       <Select value={resolutions.some((r) => r.value === custom.shortSide) ? custom.shortSide : 0} options={resolutions} onChange={(v) => setC({ shortSide: v })} />
                     </Field>
                   </>
                 )}
                 {(fmt.kind === 'video' || fmt.kind === 'gif' || fmt.kind === 'sequence') && (
-                  <Field label="Frame rate" labelWidth={LABEL_W}>
+                  <Field label={tr('Frame rate')} labelWidth={LABEL_W}>
                     <Select value={fpsOptions.some((o) => o.value === custom.fps) ? custom.fps : fpsOptions[fpsOptions.length - 1].value} options={fpsOptions} onChange={(v) => setC({ fps: v })} />
                   </Field>
                 )}
                 {(fmt.kind === 'video' || fmt.container === 'mp3') && (
-                  <Field label="Quality" labelWidth={LABEL_W}>
+                  <Field label={tr('Quality')} labelWidth={LABEL_W}>
                     <Segmented
                       value={custom.quality}
                       style={{ flex: 1 }}
                       options={[
-                        { value: 'low', label: 'Smaller file' },
-                        { value: 'medium', label: 'Balanced' },
-                        { value: 'high', label: 'High' },
-                        { value: 'best', label: 'Best' },
+                        { value: 'low', label: tr('Smaller file') },
+                        { value: 'medium', label: tr('Balanced') },
+                        { value: 'high', label: tr('High') },
+                        { value: 'best', label: tr('Best') },
                       ]}
                       onChange={(v) => setC({ quality: v })}
                     />
@@ -596,28 +625,28 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
                 )}
                 {fmt.kind === 'video' && (
                   <details className="advanced">
-                    <summary>Advanced</summary>
-                    <Field label="Encoder" labelWidth={LABEL_W}>
+                    <summary>{tr('Advanced')}</summary>
+                    <Field label={tr('Encoder')} labelWidth={LABEL_W}>
                       <Select
                         value={custom.hardware}
                         options={[
-                          { value: 'no-preference', label: 'Automatic' },
-                          { value: 'prefer-hardware', label: 'Prefer GPU (faster)' },
-                          { value: 'prefer-software', label: 'Prefer CPU (most compatible)' },
+                          { value: 'no-preference', label: tr('Automatic') },
+                          { value: 'prefer-hardware', label: tr('Prefer GPU (faster)') },
+                          { value: 'prefer-software', label: tr('Prefer CPU (most compatible)') },
                         ]}
                         onChange={(v) => setC({ hardware: v })}
                       />
                     </Field>
                     {fmt.container !== 'webm' && (
-                      <Field label="Web optimised" labelWidth={LABEL_W} title="Places the index at the start of the file so it starts playing sooner when streamed.">
+                      <Field label={tr('Web optimised')} labelWidth={LABEL_W} title={tr('Places the index at the start of the file so it starts playing sooner when streamed.')}>
                         <Toggle value={custom.fastStart} onChange={(v) => setC({ fastStart: v })} />
-                        <span className="xd-row__hint">Fast start for streaming</span>
+                        <span className="xd-row__hint">{tr('Fast start for streaming')}</span>
                       </Field>
                     )}
                   </details>
                 )}
-                {isGif && <p className="hint">GIFs are limited to 256 colours per frame and get large quickly — keep them short, small and at a low frame rate.</p>}
-                {fmt.kind === 'sequence' && <p className="hint">Frames are saved as numbered PNG files in a new folder inside the folder you choose.</p>}
+                {isGif && <p className="hint">{tr('GIFs are limited to 256 colours per frame and get large quickly — keep them short, small and at a low frame rate.')}</p>}
+                {fmt.kind === 'sequence' && <p className="hint">{tr('Frames are saved as numbered PNG files in a new folder inside the folder you choose.')}</p>}
               </div>
             </section>
           )}
@@ -625,8 +654,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           {/* ---- Range ---- */}
           <section className="xd-sec">
             <div className="xd-sec__head">
-              <span className="xd-sec__title">Range</span>
-              <span className="xd-sec__meta">Mark a section on the timeline with I and O</span>
+              <span className="xd-sec__title">{tr('Range')}</span>
+              <span className="xd-sec__meta">{tr('Mark a section on the timeline with I and O')}</span>
             </div>
             <div className="xd-row">
               <div className="segmented" style={{ flex: 'none' }} data-range-modes>
@@ -637,10 +666,10 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
                     className={rangeMode === o.value ? 'is-active' : ''}
                     data-range={o.value}
                     disabled={(o.value === 'inout' && !inOutAvailable) || (o.value === 'selection' && selection.length === 0)}
-                    title={o.value === 'inout' && !inOutAvailable ? 'Mark In / Out on the timeline first (I / O)' : o.value === 'selection' && selection.length === 0 ? 'Select clips on the timeline first' : undefined}
+                    title={o.value === 'inout' && !inOutAvailable ? tr('Mark In / Out on the timeline first (I / O)') : o.value === 'selection' && selection.length === 0 ? tr('Select clips on the timeline first') : undefined}
                     onClick={() => setRangeMode(o.value)}
                   >
-                    {o.label}
+                    {tMaybe(o.label)}
                   </button>
                 ))}
               </div>
@@ -653,7 +682,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
               ) : (
                 <span className="xd-note xd-note--warn">
                   <AlertTriangle size={13} />
-                  {range.reason}
+                  {range.reason && engineText(range.reason)}
                 </span>
               )}
             </div>
@@ -662,18 +691,18 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           {/* ---- Captions ---- */}
           <section className="xd-sec">
             <div className="xd-sec__head">
-              <span className="xd-sec__title">Captions</span>
-              <span className="xd-sec__meta">{hasCaptions ? `${cueCount} caption${cueCount === 1 ? '' : 's'} in this range` : 'No caption track in this project'}</span>
+              <span className="xd-sec__title">{tr('Captions')}</span>
+              <span className="xd-sec__meta">{hasCaptions ? tr('{count, plural, one {# caption in this range} other {# captions in this range}}', { count: cueCount }) : tr('No caption track in this project')}</span>
             </div>
             {hasCaptions ? (
               <div className="xd-card">
                 <div className="xd-row">
-                  <span className="xd-row__label">Burn into the video</span>
+                  <span className="xd-row__label">{tr('Burn into the video')}</span>
                   <Toggle value={burnIn} onChange={setBurnIn} />
-                  <span className="xd-row__hint">{burnIn ? 'Captions are drawn into the picture' : 'Caption tracks are hidden in this export'}</span>
+                  <span className="xd-row__hint">{burnIn ? tr('Captions are drawn into the picture') : tr('Caption tracks are hidden in this export')}</span>
                 </div>
                 <div className="xd-row">
-                  <span className="xd-row__label">Subtitle files</span>
+                  <span className="xd-row__label">{tr('Subtitle files')}</span>
                   <div className="xd-chips">
                     {(['srt', 'vtt'] as SubtitleFormat[]).map((f) => (
                       <button key={f} type="button" className={`xd-chip ${sidecars.includes(f) ? 'is-on' : ''}`} data-sidecar={f} disabled={!anySidecarTarget} onClick={() => setSidecars((s) => (s.includes(f) ? s.filter((x) => x !== f) : [...s, f]))}>
@@ -681,18 +710,18 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
                       </button>
                     ))}
                   </div>
-                  <span className="xd-row__hint">Saved next to each file, timed to the range</span>
+                  <span className="xd-row__hint">{tr('Saved next to each file, timed to the range')}</span>
                 </div>
                 <div className="xd-row">
-                  <span className="xd-row__label">Embedded subtitles</span>
+                  <span className="xd-row__label">{tr('Embedded subtitles')}</span>
                   <Toggle value={embed && anyVideoContainer} disabled={!anyVideoContainer} onChange={setEmbed} />
-                  <span className="xd-row__hint">{anyVideoContainer ? 'A WebVTT track inside MP4 / WebM files — viewers can switch it on' : 'Only MP4 and WebM files can carry a subtitle track'}</span>
+                  <span className="xd-row__hint">{anyVideoContainer ? tr('A WebVTT track inside MP4 / WebM files — viewers can switch it on') : tr('Only MP4 and WebM files can carry a subtitle track')}</span>
                 </div>
               </div>
             ) : (
               <div className="xd-note">
                 <Info size={13} />
-                <span>Captions are text clips on a captions track. Once the project has one you can burn them in, save SRT / VTT files and embed a subtitle track.</span>
+                <span>{tr('Captions are text clips on a captions track. Once the project has one you can burn them in, save SRT / VTT files and embed a subtitle track.')}</span>
               </div>
             )}
           </section>
@@ -700,9 +729,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           {/* ---- Audio ---- */}
           <section className="xd-sec">
             <div className="xd-row">
-              <span className="xd-row__label xd-sec__title">Include audio</span>
+              <span className="xd-row__label xd-sec__title">{tr('Include audio')}</span>
               <Toggle value={audio && hasAudio} disabled={!hasAudio} onChange={setAudio} />
-              <span className="xd-row__hint">{hasAudio ? 'Mixed sound of every audible clip' : 'No audio in this project'}</span>
+              <span className="xd-row__hint">{hasAudio ? tr('Mixed sound of every audible clip') : tr('No audio in this project')}</span>
             </div>
           </section>
         </div>
@@ -710,11 +739,11 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
         {/* ---- Preview column ---- */}
         <aside className="xd-side">
           <div className="xd-sec__head">
-            <span className="xd-sec__title">Preview</span>
-            <span className="xd-sec__meta">{visualPlans.some((t) => t.reframed) ? 'Adapted framing for each aspect' : 'Frame of the export'}</span>
+            <span className="xd-sec__title">{tr('Preview')}</span>
+            <span className="xd-sec__meta">{visualPlans.some((t) => t.reframed) ? tr('Adapted framing for each aspect') : tr('Frame of the export')}</span>
           </div>
           {plans.length === 0 ? (
-            <div className="xd-empty">Pick a format to see how the export will look.</div>
+            <div className="xd-empty">{tr('Pick a format to see how the export will look.')}</div>
           ) : (
             <div className="xd-previews">
               {plans.map((t) => (
@@ -733,7 +762,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
                 step={1 / pfps}
                 value={previewTime}
                 style={{ ['--pct' as string]: `${((previewTime - range.start) / Math.max(1e-6, range.end - range.start)) * 100}%` }}
-                title="Preview another frame"
+                title={tr('Preview another frame')}
                 onChange={(e) => setPreviewAt(parseFloat(e.target.value))}
               />
             </div>
@@ -753,7 +782,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }): ReactNode {
           {plans.length > 1 && (
             <div className="xd-note">
               <Info size={13} />
-              <span>You will pick one folder; each export gets its own file name.</span>
+              <span>{tr('You will pick one folder; each export gets its own file name.')}</span>
             </div>
           )}
         </aside>

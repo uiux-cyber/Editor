@@ -1,13 +1,15 @@
 import { Search, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useT } from '../i18n';
 
 export function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }): ReactNode {
+  const t = useT();
   return (
     <div className="search">
       <Search size={13} />
       <input value={value} placeholder={placeholder} spellCheck={false} onChange={(e) => onChange(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
       {value && (
-        <button type="button" className="icon-btn icon-btn--sm" onClick={() => onChange('')} title="Clear">
+        <button type="button" className="icon-btn icon-btn--sm" onClick={() => onChange('')} title={t('Clear')}>
           <X size={12} />
         </button>
       )}

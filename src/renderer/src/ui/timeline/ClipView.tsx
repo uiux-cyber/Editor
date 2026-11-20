@@ -5,6 +5,7 @@ import { sourceTimeAt } from '@/core/timemap';
 import type { Clip, MediaAsset } from '@/core/types';
 import { PEAKS_PER_SECOND, filmFrameAt, getFilmstrip, getWaveform, onAssetVisuals } from '@/engine/media/peaks';
 import { getSticker } from '@/library';
+import { useT } from '../i18n';
 import { onAnimationFrames, paintAnimationStrip } from '../library/animatedThumb';
 import { CompoundMini, RampOverlay, TimeTags } from '../time/ClipDecor';
 import { LEFT_PAD } from './geometry';
@@ -180,6 +181,7 @@ export interface ClipViewProps {
 }
 
 export const ClipView = memo(function ClipView({ clip, asset, pps, viewLeft, viewWidth, height, selected, missing, locked, dimmed, dropTarget, thumb, groupColor, linked }: ClipViewProps): ReactNode {
+  const tr = useT();
   const left = LEFT_PAD + clip.start * pps;
   const width = Math.max(2, clip.duration * pps);
   const keyframes = clip.keyframes ? allKeyframeTimes(clip) : [];
@@ -212,16 +214,16 @@ export const ClipView = memo(function ClipView({ clip, asset, pps, viewLeft, vie
         <div className="clip__label" style={{ transform: `translateX(${labelShift}px)` }}>
           <span className="clip__icon">{emoji && emoji.kind === 'emoji' ? <span className="clip__emoji">{emoji.char}</span> : ICONS[clip.type]}</span>
           {linked && (
-            <span className="clip__badge clip__badge--link" title="Linked — moves, trims, splits and deletes with its partner (Alt-click to pick it alone)">
+            <span className="clip__badge clip__badge--link" title={tr('Linked — moves, trims, splits and deletes with its partner (Alt-click to pick it alone)')}>
               <Link2 size={10} />
             </span>
           )}
           {groupColor && (
-            <span className="clip__badge clip__badge--group" title="Grouped — selects and moves with its group (Alt-click to pick it alone)">
+            <span className="clip__badge clip__badge--group" title={tr('Grouped — selects and moves with its group (Alt-click to pick it alone)')}>
               <GroupBadgeIcon size={10} />
             </span>
           )}
-          <span className="clip__name truncate">{missing ? `Missing: ${clip.name}` : clip.type === 'text' ? clip.text.content.replace(/\s+/g, ' ') : clip.name}</span>
+          <span className="clip__name truncate">{missing ? tr('Missing: {name}', { name: clip.name }) : clip.type === 'text' ? clip.text.content.replace(/\s+/g, ' ') : clip.name}</span>
           <TimeTags clip={clip} />
           {muted && (
             <span className="clip__tag">

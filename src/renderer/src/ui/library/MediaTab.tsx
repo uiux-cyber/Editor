@@ -9,6 +9,7 @@ import { toast } from '@/store/ui';
 import { addAsset } from '../actions';
 import { openContextMenu } from '../common/overlays';
 import { startDrag } from '../dnd';
+import { t, useT } from '../i18n';
 import { MediaTileBadges, mediaTileMenu } from '../media/MediaTile';
 import { offerConversion } from '@/engine/media/ffmpeg';
 import type { FileInfo } from '@shared/ipc';
@@ -24,7 +25,7 @@ export async function importFiles(files: FileInfo[]): Promise<MediaAsset[]> {
   if (convertible.length) offerConversion(convertible.map((f) => ({ name: f.name, path: f.path!, reason: f.reason })));
   if (failures.length) {
     const first = failures[0];
-    toast('error', failures.length === 1 ? `Could not import "${first.name}"` : `${failures.length} files could not be imported`, first.reason);
+    toast('error', failures.length === 1 ? t('Could not import "{name}"', { name: first.name }) : t('{count, plural, one {# file could not be imported} other {# files could not be imported}}', { count: failures.length }), first.reason);
   }
   return result.assets;
 }
@@ -36,6 +37,7 @@ export async function importViaDialog(): Promise<MediaAsset[]> {
 type Filter = 'all' | 'video' | 'image' | 'audio';
 
 export function MediaTab(): ReactNode {
+  const t = useT();
   const assets = useProjectStore((s) => s.project.assets);
   const runtime = useAssetRuntime((s) => s.items);
   const [filter, setFilter] = useState<Filter>('all');
@@ -65,25 +67,25 @@ export function MediaTab(): ReactNode {
     if (!file) return;
     try {
       await relinkAsset(asset.id, file);
-      toast('success', `Relinked "${asset.name}"`);
+      toast('success', t('Relinked "{name}"', { name: asset.name }));
     } catch (err) {
-      toast('error', 'Could not relink the file', err instanceof ImportError ? err.message : undefined);
+      toast('error', t('Could not relink the file'), err instanceof ImportError ? err.message : undefined);
     }
   };
 
   return (
     <div className="lib">
       <header className="lib__head">
-        <h3>Media</h3>
+        <h3>{t('Media')}</h3>
         <button type="button" className="btn btn--primary btn--sm" onClick={() => void doImport()} disabled={busy}>
-          {busy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : <Upload size={13} />} Import
+          {busy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : <Upload size={13} />} {t('Import')}
         </button>
       </header>
       {total > 0 && (
         <div className="lib__chips">
           {(['all', 'video', 'image', 'audio'] as Filter[]).map((f) => (
             <button key={f} type="button" className={`chip ${filter === f ? 'is-active' : ''}`} onClick={() => setFilter(f)}>
-              {f === 'all' ? 'All' : f === 'video' ? 'Video' : f === 'image' ? 'Images' : 'Audio'}
+              {f === 'all' ? t('All') : f === 'video' ? t('Video') : f === 'image' ? t('Images') : t('Audio')}
             </button>
           ))}
         </div>
@@ -94,16 +96,16 @@ export function MediaTab(): ReactNode {
             <span className="empty__icon">
               <FolderOpen size={20} />
             </span>
-            <span className="empty__title">Import your media</span>
+            <span className="empty__title">{t('Import your media')}</span>
             <span>
-              Drop videos, photos and audio here,
+              {t('Drop videos, photos and audio here,')}
               <br />
-              or click to browse.
+              {t('or click to browse.')}
             </span>
           </button>
         ) : list.length === 0 ? (
           <div className="empty">
-            <p>No {filter === 'image' ? 'images' : filter} in this project yet.</p>
+            <p>{filter === 'image' ? t('No images in this project yet.') : filter === 'video' ? t('No video in this project yet.') : t('No audio in this project yet.')}</p>
           </div>
         ) : (
           <div className="grid grid--media">
@@ -114,20 +116,20 @@ export function MediaTab(): ReactNode {
                 <div
                   key={asset.id}
                   className={`media-tile ${missing ? 'is-missing' : ''}`}
-                  title={missing ? `${asset.name} — file not found. Right-click to relink.` : `${asset.name}\nClick to add at the playhead, or drag to the timeline`}
+                  title={missing ? t('{name} — file not found. Right-click to relink.', { name: asset.name }) : `${asset.name}\n${t('Click to add at the playhead, or drag to the timeline')}`}
                   onPointerDown={(e) => !missing && startDrag(e, { kind: 'asset', assetId: asset.id }, asset.name, () => addAsset(asset))}
                   onContextMenu={(e) =>
                     openContextMenu(e, [
-                      { label: 'Add to timeline', icon: <Plus size={14} />, disabled: missing, run: () => addAsset(asset) },
+                      { label: t('Add to timeline'), icon: <Plus size={14} />, disabled: missing, run: () => addAsset(asset) },
                       ...(asset.source.type === 'file'
                         ? [
-                            { label: 'Show in Explorer', icon: <FolderOpen size={14} />, disabled: missing, run: () => void api.app.showItemInFolder((asset.source as { path: string }).path) },
-                            { label: 'Relink file…', run: () => void relink(asset) },
+                            { label: t('Show in Explorer'), icon: <FolderOpen size={14} />, disabled: missing, run: () => void api.app.showItemInFolder((asset.source as { path: string }).path) },
+                            { label: t('Relink file…'), run: () => void relink(asset) },
                           ]
                         : []),
                       ...mediaTileMenu(asset),
                       { type: 'separator' as const },
-                      { label: 'Remove from project', icon: <Trash2 size={14} />, danger: true, run: () => removeAsset(asset.id) },
+                      { label: t('Remove from project'), icon: <Trash2 size={14} />, danger: true, run: () => removeAsset(asset.id) },
                     ])
                   }
                 >
@@ -141,7 +143,7 @@ export function MediaTab(): ReactNode {
                     <AnimationBadge asset={asset} />
                     {missing && (
                       <span className="media-tile__warn">
-                        <AlertTriangle size={14} /> Missing
+                        <AlertTriangle size={14} /> {t('Missing')}
                       </span>
                     )}
                     <span className="media-tile__kind">{asset.kind === 'audio' ? <FileAudio size={11} /> : asset.kind === 'image' ? <ImageIcon size={11} /> : asset.kind === 'animation' ? <ImagePlay size={11} /> : <Video size={11} />}</span>

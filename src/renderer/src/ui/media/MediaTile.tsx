@@ -11,9 +11,11 @@ import { useMediaPrefs } from '@/engine/media/prefs';
 import { cancelProxy, deleteProxy, requestProxy, useProxyJobs } from '@/engine/media/proxies';
 import { api } from '@/platform/api';
 import type { MenuItem } from '../common/overlays';
+import { t, tk, tMaybe, useT } from '../i18n';
 import './media.css';
 
 export function MediaTileBadges({ asset }: { asset: MediaAsset }): ReactNode {
+  const t = useT();
   const job = useProxyJobs((s) => s.jobs[asset.id]);
   const proxyReady = useAssetRuntime((s) => !!s.items[asset.id]?.proxyUrl);
   const useProxies = useMediaPrefs((s) => s.useProxies);
@@ -22,37 +24,38 @@ export function MediaTileBadges({ asset }: { asset: MediaAsset }): ReactNode {
   const queued = job?.state === 'queued';
   const failed = job?.state === 'error';
   const pct = Math.round((job?.progress ?? 0) * 100);
+  const proxySize = proxy ? `${proxy.width}×${proxy.height}` : '';
   return (
     <>
       <span className="mt-badges">
         {asset.hdr && (
-          <span className="mt-badge mt-badge--hdr" title="High dynamic range source — tone-mapped to SDR in the preview and the export (Clip ▸ HDR to adjust)">
+          <span className="mt-badge mt-badge--hdr" title={t('High dynamic range source — tone-mapped to SDR in the preview and the export (Clip ▸ HDR to adjust)')}>
             HDR
           </span>
         )}
         {asset.transcodedFrom && (
-          <span className="mt-badge mt-badge--conv" title={`Converted with FFmpeg from\n${asset.transcodedFrom}`}>
-            <FileVideo size={10} /> Converted
+          <span className="mt-badge mt-badge--conv" title={`${t('Converted with FFmpeg from')}\n${asset.transcodedFrom}`}>
+            <FileVideo size={10} /> {t('Converted')}
           </span>
         )}
         {proxy && proxyReady && !job && (
-          <span className={`mt-badge mt-badge--proxy ${useProxies ? '' : 'is-off'}`} title={`Proxy ${proxy.width}×${proxy.height}${useProxies ? ' — the preview plays this lightweight copy; export uses the original' : ' — proxies are off, the preview plays the original'}`}>
-            <Zap size={10} /> Proxy
+          <span className={`mt-badge mt-badge--proxy ${useProxies ? '' : 'is-off'}`} title={useProxies ? t('Proxy {size} — the preview plays this lightweight copy; export uses the original', { size: proxySize }) : t('Proxy {size} — proxies are off, the preview plays the original', { size: proxySize })}>
+            <Zap size={10} /> {t('Proxy')}
           </span>
         )}
         {queued && (
-          <span className="mt-badge mt-badge--pending" title={`Waiting to create a proxy (${job.reason})`}>
-            Proxy queued
+          <span className="mt-badge mt-badge--pending" title={t('Waiting to create a proxy ({reason})', { reason: tMaybe(job.reason) })}>
+            {t('Proxy queued')}
           </span>
         )}
         {running && (
-          <span className="mt-badge mt-badge--pending" title={`Creating a proxy (${job.reason})`}>
-            <span className="spinner" style={{ width: 9, height: 9 }} /> Proxy {pct}%
+          <span className="mt-badge mt-badge--pending" title={t('Creating a proxy ({reason})', { reason: tMaybe(job.reason) })}>
+            <span className="spinner" style={{ width: 9, height: 9 }} /> {t('Proxy {percent}%', { percent: pct })}
           </span>
         )}
         {failed && (
           <span className="mt-badge mt-badge--error" title={job.error}>
-            Proxy failed
+            {t('Proxy failed')}
           </span>
         )}
       </span>
@@ -64,7 +67,7 @@ export function MediaTileBadges({ asset }: { asset: MediaAsset }): ReactNode {
           <button
             type="button"
             className="mt-cancel"
-            title="Cancel proxy"
+            title={t('Cancel proxy')}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
@@ -86,15 +89,15 @@ export function mediaTileMenu(asset: MediaAsset): MenuItem[] {
   const missing = useAssetRuntime.getState().items[asset.id]?.status === 'missing';
   const items: MenuItem[] = [{ type: 'separator' }];
   if (job && job.state !== 'error') {
-    items.push({ label: 'Cancel proxy', icon: <X size={14} />, run: () => cancelProxy(asset.id) });
+    items.push({ label: t('Cancel proxy'), icon: <X size={14} />, run: () => cancelProxy(asset.id) });
   } else if (asset.proxy) {
-    items.push({ label: 'Re-create proxy', icon: <RefreshCw size={14} />, disabled: missing, run: () => requestProxy(asset.id, { force: true, reason: 'Requested' }) });
-    items.push({ label: 'Delete proxy', icon: <Trash2 size={14} />, run: () => void deleteProxy(asset.id) });
+    items.push({ label: t('Re-create proxy'), icon: <RefreshCw size={14} />, disabled: missing, run: () => requestProxy(asset.id, { force: true, reason: tk('Requested') }) });
+    items.push({ label: t('Delete proxy'), icon: <Trash2 size={14} />, run: () => void deleteProxy(asset.id) });
   } else {
-    items.push({ label: 'Create proxy', icon: <Layers2 size={14} />, disabled: missing, run: () => requestProxy(asset.id, { reason: 'Requested' }) });
+    items.push({ label: t('Create proxy'), icon: <Layers2 size={14} />, disabled: missing, run: () => requestProxy(asset.id, { reason: tk('Requested') }) });
   }
   if (asset.transcodedFrom) {
-    items.push({ label: 'Show original in Explorer', icon: <FileVideo size={14} />, run: () => void api.app.showItemInFolder(asset.transcodedFrom!) });
+    items.push({ label: t('Show original in Explorer'), icon: <FileVideo size={14} />, run: () => void api.app.showItemInFolder(asset.transcodedFrom!) });
   }
   return items;
 }

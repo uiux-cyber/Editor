@@ -27,17 +27,60 @@ import { getProject } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { editClips, editVisual } from '../actions';
 import { ColorInput, Field, NumberInput, Section, Segmented, Select, SliderField, Toggle } from '../common/controls';
+import { tk, tMaybe, useT } from '../i18n';
 import { writeProp } from '../keyframeOps';
 import { FontPicker } from './FontPicker';
 import { KeyframeButton, PaintEditor, ParamControls, useLiveProp } from './shared';
 
 const labelOf = (id: string): string => id.replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
+/** Blend mode names (display with tMaybe). */
+const BLEND_LABEL: Record<string, string> = {
+  normal: tk('Normal'),
+  multiply: tk('Multiply'),
+  screen: tk('Screen'),
+  overlay: tk('Overlay'),
+  darken: tk('Darken'),
+  lighten: tk('Lighten'),
+  'color-dodge': tk('Color dodge'),
+  'color-burn': tk('Color burn'),
+  'hard-light': tk('Hard light'),
+  'soft-light': tk('Soft light'),
+  difference: tk('Difference'),
+  exclusion: tk('Exclusion'),
+  add: tk('Add'),
+  subtract: tk('Subtract'),
+};
+
+/** Shape and mask shape names (display with tMaybe). */
+const SHAPE_LABEL: Record<string, string> = {
+  rect: tk('Rectangle'),
+  ellipse: tk('Ellipse'),
+  pill: tk('Pill'),
+  triangle: tk('Triangle'),
+  diamond: tk('Diamond'),
+  pentagon: tk('Pentagon'),
+  hexagon: tk('Hexagon'),
+  octagon: tk('Octagon'),
+  star: tk('Star'),
+  burst: tk('Burst'),
+  heart: tk('Heart'),
+  arrow: tk('Arrow'),
+  chevron: tk('Chevron'),
+  line: tk('Line'),
+  cross: tk('Plus'),
+  bubble: tk('Bubble'),
+  ring: tk('Ring'),
+  frame: tk('Frame'),
+  blob: tk('Blob'),
+};
+
 // ---------------------------------------------------------------------------------------------
 // Transform
 // ---------------------------------------------------------------------------------------------
 
 export function TransformSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const x = useLiveProp(clip, 'x');
   const y = useLiveProp(clip, 'y');
   const sx = useLiveProp(clip, 'scaleX');
@@ -79,15 +122,15 @@ export function TransformSection({ clip, ids }: { clip: VisualClip; ids: ID[] })
   };
 
   return (
-    <Section title="Transform" id="transform">
-      <Field label="Position">
+    <Section title={t('Transform')} id="transform">
+      <Field label={t('Position')}>
         <NumberInput prefix="X" value={x} onChange={(v) => set('x', v)} precision={0} />
         <NumberInput prefix="Y" value={y} onChange={(v) => set('y', v)} precision={0} />
         <KeyframeButton clip={clip} ids={ids} props={['x', 'y']} />
       </Field>
       {linked ? (
         <SliderField
-          label="Scale"
+          label={t('Scale')}
           value={sx}
           min={0.01}
           max={4}
@@ -97,14 +140,14 @@ export function TransformSection({ clip, ids }: { clip: VisualClip; ids: ID[] })
           defaultValue={1}
           onChange={setScale}
           lead={
-            <button type="button" className="icon-btn icon-btn--sm is-active" title="Scale width and height together" onClick={() => setLinked(false)}>
+            <button type="button" className="icon-btn icon-btn--sm is-active" title={t('Scale width and height together')} onClick={() => setLinked(false)}>
               <Link2 size={12} />
             </button>
           }
         />
       ) : (
-        <Field label="Scale">
-          <button type="button" className="icon-btn icon-btn--sm" title="Scale width and height independently" onClick={() => setLinked(true)}>
+        <Field label={t('Scale')}>
+          <button type="button" className="icon-btn icon-btn--sm" title={t('Scale width and height independently')} onClick={() => setLinked(true)}>
             <Unlink2 size={12} />
           </button>
           <NumberInput prefix="W" value={sx} onChange={(v) => set('scaleX', v)} scale={100} suffix="%" min={0.01} max={20} step={1} />
@@ -114,50 +157,50 @@ export function TransformSection({ clip, ids }: { clip: VisualClip; ids: ID[] })
       <div className="row-end">
         <KeyframeButton clip={clip} ids={ids} props={['scaleX', 'scaleY']} />
       </div>
-      <SliderField label="Rotation" value={rotation} min={-180} max={180} step={1} suffix="°" defaultValue={0} bipolar onChange={(v) => set('rotation', v)} lead={<KeyframeButton clip={clip} ids={ids} props={['rotation']} />} />
-      <SliderField label="Opacity" value={opacity} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={1} onChange={(v) => set('opacity', v)} lead={<KeyframeButton clip={clip} ids={ids} props={['opacity']} />} />
-      <Field label="Blend">
-        <Select value={clip.blendMode} options={BLEND_MODES.map((m) => ({ value: m, label: labelOf(m) }))} onChange={(v) => editVisual(ids, (c) => void (c.blendMode = v))} />
+      <SliderField label={t('Rotation')} value={rotation} min={-180} max={180} step={1} suffix="°" defaultValue={0} bipolar onChange={(v) => set('rotation', v)} lead={<KeyframeButton clip={clip} ids={ids} props={['rotation']} />} />
+      <SliderField label={t('Opacity')} value={opacity} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={1} onChange={(v) => set('opacity', v)} lead={<KeyframeButton clip={clip} ids={ids} props={['opacity']} />} />
+      <Field label={t('Blend')}>
+        <Select value={clip.blendMode} options={BLEND_MODES.map((m) => ({ value: m, label: BLEND_LABEL[m] ? tMaybe(BLEND_LABEL[m]) : labelOf(m) }))} onChange={(v) => editVisual(ids, (c) => void (c.blendMode = v))} />
       </Field>
-      <Field label="Align">
+      <Field label={t('Align')}>
         <div className="btn-row">
-          <button type="button" className="icon-btn" title="Align left" onClick={() => align(-1, null)}>
+          <button type="button" className="icon-btn" title={t('Align left')} onClick={() => align(-1, null)}>
             <AlignStartVertical size={15} />
           </button>
-          <button type="button" className="icon-btn" title="Centre horizontally" onClick={() => align(0, null)}>
+          <button type="button" className="icon-btn" title={t('Centre horizontally')} onClick={() => align(0, null)}>
             <AlignCenterVertical size={15} />
           </button>
-          <button type="button" className="icon-btn" title="Align right" onClick={() => align(1, null)}>
+          <button type="button" className="icon-btn" title={t('Align right')} onClick={() => align(1, null)}>
             <AlignEndVertical size={15} />
           </button>
           <span className="vdivider" />
-          <button type="button" className="icon-btn" title="Align top" onClick={() => align(null, -1)}>
+          <button type="button" className="icon-btn" title={t('Align top')} onClick={() => align(null, -1)}>
             <AlignStartHorizontal size={15} />
           </button>
-          <button type="button" className="icon-btn" title="Centre vertically" onClick={() => align(null, 0)}>
+          <button type="button" className="icon-btn" title={t('Centre vertically')} onClick={() => align(null, 0)}>
             <AlignCenterHorizontal size={15} />
           </button>
-          <button type="button" className="icon-btn" title="Align bottom" onClick={() => align(null, 1)}>
+          <button type="button" className="icon-btn" title={t('Align bottom')} onClick={() => align(null, 1)}>
             <AlignEndHorizontal size={15} />
           </button>
         </div>
       </Field>
-      <Field label="Layout">
+      <Field label={t('Layout')}>
         <div className="btn-row">
           {(clip.type === 'video' || clip.type === 'image') && (
             <>
-              <button type="button" className="btn btn--sm btn--outline" title="Scale to fit inside the frame" onClick={() => fit('fit')}>
-                Fit
+              <button type="button" className="btn btn--sm btn--outline" title={t('Scale to fit inside the frame')} onClick={() => fit('fit')}>
+                {t('Fit')}
               </button>
-              <button type="button" className="btn btn--sm btn--outline" title="Scale to cover the whole frame" onClick={() => fit('fill')}>
-                Fill
+              <button type="button" className="btn btn--sm btn--outline" title={t('Scale to cover the whole frame')} onClick={() => fit('fill')}>
+                {t('Fill', undefined, 'layout')}
               </button>
             </>
           )}
-          <button type="button" className={`icon-btn ${clip.flipH ? 'is-active' : ''}`} title="Flip horizontally" onClick={() => editVisual(ids, (c) => void (c.flipH = !clip.flipH))}>
+          <button type="button" className={`icon-btn ${clip.flipH ? 'is-active' : ''}`} title={t('Flip horizontally')} onClick={() => editVisual(ids, (c) => void (c.flipH = !clip.flipH))}>
             <FlipHorizontal2 size={15} />
           </button>
-          <button type="button" className={`icon-btn ${clip.flipV ? 'is-active' : ''}`} title="Flip vertically" onClick={() => editVisual(ids, (c) => void (c.flipV = !clip.flipV))}>
+          <button type="button" className={`icon-btn ${clip.flipV ? 'is-active' : ''}`} title={t('Flip vertically')} onClick={() => editVisual(ids, (c) => void (c.flipV = !clip.flipV))}>
             <FlipVertical2 size={15} />
           </button>
         </div>
@@ -171,6 +214,7 @@ export function TransformSection({ clip, ids }: { clip: VisualClip; ids: ID[] })
 // ---------------------------------------------------------------------------------------------
 
 export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): ReactNode {
+  const tr = useT();
   const t = clip.text;
   const editing = useUI((s) => s.editingText);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -194,22 +238,32 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
 
   const font = getBundledFont(t.fontFamily);
   const weights = font ? font.weights : [400, 700];
-  const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extra Light', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semi Bold', 700: 'Bold', 800: 'Extra Bold', 900: 'Black' };
+  const WEIGHT_NAMES: Record<number, string> = {
+    100: tr('Thin', undefined, 'weight'),
+    200: tr('Extra Light', undefined, 'weight'),
+    300: tr('Light', undefined, 'weight'),
+    400: tr('Regular', undefined, 'weight'),
+    500: tr('Medium', undefined, 'weight'),
+    600: tr('Semi Bold', undefined, 'weight'),
+    700: tr('Bold', undefined, 'weight'),
+    800: tr('Extra Bold', undefined, 'weight'),
+    900: tr('Black', undefined, 'weight'),
+  };
 
   return (
     <>
-      <Section title="Text" id="text">
+      <Section title={tr('Text')} id="text">
         <textarea
           ref={area}
           className="textarea"
           value={t.content}
           rows={3}
           spellCheck={false}
-          placeholder="Type your text"
+          placeholder={tr('Type your text')}
           onChange={(e) => edit((c) => void (c.text.content = e.target.value), `text:${clip.id}`)}
           onKeyDown={(e) => e.stopPropagation()}
         />
-        <Field label="Font">
+        <Field label={tr('Font')}>
           <FontPicker
             value={t.fontFamily}
             onChange={(family) =>
@@ -220,36 +274,36 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
             }
           />
         </Field>
-        <Field label="Weight">
+        <Field label={tr('Weight')}>
           <Select value={weights.includes(t.fontWeight) ? t.fontWeight : weights[0]} options={weights.map((w) => ({ value: w, label: WEIGHT_NAMES[w] ?? String(w) }))} onChange={(w) => edit((c) => void (c.text.fontWeight = w))} />
-          <NumberInput value={t.fontSize} onChange={(v) => edit((c) => void (c.text.fontSize = Math.round(v)))} min={8} max={900} step={2} suffix="px" style={{ flex: 'none', width: 78 }} title="Font size" />
+          <NumberInput value={t.fontSize} onChange={(v) => edit((c) => void (c.text.fontSize = Math.round(v)))} min={8} max={900} step={2} suffix="px" style={{ flex: 'none', width: 78 }} title={tr('Font size')} />
         </Field>
-        <Field label="Style">
+        <Field label={tr('Style')}>
           <div className="btn-row">
-            <button type="button" className={`icon-btn ${t.italic ? 'is-active' : ''}`} title="Italic" onClick={() => edit((c) => void (c.text.italic = !t.italic))}>
+            <button type="button" className={`icon-btn ${t.italic ? 'is-active' : ''}`} title={tr('Italic')} onClick={() => edit((c) => void (c.text.italic = !t.italic))}>
               <Italic size={15} />
             </button>
-            <button type="button" className={`icon-btn ${t.underline ? 'is-active' : ''}`} title="Underline" onClick={() => edit((c) => void (c.text.underline = !t.underline))}>
+            <button type="button" className={`icon-btn ${t.underline ? 'is-active' : ''}`} title={tr('Underline')} onClick={() => edit((c) => void (c.text.underline = !t.underline))}>
               <Underline size={15} />
             </button>
-            <button type="button" className={`icon-btn ${t.uppercase ? 'is-active' : ''}`} title="All caps" onClick={() => edit((c) => void (c.text.uppercase = !t.uppercase))}>
+            <button type="button" className={`icon-btn ${t.uppercase ? 'is-active' : ''}`} title={tr('All caps')} onClick={() => edit((c) => void (c.text.uppercase = !t.uppercase))}>
               <CaseUpper size={15} />
             </button>
             <span className="vdivider" />
-            <button type="button" className={`icon-btn ${t.align === 'left' ? 'is-active' : ''}`} title="Align left" onClick={() => edit((c) => void (c.text.align = 'left'))}>
+            <button type="button" className={`icon-btn ${t.align === 'left' ? 'is-active' : ''}`} title={tr('Align left')} onClick={() => edit((c) => void (c.text.align = 'left'))}>
               <AlignLeft size={15} />
             </button>
-            <button type="button" className={`icon-btn ${t.align === 'center' ? 'is-active' : ''}`} title="Align centre" onClick={() => edit((c) => void (c.text.align = 'center'))}>
+            <button type="button" className={`icon-btn ${t.align === 'center' ? 'is-active' : ''}`} title={tr('Align centre')} onClick={() => edit((c) => void (c.text.align = 'center'))}>
               <AlignCenter size={15} />
             </button>
-            <button type="button" className={`icon-btn ${t.align === 'right' ? 'is-active' : ''}`} title="Align right" onClick={() => edit((c) => void (c.text.align = 'right'))}>
+            <button type="button" className={`icon-btn ${t.align === 'right' ? 'is-active' : ''}`} title={tr('Align right')} onClick={() => edit((c) => void (c.text.align = 'right'))}>
               <AlignRight size={15} />
             </button>
           </div>
         </Field>
-        <SliderField label="Letter spacing" value={t.letterSpacing} min={-0.1} max={0.6} step={0.005} scale={100} precision={1} defaultValue={0} onChange={(v) => edit((c) => void (c.text.letterSpacing = v))} />
-        <SliderField label="Line height" value={t.lineHeight} min={0.7} max={2.5} step={0.01} precision={2} defaultValue={1.15} onChange={(v) => edit((c) => void (c.text.lineHeight = v))} />
-        <Field label="Wrap width" title="Wrap long lines inside a box of this width">
+        <SliderField label={tr('Letter spacing')} value={t.letterSpacing} min={-0.1} max={0.6} step={0.005} scale={100} precision={1} defaultValue={0} onChange={(v) => edit((c) => void (c.text.letterSpacing = v))} />
+        <SliderField label={tr('Line height')} value={t.lineHeight} min={0.7} max={2.5} step={0.01} precision={2} defaultValue={1.15} onChange={(v) => edit((c) => void (c.text.lineHeight = v))} />
+        <Field label={tr('Wrap width')} title={tr('Wrap long lines inside a box of this width')}>
           <Toggle
             value={t.boxWidth !== undefined}
             onChange={(on) =>
@@ -263,12 +317,12 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
         </Field>
       </Section>
 
-      <Section title="Fill" id="fill">
+      <Section title={tr('Fill')} id="fill">
         <PaintEditor paint={t.fill} onChange={(p) => edit((c) => void (c.text.fill = p))} />
       </Section>
 
       <Section
-        title="Outline"
+        title={tr('Outline')}
         id="stroke"
         defaultOpen={!!t.stroke}
         actions={
@@ -285,18 +339,18 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
       >
         {t.stroke ? (
           <>
-            <Field label="Color">
+            <Field label={tr('Color')}>
               <ColorInput value={t.stroke.color} alpha onChange={(v) => edit((c) => c.text.stroke && void (c.text.stroke.color = v))} />
             </Field>
-            <SliderField label="Width" value={t.stroke.width} min={0} max={60} step={0.5} precision={1} defaultValue={8} onChange={(v) => edit((c) => c.text.stroke && void (c.text.stroke.width = v))} />
+            <SliderField label={tr('Width', undefined, 'stroke')} value={t.stroke.width} min={0} max={60} step={0.5} precision={1} defaultValue={8} onChange={(v) => edit((c) => c.text.stroke && void (c.text.stroke.width = v))} />
           </>
         ) : (
-          <p className="hint">Add an outline around the letters.</p>
+          <p className="hint">{tr('Add an outline around the letters.')}</p>
         )}
       </Section>
 
       <Section
-        title="Shadow"
+        title={tr('Shadow')}
         id="shadow"
         defaultOpen={!!t.shadow}
         actions={
@@ -313,22 +367,22 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
       >
         {t.shadow ? (
           <>
-            <Field label="Color">
+            <Field label={tr('Color')}>
               <ColorInput value={t.shadow.color} alpha onChange={(v) => edit((c) => c.text.shadow && void (c.text.shadow.color = v))} />
             </Field>
-            <SliderField label="Blur" value={t.shadow.blur} min={0} max={100} step={1} defaultValue={16} onChange={(v) => edit((c) => c.text.shadow && void (c.text.shadow.blur = v))} />
-            <Field label="Offset">
+            <SliderField label={tr('Blur')} value={t.shadow.blur} min={0} max={100} step={1} defaultValue={16} onChange={(v) => edit((c) => c.text.shadow && void (c.text.shadow.blur = v))} />
+            <Field label={tr('Offset')}>
               <NumberInput prefix="X" value={t.shadow.x} onChange={(v) => edit((c) => c.text.shadow && void (c.text.shadow.x = v))} min={-200} max={200} />
               <NumberInput prefix="Y" value={t.shadow.y} onChange={(v) => edit((c) => c.text.shadow && void (c.text.shadow.y = v))} min={-200} max={200} />
             </Field>
           </>
         ) : (
-          <p className="hint">Add a drop shadow for depth and legibility.</p>
+          <p className="hint">{tr('Add a drop shadow for depth and legibility.')}</p>
         )}
       </Section>
 
       <Section
-        title="Glow"
+        title={tr('Glow')}
         id="glow"
         defaultOpen={!!t.glow}
         actions={
@@ -345,18 +399,18 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
       >
         {t.glow ? (
           <>
-            <Field label="Color">
+            <Field label={tr('Color')}>
               <ColorInput value={t.glow.color} onChange={(v) => edit((c) => c.text.glow && void (c.text.glow.color = v))} />
             </Field>
-            <SliderField label="Size" value={t.glow.blur} min={0} max={120} step={1} defaultValue={28} onChange={(v) => edit((c) => c.text.glow && void (c.text.glow.blur = v))} />
+            <SliderField label={tr('Size')} value={t.glow.blur} min={0} max={120} step={1} defaultValue={28} onChange={(v) => edit((c) => c.text.glow && void (c.text.glow.blur = v))} />
           </>
         ) : (
-          <p className="hint">Add a soft neon-style halo.</p>
+          <p className="hint">{tr('Add a soft neon-style halo.')}</p>
         )}
       </Section>
 
       <Section
-        title="Background"
+        title={tr('Background')}
         id="background"
         defaultOpen={!!t.background}
         actions={
@@ -373,18 +427,18 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
       >
         {t.background ? (
           <>
-            <Field label="Color">
+            <Field label={tr('Color')}>
               <ColorInput value={t.background.color} onChange={(v) => edit((c) => c.text.background && void (c.text.background.color = v.slice(0, 7)))} />
             </Field>
-            <SliderField label="Opacity" value={t.background.opacity} min={0} max={1} step={0.01} scale={100} suffix="%" onChange={(v) => edit((c) => c.text.background && void (c.text.background.opacity = v))} />
-            <Field label="Padding">
+            <SliderField label={tr('Opacity')} value={t.background.opacity} min={0} max={1} step={0.01} scale={100} suffix="%" onChange={(v) => edit((c) => c.text.background && void (c.text.background.opacity = v))} />
+            <Field label={tr('Padding')}>
               <NumberInput prefix="X" value={t.background.padX} onChange={(v) => edit((c) => c.text.background && void (c.text.background.padX = v))} min={0} max={400} />
               <NumberInput prefix="Y" value={t.background.padY} onChange={(v) => edit((c) => c.text.background && void (c.text.background.padY = v))} min={0} max={400} />
             </Field>
-            <SliderField label="Roundness" value={t.background.radius} min={0} max={120} step={1} onChange={(v) => edit((c) => c.text.background && void (c.text.background.radius = v))} />
+            <SliderField label={tr('Roundness')} value={t.background.radius} min={0} max={120} step={1} onChange={(v) => edit((c) => c.text.background && void (c.text.background.radius = v))} />
           </>
         ) : (
-          <p className="hint">Put a box behind the text so it reads on any footage.</p>
+          <p className="hint">{tr('Put a box behind the text so it reads on any footage.')}</p>
         )}
       </Section>
     </>
@@ -398,6 +452,7 @@ export function TextSection({ clip, ids }: { clip: TextClip; ids: ID[] }): React
 const SHAPE_KINDS: ShapeKind[] = ['rect', 'ellipse', 'pill', 'triangle', 'diamond', 'pentagon', 'hexagon', 'octagon', 'star', 'burst', 'heart', 'arrow', 'chevron', 'line', 'cross', 'bubble', 'ring', 'frame', 'blob'];
 
 export function ShapeSection({ clip, ids }: { clip: ShapeClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const s = clip.shape;
   const edit = (recipe: (c: ShapeClip) => void): void =>
     editClips(ids, (c) => {
@@ -405,29 +460,29 @@ export function ShapeSection({ clip, ids }: { clip: ShapeClip; ids: ID[] }): Rea
     });
   return (
     <>
-      <Section title={s.slot ? 'Media placeholder' : 'Shape'} id="shape">
-        {s.slot && <p className="hint">Drag a photo or video from the Media tab onto this placeholder to fill it.</p>}
+      <Section title={s.slot ? t('Media placeholder') : t('Shape')} id="shape">
+        {s.slot && <p className="hint">{t('Drag a photo or video from the Media tab onto this placeholder to fill it.')}</p>}
         {/* Pen paths (kind 'path') are edited on the canvas and in the Path section. */}
         {!s.slot && s.kind !== 'path' && (
-          <Field label="Shape">
-            <Select value={s.kind} options={SHAPE_KINDS.map((k) => ({ value: k, label: labelOf(k === 'rect' ? 'rectangle' : k === 'cross' ? 'plus' : k) }))} onChange={(k) => edit((c) => void (c.shape.kind = k))} />
+          <Field label={t('Shape')}>
+            <Select value={s.kind} options={SHAPE_KINDS.map((k) => ({ value: k, label: SHAPE_LABEL[k] ? tMaybe(SHAPE_LABEL[k]) : labelOf(k) }))} onChange={(k) => edit((c) => void (c.shape.kind = k))} />
           </Field>
         )}
-        <Field label="Size">
+        <Field label={t('Size')}>
           <NumberInput prefix="W" value={s.width} onChange={(v) => edit((c) => void (c.shape.width = Math.max(2, Math.round(v))))} min={2} max={8000} />
           <NumberInput prefix="H" value={s.height} onChange={(v) => edit((c) => void (c.shape.height = Math.max(2, Math.round(v))))} min={2} max={8000} />
         </Field>
         {(s.kind === 'rect' || s.kind === 'frame' || s.kind === 'bubble') && (
-          <SliderField label="Roundness" value={s.radius} min={0} max={Math.round(Math.min(s.width, s.height) / 2)} step={1} onChange={(v) => edit((c) => void (c.shape.radius = v))} />
+          <SliderField label={t('Roundness')} value={s.radius} min={0} max={Math.round(Math.min(s.width, s.height) / 2)} step={1} onChange={(v) => edit((c) => void (c.shape.radius = v))} />
         )}
       </Section>
       {!s.slot && (
-        <Section title="Fill" id="fill">
+        <Section title={t('Fill')} id="fill">
           <PaintEditor paint={s.fill} onChange={(p) => edit((c) => void (c.shape.fill = p))} />
         </Section>
       )}
       <Section
-        title="Outline"
+        title={t('Outline')}
         id="stroke"
         defaultOpen={!!s.stroke}
         actions={
@@ -444,17 +499,17 @@ export function ShapeSection({ clip, ids }: { clip: ShapeClip; ids: ID[] }): Rea
       >
         {s.stroke ? (
           <>
-            <Field label="Color">
+            <Field label={t('Color')}>
               <ColorInput value={s.stroke.color} alpha onChange={(v) => edit((c) => c.shape.stroke && void (c.shape.stroke.color = v))} />
             </Field>
-            <SliderField label="Width" value={s.stroke.width} min={0} max={80} step={0.5} precision={1} onChange={(v) => edit((c) => c.shape.stroke && void (c.shape.stroke.width = v))} />
+            <SliderField label={t('Width', undefined, 'stroke')} value={s.stroke.width} min={0} max={80} step={0.5} precision={1} onChange={(v) => edit((c) => c.shape.stroke && void (c.shape.stroke.width = v))} />
           </>
         ) : (
-          <p className="hint">Add a border to the shape.</p>
+          <p className="hint">{t('Add a border to the shape.')}</p>
         )}
       </Section>
       <Section
-        title="Shadow"
+        title={t('Shadow')}
         id="shadow"
         defaultOpen={!!s.shadow}
         actions={
@@ -471,17 +526,17 @@ export function ShapeSection({ clip, ids }: { clip: ShapeClip; ids: ID[] }): Rea
       >
         {s.shadow ? (
           <>
-            <Field label="Color">
+            <Field label={t('Color')}>
               <ColorInput value={s.shadow.color} alpha onChange={(v) => edit((c) => c.shape.shadow && void (c.shape.shadow.color = v))} />
             </Field>
-            <SliderField label="Blur" value={s.shadow.blur} min={0} max={150} step={1} onChange={(v) => edit((c) => c.shape.shadow && void (c.shape.shadow.blur = v))} />
-            <Field label="Offset">
+            <SliderField label={t('Blur')} value={s.shadow.blur} min={0} max={150} step={1} onChange={(v) => edit((c) => c.shape.shadow && void (c.shape.shadow.blur = v))} />
+            <Field label={t('Offset')}>
               <NumberInput prefix="X" value={s.shadow.x} onChange={(v) => edit((c) => c.shape.shadow && void (c.shape.shadow.x = v))} min={-300} max={300} />
               <NumberInput prefix="Y" value={s.shadow.y} onChange={(v) => edit((c) => c.shape.shadow && void (c.shape.shadow.y = v))} min={-300} max={300} />
             </Field>
           </>
         ) : (
-          <p className="hint">Lift the shape off the background.</p>
+          <p className="hint">{t('Lift the shape off the background.')}</p>
         )}
       </Section>
     </>
@@ -489,6 +544,7 @@ export function ShapeSection({ clip, ids }: { clip: ShapeClip; ids: ID[] }): Rea
 }
 
 export function StickerSection({ clip, ids }: { clip: StickerClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const def = getSticker(clip.stickerId);
   const defaults = def && def.kind === 'canvas' ? (def.colors ?? []) : [];
   const colors = defaults.map((c, i) => clip.colors?.[i] ?? c);
@@ -497,15 +553,15 @@ export function StickerSection({ clip, ids }: { clip: StickerClip; ids: ID[] }):
       if (c.type === 'sticker') recipe(c);
     });
   return (
-    <Section title="Sticker" id="sticker">
-      <Field label="Name">
+    <Section title={t('Sticker')} id="sticker">
+      <Field label={t('Name')}>
         <span className="truncate" style={{ color: 'var(--text-0)' }}>
-          {def?.name ?? 'Sticker'}
+          {def?.name ?? t('Sticker')}
         </span>
       </Field>
-      <SliderField label="Size" value={clip.size} min={24} max={1600} step={2} suffix="px" onChange={(v) => edit((c) => void (c.size = Math.round(v)))} />
+      <SliderField label={t('Size')} value={clip.size} min={24} max={1600} step={2} suffix="px" onChange={(v) => edit((c) => void (c.size = Math.round(v)))} />
       {colors.map((color, i) => (
-        <Field key={i} label={`Color ${i + 1}`}>
+        <Field key={i} label={t('Color {number}', { number: String(i + 1) })}>
           <ColorInput
             value={color}
             onChange={(v) =>
@@ -521,7 +577,7 @@ export function StickerSection({ clip, ids }: { clip: StickerClip; ids: ID[] }):
       {clip.colors && (
         <div className="row-end">
           <button type="button" className="btn btn--sm btn--ghost" onClick={() => edit((c) => void delete c.colors)}>
-            Reset colors
+            {t('Reset colors')}
           </button>
         </div>
       )}
@@ -561,10 +617,11 @@ export function CropSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): Rea
       if (next.t + next.b > 0.95) next[side] = Math.max(0, 0.95 - (side === 't' ? next.b : next.t));
       c.crop = next;
     });
+  const t = useT();
   const active = crop.l + crop.t + crop.r + crop.b > 0 || !!clip.cornerRadius;
   return (
     <Section
-      title="Crop & corners"
+      title={t('Crop & corners')}
       id="crop"
       defaultOpen={active}
       actions={
@@ -579,20 +636,20 @@ export function CropSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): Rea
               })
             }
           >
-            Reset
+            {t('Reset')}
           </button>
         ) : undefined
       }
     >
       {clip.type !== 'generator' && (
         <>
-          <SliderField label="Left" value={crop.l} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('l', v)} />
-          <SliderField label="Right" value={crop.r} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('r', v)} />
-          <SliderField label="Top" value={crop.t} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('t', v)} />
-          <SliderField label="Bottom" value={crop.b} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('b', v)} />
+          <SliderField label={t('Left')} value={crop.l} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('l', v)} />
+          <SliderField label={t('Right')} value={crop.r} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('r', v)} />
+          <SliderField label={t('Top')} value={crop.t} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('t', v)} />
+          <SliderField label={t('Bottom')} value={crop.b} min={0} max={0.9} step={0.005} scale={100} suffix="%" defaultValue={0} onChange={(v) => setCrop('b', v)} />
         </>
       )}
-      <SliderField label="Roundness" value={clip.cornerRadius ?? 0} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={0} onChange={(v) => editVisual(ids, (c) => void (c.cornerRadius = v))} />
+      <SliderField label={t('Roundness')} value={clip.cornerRadius ?? 0} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={0} onChange={(v) => editVisual(ids, (c) => void (c.cornerRadius = v))} />
     </Section>
   );
 }
@@ -600,6 +657,7 @@ export function CropSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): Rea
 const MASK_SHAPES = ['rect', 'ellipse', 'diamond', 'triangle', 'star', 'heart', 'hexagon'] as const;
 
 export function MaskSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const m = clip.mask;
   const edit = (recipe: (mask: NonNullable<VisualClip['mask']>) => void): void =>
     editVisual(ids, (c) => {
@@ -607,7 +665,7 @@ export function MaskSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): Rea
     });
   return (
     <Section
-      title="Mask"
+      title={t('Mask')}
       id="mask"
       defaultOpen={!!m}
       actions={
@@ -624,28 +682,29 @@ export function MaskSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): Rea
     >
       {m ? (
         <>
-          <Field label="Shape">
-            <Select value={m.shape} options={MASK_SHAPES.map((s) => ({ value: s, label: labelOf(s === 'rect' ? 'rectangle' : s) }))} onChange={(v) => edit((mask) => void (mask.shape = v))} />
+          <Field label={t('Shape')}>
+            <Select value={m.shape} options={MASK_SHAPES.map((s) => ({ value: s, label: tMaybe(SHAPE_LABEL[s]) }))} onChange={(v) => edit((mask) => void (mask.shape = v))} />
           </Field>
-          <SliderField label="Width" value={m.w} min={0.02} max={2} step={0.01} scale={100} suffix="%" defaultValue={0.8} onChange={(v) => edit((mask) => void (mask.w = v))} />
-          <SliderField label="Height" value={m.h} min={0.02} max={2} step={0.01} scale={100} suffix="%" defaultValue={0.8} onChange={(v) => edit((mask) => void (mask.h = v))} />
-          <SliderField label="Position X" value={m.cx} min={-0.5} max={0.5} step={0.005} scale={100} bipolar defaultValue={0} onChange={(v) => edit((mask) => void (mask.cx = v))} />
-          <SliderField label="Position Y" value={m.cy} min={-0.5} max={0.5} step={0.005} scale={100} bipolar defaultValue={0} onChange={(v) => edit((mask) => void (mask.cy = v))} />
-          <SliderField label="Rotation" value={m.rotation} min={-180} max={180} step={1} suffix="°" bipolar defaultValue={0} onChange={(v) => edit((mask) => void (mask.rotation = v))} />
-          <SliderField label="Feather" value={m.feather} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={0} onChange={(v) => edit((mask) => void (mask.feather = v))} />
-          {m.shape === 'rect' && <SliderField label="Roundness" value={m.radius} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={0} onChange={(v) => edit((mask) => void (mask.radius = v))} />}
-          <Field label="Invert">
+          <SliderField label={t('Width')} value={m.w} min={0.02} max={2} step={0.01} scale={100} suffix="%" defaultValue={0.8} onChange={(v) => edit((mask) => void (mask.w = v))} />
+          <SliderField label={t('Height')} value={m.h} min={0.02} max={2} step={0.01} scale={100} suffix="%" defaultValue={0.8} onChange={(v) => edit((mask) => void (mask.h = v))} />
+          <SliderField label={t('Position X')} value={m.cx} min={-0.5} max={0.5} step={0.005} scale={100} bipolar defaultValue={0} onChange={(v) => edit((mask) => void (mask.cx = v))} />
+          <SliderField label={t('Position Y')} value={m.cy} min={-0.5} max={0.5} step={0.005} scale={100} bipolar defaultValue={0} onChange={(v) => edit((mask) => void (mask.cy = v))} />
+          <SliderField label={t('Rotation')} value={m.rotation} min={-180} max={180} step={1} suffix="°" bipolar defaultValue={0} onChange={(v) => edit((mask) => void (mask.rotation = v))} />
+          <SliderField label={t('Feather')} value={m.feather} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={0} onChange={(v) => edit((mask) => void (mask.feather = v))} />
+          {m.shape === 'rect' && <SliderField label={t('Roundness')} value={m.radius} min={0} max={1} step={0.01} scale={100} suffix="%" defaultValue={0} onChange={(v) => edit((mask) => void (mask.radius = v))} />}
+          <Field label={t('Invert')}>
             <Toggle value={m.invert} onChange={(v) => edit((mask) => void (mask.invert = v))} />
           </Field>
         </>
       ) : (
-        <p className="hint">Show only part of the layer through a shape.</p>
+        <p className="hint">{t('Show only part of the layer through a shape.')}</p>
       )}
     </Section>
   );
 }
 
 export function ChromaSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const ck = clip.chromaKey;
   const on = !!ck?.enabled;
   const edit = (recipe: (c: NonNullable<VisualClip['chromaKey']>) => void): void =>
@@ -654,24 +713,25 @@ export function ChromaSection({ clip, ids }: { clip: VisualClip; ids: ID[] }): R
       recipe(c.chromaKey);
     });
   return (
-    <Section title="Green screen" id="chroma" defaultOpen={on} actions={<Toggle value={on} onChange={(v) => edit((c) => void (c.enabled = v))} />}>
+    <Section title={t('Green screen')} id="chroma" defaultOpen={on} actions={<Toggle value={on} onChange={(v) => edit((c) => void (c.enabled = v))} />}>
       {on && ck ? (
         <>
-          <Field label="Key color">
+          <Field label={t('Key color')}>
             <ColorInput value={ck.color} onChange={(v) => edit((c) => void (c.color = v.slice(0, 7)))} />
           </Field>
-          <SliderField label="Similarity" value={ck.similarity} min={0} max={1} step={0.01} scale={100} defaultValue={0.42} onChange={(v) => edit((c) => void (c.similarity = v))} />
-          <SliderField label="Smoothness" value={ck.smoothness} min={0} max={1} step={0.01} scale={100} defaultValue={0.12} onChange={(v) => edit((c) => void (c.smoothness = v))} />
-          <SliderField label="Spill removal" value={ck.spill} min={0} max={1} step={0.01} scale={100} defaultValue={0.5} onChange={(v) => edit((c) => void (c.spill = v))} />
+          <SliderField label={t('Similarity')} value={ck.similarity} min={0} max={1} step={0.01} scale={100} defaultValue={0.42} onChange={(v) => edit((c) => void (c.similarity = v))} />
+          <SliderField label={t('Smoothness')} value={ck.smoothness} min={0} max={1} step={0.01} scale={100} defaultValue={0.12} onChange={(v) => edit((c) => void (c.smoothness = v))} />
+          <SliderField label={t('Spill removal')} value={ck.spill} min={0} max={1} step={0.01} scale={100} defaultValue={0.5} onChange={(v) => edit((c) => void (c.spill = v))} />
         </>
       ) : (
-        <p className="hint">Remove a solid background colour (chroma key). Use the picker’s eyedropper to sample the screen colour.</p>
+        <p className="hint">{t('Remove a solid background colour (chroma key). Use the picker’s eyedropper to sample the screen colour.')}</p>
       )}
     </Section>
   );
 }
 
 export function EditTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   if (clip.type === 'audio') return null;
   const media = clip.type === 'video' || clip.type === 'image';
   return (
@@ -681,8 +741,8 @@ export function EditTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
       {clip.type === 'sticker' && <StickerSection clip={clip} ids={ids} />}
       {clip.type === 'generator' && <GeneratorSection clip={clip} ids={ids} />}
       {clip.type === 'adjustment' ? (
-        <Section title="Adjustment layer" id="adjustment">
-          <p className="hint">Everything beneath this layer is graded and stylised by its Adjust and Effects settings.</p>
+        <Section title={t('Adjustment layer')} id="adjustment">
+          <p className="hint">{t('Everything beneath this layer is graded and stylised by its Adjust and Effects settings.')}</p>
           <OpacityOnly clip={clip} ids={ids} />
         </Section>
       ) : (
@@ -696,10 +756,11 @@ export function EditTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
 }
 
 function OpacityOnly({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const opacity = useLiveProp(clip, 'opacity');
   return (
     <SliderField
-      label="Strength"
+      label={t('Strength')}
       value={opacity}
       min={0}
       max={1}

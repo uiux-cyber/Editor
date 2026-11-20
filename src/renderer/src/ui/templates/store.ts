@@ -18,6 +18,7 @@ import type { TemplateCategory, TemplateDef } from '@/library/types';
 import { newUserTemplateId, parseUserTemplate, userTemplateDef, type ParsedUserTemplate, type UserTemplateFile } from '@/library/userTemplates';
 import { api } from '@/platform/api';
 import { toast } from '@/store/ui';
+import { t } from '../i18n';
 import { compilePackShader } from './shaderCheck';
 import { ensureThumbImage, ensureThumbImages, forgetThumbImage } from './thumbImages';
 
@@ -161,7 +162,7 @@ export function updateBrand(recipe: (kit: BrandKit) => BrandKit | void): void {
   installBrand(next);
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
-    api.call('x:brand:set', get().brand).catch((err) => toast('error', 'Could not save the brand kit', errorText(err)));
+    api.call('x:brand:set', get().brand).catch((err) => toast('error', t('Could not save the brand kit'), errorText(err)));
   }, 350);
 }
 
@@ -202,7 +203,7 @@ export async function addBrandLogo(): Promise<BrandLogo | null> {
     });
     return logo;
   } catch (err) {
-    toast('error', 'Could not add the logo', errorText(err));
+    toast('error', t('Could not add the logo'), errorText(err));
     return null;
   }
 }
@@ -263,7 +264,7 @@ function replaceEntry(entry: UserTemplateEntry): void {
 export async function storeUserTemplate(file: UserTemplateFile, poster: Uint8Array | null, embed: { assetId: ID; from: string; file: string }[]): Promise<UserTemplateEntry> {
   const stored = await api.call<StoredTemplate>('x:templates:save', file, poster, embed);
   const entry = await adoptTemplate(stored);
-  if (!entry) throw new Error('The saved template could not be read back.');
+  if (!entry) throw new Error(t('The saved template could not be read back.'));
   replaceEntry(entry);
   return entry;
 }
@@ -274,7 +275,7 @@ export async function renameUserTemplate(id: string, patch: { name?: string; cat
     const entry = await adoptTemplate(stored);
     if (entry) replaceEntry(entry);
   } catch (err) {
-    toast('error', 'Could not rename the template', errorText(err));
+    toast('error', t('Could not rename the template'), errorText(err));
   }
 }
 
@@ -287,7 +288,7 @@ export async function duplicateUserTemplate(id: string): Promise<UserTemplateEnt
     if (entry) replaceEntry(entry);
     return entry;
   } catch (err) {
-    toast('error', 'Could not duplicate the template', errorText(err));
+    toast('error', t('Could not duplicate the template'), errorText(err));
     return null;
   }
 }
@@ -299,7 +300,7 @@ export async function deleteUserTemplate(id: string): Promise<void> {
     registrations.delete(id);
     set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }));
   } catch (err) {
-    toast('error', 'Could not delete the template', errorText(err));
+    toast('error', t('Could not delete the template'), errorText(err));
   }
 }
 
@@ -371,7 +372,7 @@ export async function removePack(id: string): Promise<void> {
     packRegistrations.delete(id);
     set((s) => ({ packs: s.packs.filter((p) => p.id !== id) }));
   } catch (err) {
-    toast('error', 'Could not remove the pack', errorText(err));
+    toast('error', t('Could not remove the pack'), errorText(err));
   }
 }
 
@@ -406,7 +407,7 @@ export function bootTemplates(): Promise<void> {
       }
       set({ packs });
       const broken = packs.filter((p) => !p.loaded);
-      if (broken.length) toast('warning', `${broken.length === 1 ? 'A content pack' : `${broken.length} content packs`} could not be loaded`, `${broken.map((b) => b.name).join(', ')} — see Settings › Content packs.`);
+      if (broken.length) toast('warning', t('{count, plural, =1 {A content pack could not be loaded} other {# content packs could not be loaded}}', { count: broken.length }), t('{names} — see Settings › Content packs.', { names: broken.map((b) => b.name).join(', ') }));
     } catch (err) {
       console.warn('[packs] could not list packs', err);
     }

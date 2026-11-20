@@ -11,7 +11,7 @@
 import type { MediaAsset } from '@/core/types';
 import { api } from '@/platform/api';
 import { getRootProject } from '@/store/project';
-import { MOTION_FRAME_URL, normalizeMotionMeta, parseMotionFile, type MotionMeta } from '@shared/motion';
+import { MOTION_FRAME_URL, motionParamValues, normalizeMotionMeta, parseMotionFile, type MotionMeta, type MotionValue } from '@shared/motion';
 import type { FrameImage } from '../compositor';
 
 export class MotionError extends Error {}
@@ -72,7 +72,7 @@ export class MotionRuntime {
     if (d.type === 'ready') this.startedOk();
     else if (d.type === 'log') {
       this.logs.push(`[${d.level}] ${d.text}`);
-      if (this.logs.length > 40) this.logs.shift();
+      if (this.logs.length > 60) this.logs.shift();
     } else if (typeof d.id === 'number') {
       const w = this.waiting.get(d.id);
       if (!w) return;
@@ -82,24 +82,29 @@ export class MotionRuntime {
     }
   }
 
-  private send(msg: Record<string, unknown>, transfer: Transferable[], timeout: number, what: string): Promise<Reply> {
-    if (this.disposed) return Promise.reject(new MotionError('The clip was closed.'));
+  private async send(msg: Record<string, unknown>, transfer: Transferable[], timeout: number, what: string): Promise<Reply> {
+    if (this.disposed) throw new MotionError('The clip was closed.');
+    // A message posted before the sandbox page has loaded is lost: wait for its "ready".
+    await this.started;
+    if (this.disposed) throw new MotionError('The clip was closed.');
     const id = this.nextId++;
     return new Promise<Reply>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.waiting.delete(id);
-        reject(new MotionError(`${what} took longer than ${timeout / 1000} s.`));
+        const why = `${what} took longer than ${timeout / 1000} s.`;
+        reject(new MotionError(why));
         // A clip that hangs is stopped: its frame (and process) go away.
-        this.dispose();
+        this.dispose(why);
       }, timeout);
       this.waiting.set(id, { resolve, timer });
-      this.iframe.contentWindow!.postMessage({ __kinoraMotion: true, id, ...msg }, '*', transfer);
+      const trace = (globalThis as { __kinoraTraceMotion?: boolean }).__kinoraTraceMotion === true;
+      this.iframe.contentWindow!.postMessage({ __kinoraMotion: true, id, ...msg, ...(trace ? { trace } : {}) }, '*', transfer);
     });
   }
 
-  async init(code: string, meta: MotionMeta, images: Record<string, ImageBitmap>): Promise<void> {
-    await this.started;
-    const r = await this.send({ type: 'init', code, meta, images }, Object.values(images), INIT_TIMEOUT_MS, 'Starting the clip');
+  async init(code: string, meta: MotionMeta, images: Record<string, ImageBitmap>, params: Record<string, MotionValue | ImageBitmap | null> = {}): Promise<void> {
+    const transfer = [...Object.values(images), ...Object.values(params).filter((v): v is ImageBitmap => v instanceof ImageBitmap)];
+    const r = await this.send({ type: 'init', code, meta, images, params }, transfer, INIT_TIMEOUT_MS, 'Starting the clip');
     if (!r.ok) throw new MotionError(r.error ?? 'The clip could not be started.');
   }
 
@@ -109,12 +114,12 @@ export class MotionRuntime {
     return r.bitmap;
   }
 
-  dispose(): void {
+  dispose(why = 'The clip was closed.'): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const [, w] of this.waiting) {
       clearTimeout(w.timer);
-      w.resolve({ id: -1, type: 'frame', error: 'The clip was stopped.' });
+      w.resolve({ id: -1, type: 'frame', error: why === 'The clip was closed.' ? why : `The clip was stopped: ${why}` });
     }
     this.waiting.clear();
     if (this.iframe.contentWindow) runtimes.delete(this.iframe.contentWindow);
@@ -122,32 +127,53 @@ export class MotionRuntime {
   }
 }
 
+/** A project picture as an ImageBitmap (null when it is not an image or cannot be read). */
+async function loadImage(id: string): Promise<ImageBitmap | null> {
+  const a: MediaAsset | undefined = id ? getRootProject().assets[id] : undefined;
+  if (!a || a.source.type !== 'file' || (a.kind !== 'image' && a.kind !== 'animation') || a.format === 'motion') return null;
+  try {
+    const res = await fetch(api.media.toUrl(a.source.path));
+    return await createImageBitmap(await res.blob());
+  } catch {
+    return null;
+  }
+}
+
 /** Project images a clip asked for (meta.images: name → asset id), as ImageBitmaps. */
 async function loadImages(map: Record<string, string> | undefined): Promise<Record<string, ImageBitmap>> {
   const out: Record<string, ImageBitmap> = {};
   if (!map) return out;
-  const assets = getRootProject().assets;
   await Promise.all(
     Object.entries(map).map(async ([name, id]) => {
-      const a: MediaAsset | undefined = assets[id];
-      if (!a || a.source.type !== 'file' || (a.kind !== 'image' && a.kind !== 'animation')) return;
-      try {
-        const res = await fetch(api.media.toUrl(a.source.path));
-        out[name] = await createImageBitmap(await res.blob());
-      } catch {
-        /* missing image: the clip sees undefined */
-      }
+      const bmp = await loadImage(id);
+      if (bmp) out[name] = bmp; // missing image: the clip sees undefined
     }),
   );
   return out;
 }
 
+/** The clip's settings with the chosen values; image settings become pictures (or null). */
+async function resolveParams(meta: MotionMeta, chosen: Record<string, unknown> | undefined): Promise<Record<string, MotionValue | ImageBitmap | null>> {
+  const values: Record<string, MotionValue | ImageBitmap | null> = motionParamValues(meta.params, chosen);
+  await Promise.all(
+    (meta.params ?? [])
+      .filter((p) => p.type === 'image')
+      .map(async (p) => {
+        values[p.id] = await loadImage(String(values[p.id] ?? ''));
+      }),
+  );
+  return values;
+}
+
 const DEFAULTS = { width: 1920, height: 1080, fps: 30 };
 const live = new Set<MotionAnimation>();
 
-/** State of every open Motion clip (diagnostics, tests). */
-export function motionDebug(): { path: string; failed: boolean; error: string | null; cached: number[]; ready: boolean }[] {
-  return [...live].map((m) => m.debug());
+/** Recently closed clips and where they were closed from (diagnostics). */
+const closed: { path: string; values: string; at: number; from: string }[] = [];
+
+/** State of every open Motion clip, and the last ones closed (diagnostics, tests). */
+export function motionDebug(): { path: string; failed: boolean; error: string | null; cached: number[]; ready: boolean }[] & { closed?: typeof closed } {
+  return Object.assign([...live].map((m) => m.debug()), { closed: closed.slice() });
 }
 let versionSeq = 1;
 let useClock = 0;
@@ -171,11 +197,15 @@ export class MotionAnimation {
   private readonly urgent = new Set<number>();
   private latest = 0;
 
-  /** From a .kmotion file, or (validation) from code and meta directly. */
+  /**
+   * From a .kmotion file, or (validation) from code and meta directly. `values` are the settings
+   * chosen for this clip in the project (MediaAsset.motionValues); missing ones use the defaults.
+   */
   constructor(
     readonly path: string,
     private readonly onFrame: () => void,
     direct?: { code: string; meta: MotionMeta },
+    readonly values?: Record<string, MotionValue>,
   ) {
     live.add(this);
     this.ready = this.open(direct).catch((err) => {
@@ -188,12 +218,32 @@ export class MotionAnimation {
 
   private loaded = false;
 
-  debug(): { path: string; failed: boolean; error: string | null; cached: number[]; ready: boolean } {
-    return { path: this.path, failed: this.failed, error: this.error, cached: [...this.cache.keys()].sort((a, b) => a - b), ready: this.loaded };
+  private readonly born = Math.round(performance.now());
+
+  debug(): { path: string; failed: boolean; error: string | null; cached: number[]; ready: boolean; values: string; born: number; queue: number[]; rendering: number[]; waiting: number; latest: number; logs?: string[] } {
+    return {
+      path: this.path,
+      failed: this.failed,
+      error: this.error,
+      cached: [...this.cache.keys()].sort((a, b) => a - b),
+      ready: this.loaded,
+      values: JSON.stringify(this.values ?? {}),
+      born: this.born,
+      queue: this.queue.slice(),
+      rendering: [...this.rendering],
+      waiting: this.waiters.size,
+      latest: this.latest,
+      logs: this.logs.slice(-10),
+    } as ReturnType<MotionAnimation['debug']>;
   }
 
   get logs(): string[] {
     return this.rt?.logs ?? [];
+  }
+
+  /** Starting, rendering, or awaited by someone (an export): not to be closed. */
+  get busy(): boolean {
+    return (!this.loaded && !this.failed) || this.rendering.size > 0 || this.waiters.size > 0 || this.urgent.size > 0;
   }
 
   private async open(direct?: { code: string; meta: MotionMeta }): Promise<void> {
@@ -211,8 +261,12 @@ export class MotionAnimation {
     }
     this.info = meta;
     this.rt = new MotionRuntime();
-    await this.rt.init(code, meta, await loadImages(meta.images));
+    const [images, params] = await Promise.all([loadImages(meta.images), resolveParams(meta, this.values)]);
+    await this.rt.init(code, meta, images, params);
     this.loaded = true;
+    // Frames asked for while the clip was starting.
+    this.pump();
+    this.onFrame();
   }
 
   private frameCount(): number {
@@ -264,7 +318,7 @@ export class MotionAnimation {
       this.settle(i);
       return false;
     });
-    while (this.rendering.size < 2 && this.queue.length && this.rt && !this.rt.disposed) {
+    while (this.loaded && this.rendering.size < 2 && this.queue.length && this.rt && !this.rt.disposed) {
       const idx = this.queue.shift()!;
       this.rendering.add(idx);
       void this.rt
@@ -282,7 +336,7 @@ export class MotionAnimation {
         });
     }
     // A stopped clip renders nothing more: release everyone.
-    if (!this.rt || this.rt.disposed) for (const i of [...this.waiters.keys()]) if (!this.rendering.has(i)) this.settle(i);
+    if (this.failed || (this.rt?.disposed ?? false)) for (const i of [...this.waiters.keys()]) if (!this.rendering.has(i)) this.settle(i);
   }
 
   private store(idx: number, bitmap: ImageBitmap): void {
@@ -301,7 +355,7 @@ export class MotionAnimation {
 
   /** Synchronous frame for the preview: the exact one when ready, else the nearest earlier one. */
   frameAt(time: number): FrameImage | null {
-    if (!this.info || this.failed || !this.rt) return null;
+    if (!this.info || this.failed || !this.rt || !this.loaded) return null;
     const idx = this.indexAt(time);
     this.latest = idx;
     const exact = this.image(idx);
@@ -330,6 +384,10 @@ export class MotionAnimation {
   }
 
   dispose(): void {
+    if (live.has(this)) {
+      closed.push({ path: this.path, values: JSON.stringify(this.values ?? {}), at: Math.round(performance.now()), from: (new Error().stack ?? '').split('\n').slice(2, 6).join(' < ') });
+      if (closed.length > 12) closed.shift();
+    }
     live.delete(this);
     this.rt?.dispose();
     this.rt = null;
@@ -344,8 +402,8 @@ export class MotionAnimation {
  * Load a clip from code (not yet saved), render frames at `times` and report what happened:
  * Claude's create_motion / update_motion check a clip this way before it reaches the project.
  */
-export async function testMotion(code: string, meta: MotionMeta, times: number[]): Promise<{ ok: boolean; error?: string; logs: string[]; frames: ImageBitmap[]; ms: number[] }> {
-  const anim = new MotionAnimation('', () => undefined, { code, meta });
+export async function testMotion(code: string, meta: MotionMeta, times: number[], values?: Record<string, MotionValue>): Promise<{ ok: boolean; error?: string; logs: string[]; frames: ImageBitmap[]; ms: number[] }> {
+  const anim = new MotionAnimation('', () => undefined, { code, meta }, values);
   const frames: ImageBitmap[] = [];
   const ms: number[] = [];
   try {

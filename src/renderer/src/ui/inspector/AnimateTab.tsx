@@ -6,6 +6,7 @@ import { ANIMATIONS, TEXT_ANIMATIONS, getAnimation, getTextAnimation } from '@/l
 import type { AnimKind } from '@/library/types';
 import { editClips } from '../actions';
 import { Section, Segmented, SliderField } from '../common/controls';
+import { tk, tMaybe, useT } from '../i18n';
 import { LiveThumb, projectFromLayers, type ThumbSpec } from '../library/thumbs';
 
 const W = 176;
@@ -35,9 +36,10 @@ const AnimTile = memo(function AnimTile({ id, name, kind, duration, target, acti
   );
 });
 
-const KIND_LABEL: Record<AnimKind, string> = { in: 'In', out: 'Out', loop: 'Loop' };
+const KIND_SETTINGS: Record<AnimKind, string> = { in: tk('In settings'), out: tk('Out settings'), loop: tk('Loop settings') };
 
 export function AnimateTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode {
+  const t = useT();
   const [kind, setKind] = useState<AnimKind>('in');
   const [target, setTarget] = useState<Target>(clip.type === 'text' ? 'letters' : 'layer');
   const isText = clip.type === 'text';
@@ -73,10 +75,11 @@ export function AnimateTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
     });
 
   const maxDuration = kind === 'loop' ? 10 : Math.max(0.2, Math.min(5, clip.duration));
+  const kindLabel = (k: AnimKind): string => (k === 'in' ? t('In', undefined, 'anim') : k === 'out' ? t('Out', undefined, 'anim') : t('Loop'));
   const describe = (k: AnimKind): string => {
     const r = current?.[k];
-    if (!r) return 'None';
-    return (useLetters ? getTextAnimation(r.id)?.name : getAnimation(r.id)?.name) ?? 'None';
+    if (!r) return t('None');
+    return (useLetters ? getTextAnimation(r.id)?.name : getAnimation(r.id)?.name) ?? t('None');
   };
 
   return (
@@ -87,8 +90,8 @@ export function AnimateTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
             value={target}
             style={{ width: '100%' }}
             options={[
-              { value: 'letters', label: 'Letters & words', title: 'Animate each letter, word or line' },
-              { value: 'layer', label: 'Whole layer', title: 'Animate the text as one block' },
+              { value: 'letters', label: t('Letters & words'), title: t('Animate each letter, word or line') },
+              { value: 'layer', label: t('Whole layer'), title: t('Animate the text as one block') },
             ]}
             onChange={setTarget}
           />
@@ -100,7 +103,7 @@ export function AnimateTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
             value: k,
             label: (
               <span className="seg-2line">
-                <strong>{KIND_LABEL[k]}</strong>
+                <strong>{kindLabel(k)}</strong>
                 <small className="truncate">{describe(k)}</small>
               </span>
             ),
@@ -109,9 +112,9 @@ export function AnimateTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
         />
       </div>
       {ref && (
-        <Section title={`${KIND_LABEL[kind]} settings`} id="anim-settings">
+        <Section title={tMaybe(KIND_SETTINGS[kind])} id="anim-settings">
           <SliderField
-            label={kind === 'loop' ? 'Period' : 'Duration'}
+            label={kind === 'loop' ? t('Period') : t('Duration')}
             value={Math.min(ref.duration, maxDuration)}
             min={0.1}
             max={maxDuration}
@@ -127,7 +130,7 @@ export function AnimateTab({ clip, ids }: { clip: Clip; ids: ID[] }): ReactNode 
           <span className="anim-tile__none">
             <Ban size={18} />
           </span>
-          <span>None</span>
+          <span>{t('None')}</span>
         </button>
         {list.map((a) => (
           <AnimTile key={`${target}:${a.id}`} id={a.id} name={a.name} kind={kind} duration={a.duration} target={useLetters ? 'letters' : 'layer'} active={ref?.id === a.id} onPick={() => apply({ id: a.id, duration: Math.min(a.duration, maxDuration) })} />

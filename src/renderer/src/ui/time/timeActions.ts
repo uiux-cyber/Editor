@@ -15,6 +15,7 @@ import type { Clip, ID, KeyframeProp, Project, VideoClip } from '@/core/types';
 import { engine } from '@/engine/engine';
 import { getProject, getRootProject, updateProject, useProjectStore, type UpdateOptions } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { t, tk } from '../i18n';
 
 export const FREEZE_DURATION = 2;
 
@@ -53,7 +54,7 @@ export function setClipSpeed(ids: ID[], speed: number | CurvePoint[], opts: Upda
       applySpeed(clip, speed, { assetDuration: asset?.duration, room: roomAfter(p, clip), fps });
     }
     cleanupTransitions(p);
-  }, { label: 'Change speed', ...opts });
+  }, { label: tk('Change speed'), ...opts });
 }
 
 export function setReverse(ids: ID[], on: boolean): void {
@@ -66,7 +67,7 @@ export function setReverse(ids: ID[], on: boolean): void {
         else delete clip.reverse;
       }
     },
-    { label: on ? 'Reverse' : 'Play forwards' },
+    { label: on ? tk('Reverse') : tk('Play forwards') },
   );
 }
 
@@ -80,7 +81,7 @@ export function setPreservePitch(ids: ID[], on: boolean): void {
         else delete clip.preservePitch;
       }
     },
-    { label: on ? 'Keep pitch' : 'Pitch follows speed' },
+    { label: on ? tk('Keep pitch') : tk('Pitch follows speed') },
   );
 }
 
@@ -88,7 +89,7 @@ export function setPreservePitch(ids: ID[], on: boolean): void {
 export function toggleReverseSelection(): void {
   const media = selected().filter((c): c is Extract<Clip, { type: 'video' | 'audio' }> => (c.type === 'video' || c.type === 'audio') && !c.freeze);
   if (!media.length) {
-    toast('info', 'Select a video or audio clip to reverse it');
+    toast('info', t('Select a video or audio clip to reverse it'));
     return;
   }
   setReverse(
@@ -125,11 +126,11 @@ export function freezeFrame(duration = FREEZE_DURATION): ID | null {
   const time = playhead();
   const target = freezeTarget(project, time);
   if (!target) {
-    toast('info', 'Nothing to freeze here', 'Move the playhead over a video clip first.');
+    toast('info', t('Nothing to freeze here'), t('Move the playhead over a video clip first.'));
     return null;
   }
   if (target.freeze) {
-    toast('info', 'This clip is already a freeze frame');
+    toast('info', t('This clip is already a freeze frame'));
     return null;
   }
   let freezeId: ID | null = null;
@@ -180,7 +181,7 @@ export function freezeFrame(duration = FREEZE_DURATION): ID | null {
   });
   if (freezeId) {
     useUI.getState().select([freezeId]);
-    toast('success', 'Freeze frame added', `The frame holds for ${duration} s; later clips on the track moved right.`);
+    toast('success', t('Freeze frame added'), t('The frame holds for {duration} s; later clips on the track moved right.', { duration }));
   }
   return freezeId;
 }
@@ -194,7 +195,7 @@ export const inCompound = (): boolean => useProjectStore.getState().editPath.len
 export function createCompoundFromSelection(): ID | null {
   const ids = useUI.getState().selection;
   if (ids.length === 0) {
-    toast('info', 'Select the clips to combine', 'Shift-click or drag a box around clips, then create the compound clip.');
+    toast('info', t('Select the clips to combine'), t('Shift-click or drag a box around clips, then create the compound clip.'));
     return null;
   }
   let id: ID | null = null;
@@ -202,7 +203,7 @@ export function createCompoundFromSelection(): ID | null {
     id = createCompound(p, ids);
   });
   if (!id) {
-    toast('info', 'These clips cannot be combined', 'Clips on locked tracks stay where they are.');
+    toast('info', t('These clips cannot be combined'), t('Clips on locked tracks stay where they are.'));
     return null;
   }
   useUI.getState().select([id]);
@@ -257,7 +258,7 @@ export function breakApartSelection(): void {
   const targets = selected().filter((c) => c.type === 'compound');
   const list = targets.length ? targets : [compoundTarget()].filter((c): c is Clip => !!c && c.type === 'compound');
   if (!list.length) {
-    toast('info', 'Select a compound clip to break it apart');
+    toast('info', t('Select a compound clip to break it apart'));
     return;
   }
   const lost = list.some((c) => c.type === 'compound' && compoundHasOwnLook(c));
@@ -266,7 +267,7 @@ export function breakApartSelection(): void {
     for (const c of list) ids = ids.concat(breakApart(p, c.id));
   });
   useUI.getState().select(ids);
-  if (lost) toast('warning', 'Compound clip broken apart', "Its own transform, effects and grade applied to the whole compound and were not copied to its clips.");
+  if (lost) toast('warning', t('Compound clip broken apart'), t('Its own transform, effects and grade applied to the whole compound and were not copied to its clips.'));
 }
 
 // Export always renders the whole project: leave open compound clips when the dialog opens

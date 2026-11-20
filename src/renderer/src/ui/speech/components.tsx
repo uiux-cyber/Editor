@@ -5,11 +5,13 @@ import { LANGUAGES } from '@/engine/speech/transcriber';
 import { useProjectStore } from '@/store/project';
 import { useUI } from '@/store/ui';
 import { Field, Segmented, Select } from '../common/controls';
+import { tMaybe, useT } from '../i18n';
 import { cancelJob, selectedSoundClips } from './actions';
 import { useSpeech, type JobKind, type Scope } from './store';
 
 /** Progress of the running speech job (for `kinds`), or a note that another task is busy. */
 export function JobStatus({ kinds }: { kinds: JobKind[] }): ReactNode {
+  const t = useT();
   const job = useSpeech((s) => s.job);
   const ref = useRef<HTMLDivElement>(null);
   const mine = !!job && kinds.includes(job.kind);
@@ -19,15 +21,15 @@ export function JobStatus({ kinds }: { kinds: JobKind[] }): ReactNode {
   }, [mine, job?.id]);
   if (!job) return null;
   if (!kinds.includes(job.kind)) {
-    return <p className="hint sp-busy">{job.label} is running…</p>;
+    return <p className="hint sp-busy">{t('{label} is running…', { label: tMaybe(job.label) })}</p>;
   }
   const pct = job.ratio >= 0 ? Math.round(job.ratio * 100) : null;
   return (
     <div className="sp-job" role="status" data-job={job.kind} ref={ref}>
       <div className="sp-job__row">
-        <span className="sp-job__label truncate">{job.detail ?? job.label}</span>
+        <span className="sp-job__label truncate">{job.detail ?? tMaybe(job.label)}</span>
         {pct !== null && <span className="sp-job__pct mono">{pct}%</span>}
-        <button type="button" className="icon-btn icon-btn--sm" title="Cancel" onClick={cancelJob} data-action="cancel-job">
+        <button type="button" className="icon-btn icon-btn--sm" title={t('Cancel')} onClick={cancelJob} data-action="cancel-job">
           <X size={13} />
         </button>
       </div>
@@ -41,19 +43,20 @@ export function JobStatus({ kinds }: { kinds: JobKind[] }): ReactNode {
 export const useBusy = (): boolean => useSpeech((s) => !!s.job);
 
 /** "Selected clips" / "Whole timeline" switch. Falls back to the timeline without a selection. */
-export function ScopeSwitch({ value, onChange, label = 'Use' }: { value: Scope; onChange: (s: Scope) => void; label?: string }): ReactNode {
+export function ScopeSwitch({ value, onChange, label }: { value: Scope; onChange: (s: Scope) => void; label?: string }): ReactNode {
+  const t = useT();
   useUI((s) => s.selection);
   const project = useProjectStore((s) => s.project);
   const count = selectedSoundClips(project).length;
   const effective = value === 'selection' && count === 0 ? 'timeline' : value;
   return (
-    <Field label={label}>
+    <Field label={label ?? t('Use')}>
       <Segmented
         value={effective}
         style={{ flex: 1 }}
         options={[
-          { value: 'selection', label: count ? `Selected (${count})` : 'Selected', title: count ? 'The selected clips with sound' : 'Select clips with sound on the timeline' },
-          { value: 'timeline', label: 'Whole timeline', title: 'Everything you hear on the timeline' },
+          { value: 'selection', label: count ? t('Selected ({count})', { count }) : t('Selected'), title: count ? t('The selected clips with sound') : t('Select clips with sound on the timeline') },
+          { value: 'timeline', label: t('Whole timeline'), title: t('Everything you hear on the timeline') },
         ]}
         onChange={onChange}
       />
@@ -62,11 +65,13 @@ export function ScopeSwitch({ value, onChange, label = 'Use' }: { value: Scope; 
 }
 
 export function LanguageField(): ReactNode {
+  const t = useT();
   const language = useSpeech((s) => s.prefs.language);
   const setPrefs = useSpeech((s) => s.setPrefs);
+  // Language names come from the speech model's list and stay as they are.
   return (
-    <Field label="Language">
-      <Select value={language} options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))} onChange={(v) => setPrefs({ language: v })} />
+    <Field label={t('Language')}>
+      <Select value={language} options={LANGUAGES.map((l) => ({ value: l.code, label: l.code === 'auto' ? t('Detect automatically') : l.label }))} onChange={(v) => setPrefs({ language: v })} />
     </Field>
   );
 }
@@ -136,8 +141,9 @@ function PresetSample({ preset }: { preset: CaptionPreset }): ReactNode {
 
 /** Grid of caption looks. */
 export function PresetGrid({ value, onPick }: { value: string | null; onPick: (id: string) => void }): ReactNode {
+  const t = useT();
   return (
-    <div className="sp-presets" role="listbox" aria-label="Caption style">
+    <div className="sp-presets" role="listbox" aria-label={t('Caption style')}>
       {CAPTION_PRESETS.map((p) => (
         <button key={p.id} type="button" role="option" aria-selected={value === p.id} className={`sp-preset ${value === p.id ? 'is-active' : ''}`} title={p.description} onClick={() => onPick(p.id)} data-preset={p.id}>
           <span className="sp-preset__stage">

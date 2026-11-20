@@ -111,6 +111,13 @@ export function tMaybe(source: string, context?: string): string {
   return t(source, undefined, context);
 }
 
+/**
+ * Mark an English string for translation without translating it yet: labels in tables built at
+ * module load (tabs, options, presets) that are shown later. Display them with `tMaybe(label)`.
+ * `scripts/i18n.mjs` collects every `tk('…')` literal like a `t('…')` call.
+ */
+export const tk = <S extends string>(source: S): S => source;
+
 /** Current locale (BCP 47). */
 export const currentLocale = (): string => useI18n.getState().locale;
 

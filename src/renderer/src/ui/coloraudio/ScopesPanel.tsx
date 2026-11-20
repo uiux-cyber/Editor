@@ -10,15 +10,17 @@ import { engine } from '@/engine/engine';
 import { computeScopes, DEFAULT_VECTOR_RANGE, type ScopeData } from '@/engine/scopes/analyze';
 import { frameTap } from '@/engine/scopes/frameTap';
 import { Segmented } from '../common/controls';
+import { tk, tMaybe, useT } from '../i18n';
 import { useColorAudioPrefs, type ScopeMode } from './prefs';
 import { drawHistogram, drawVectorscope, drawWaveform } from './scopeDraw';
 
 type ScopeKind = 'waveform' | 'parade' | 'vector' | 'histogram';
 type Drawer = (d: ScopeData) => void;
 
-const TITLES: Record<ScopeKind, string> = { waveform: 'Waveform', parade: 'RGB parade', vector: 'Vectorscope', histogram: 'Histogram' };
+const TITLES: Record<ScopeKind, string> = { waveform: tk('Waveform'), parade: tk('RGB parade'), vector: tk('Vectorscope'), histogram: tk('Histogram') };
 
 function ScopeCanvas({ kind, register, range }: { kind: ScopeKind; register: (kind: ScopeKind, d: Drawer | null) => void; range: number }): ReactNode {
+  useT();
   const ref = useRef<HTMLCanvasElement>(null);
   const last = useRef<ScopeData | null>(null);
 
@@ -59,7 +61,7 @@ function ScopeCanvas({ kind, register, range }: { kind: ScopeKind; register: (ki
 
   return (
     <div className="scope" data-scope={kind}>
-      <span className="scope__title">{TITLES[kind]}</span>
+      <span className="scope__title">{tMaybe(TITLES[kind])}</span>
       <canvas ref={ref} className="scope__canvas" />
     </div>
   );
@@ -74,6 +76,7 @@ const KINDS: Record<ScopeMode, ScopeKind[]> = {
 };
 
 export function ScopesPanel(): ReactNode {
+  const t = useT();
   const mode = useColorAudioPrefs((s) => s.scopeMode);
   const zoom = useColorAudioPrefs((s) => s.vectorZoom);
   const width = useColorAudioPrefs((s) => s.scopesWidth);
@@ -133,14 +136,14 @@ export function ScopesPanel(): ReactNode {
           value={mode}
           onChange={(v) => set({ scopeMode: v })}
           options={[
-            { value: 'quad', label: '4-up', title: 'All four scopes' },
-            { value: 'waveform', label: 'Wave', title: 'Luma waveform' },
-            { value: 'parade', label: 'Parade', title: 'RGB parade' },
-            { value: 'vector', label: 'Vector', title: 'Vectorscope' },
-            { value: 'histogram', label: 'Histo', title: 'Histogram' },
+            { value: 'quad', label: t('4-up'), title: t('All four scopes') },
+            { value: 'waveform', label: t('Wave'), title: t('Luma waveform') },
+            { value: 'parade', label: t('Parade'), title: t('RGB parade') },
+            { value: 'vector', label: t('Vector'), title: t('Vectorscope') },
+            { value: 'histogram', label: t('Histo'), title: t('Histogram') },
           ]}
         />
-        <button type="button" className="icon-btn icon-btn--sm" title="Close scopes" onClick={() => set({ scopesOpen: false })}>
+        <button type="button" className="icon-btn icon-btn--sm" title={t('Close scopes')} onClick={() => set({ scopesOpen: false })}>
           <X size={13} />
         </button>
       </header>
@@ -152,8 +155,8 @@ export function ScopesPanel(): ReactNode {
       <footer className="scopes__foot">
         <span ref={statsRef} className="mono">—</span>
         {kinds.includes('vector') && (
-          <button type="button" className={`chip ${zoom === 2 ? 'is-active' : ''}`} title="Magnify the vectorscope" onClick={() => set({ vectorZoom: zoom === 2 ? 1 : 2 })}>
-            Vector 2×
+          <button type="button" className={`chip ${zoom === 2 ? 'is-active' : ''}`} title={t('Magnify the vectorscope')} onClick={() => set({ vectorZoom: zoom === 2 ? 1 : 2 })}>
+            {t('Vector 2×')}
           </button>
         )}
       </footer>

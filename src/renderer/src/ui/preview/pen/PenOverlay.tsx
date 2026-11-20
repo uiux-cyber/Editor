@@ -11,7 +11,7 @@
  */
 
 import { PenTool } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { designSize } from '@/core/project';
 import { clonePoints, constrain45, cubicSegments, insertPoint, isSmooth, nearestOnPath, removePoint, toggleSmooth, type AbsPoint, type Vec } from '@/core/path';
 import type { ID, ShapeClip, ShapeStyle, Transform } from '@/core/types';
@@ -19,8 +19,17 @@ import { engine, usePlayback } from '@/engine/engine';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
 import { useMenu } from '../../common/overlays';
+import { t, useT } from '../../i18n';
 import { createPathShape, designToFrame, designVecToFrame, editPath, frameToDesign, frameVecToDesign, shapeFrame, shapePoints, writePathPoints, type ShapeFrame } from './pathOps';
 import './pen.css';
+
+/** Put React nodes where a translated message has `{name}` placeholders. */
+function richText(message: string, nodes: Record<string, ReactNode>): ReactNode {
+  return message.split(/(\{\w+\})/).map((part, i) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1];
+    return name && name in nodes ? <Fragment key={i}>{nodes[name]}</Fragment> : part;
+  });
+}
 
 interface Guides {
   v: number | null;
@@ -107,6 +116,7 @@ function GuideLines({ guides, k, stageW, stageH }: StageProps & { guides: Guides
 // ---------------------------------------------------------------------------------------------
 
 function PenDraw({ k, stageW, stageH }: StageProps): ReactNode {
+  const tr = useT();
   const settings = useProjectStore((s) => s.project.settings);
   const { cw, ch } = designSize(settings);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -140,7 +150,7 @@ function PenDraw({ k, stageW, stageH }: StageProps): ReactNode {
       try {
         createPathShape(pts, closed && pts.length >= 3);
       } catch (err) {
-        toast('error', 'Could not create the path', (err as Error).message);
+        toast('error', tr('Could not create the path'), (err as Error).message);
       }
     }
     exit();
@@ -276,19 +286,13 @@ function PenDraw({ k, stageW, stageH }: StageProps): ReactNode {
       </svg>
       <GuideLines guides={guides} k={k} stageW={stageW} stageH={stageH} />
       <div className="pen-hint">
-        {points.length === 0 ? (
-          <>
-            <b>Pen</b> Click to add points · drag to curve
-          </>
-        ) : points.length < 3 ? (
-          <>
-            <kbd>Enter</kbd> finish line · <kbd>Esc</kbd> cancel · <kbd>Shift</kbd> 45°
-          </>
-        ) : (
-          <>
-            Click the first point to close · <kbd>Enter</kbd> finish line · <kbd>Esc</kbd> cancel
-          </>
-        )}
+        {points.length === 0
+          ? richText(tr('{tool} Click to add points · drag to curve'), { tool: <b>{tr('Pen')}</b> })
+          : richText(points.length < 3 ? tr('{enter} finish line · {esc} cancel · {shift} 45°') : tr('Click the first point to close · {enter} finish line · {esc} cancel'), {
+              enter: <kbd>{tr('Enter', undefined, 'key')}</kbd>,
+              esc: <kbd>{tr('Esc', undefined, 'key')}</kbd>,
+              shift: <kbd>{tr('Shift', undefined, 'key')}</kbd>,
+            })}
       </div>
     </div>
   );
@@ -314,6 +318,7 @@ interface EditDrag {
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
 function PathEditor({ clipId, k, stageW, stageH }: StageProps & { clipId: ID }): ReactNode {
+  const tr = useT();
   usePlayback((s) => s.layoutVersion);
   usePlayback((s) => s.time);
   const clip = useProjectStore((s) => s.project.clips[clipId]);
@@ -353,7 +358,7 @@ function PathEditor({ clipId, k, stageW, stageH }: StageProps & { clipId: ID }):
           removed = !!r;
           return r;
         });
-        if (!removed) toast('info', 'A path needs at least two points', 'Delete the whole shape to remove it.');
+        if (!removed) toast('info', t('A path needs at least two points'), t('Delete the whole shape to remove it.'));
         setSel(null);
       } else if (e.key === 'Escape') {
         e.preventDefault();
@@ -519,7 +524,7 @@ function PathEditor({ clipId, k, stageW, stageH }: StageProps & { clipId: ID }):
           const smooth = isSmooth(pts[i]);
           return (
             <g key={`a${i}`} data-anchor={i} className={`path-edit__anchor ${sel === i ? 'is-selected' : ''} ${smooth ? 'is-smooth' : ''}`} onPointerDown={begin('point', i)} {...handlers}>
-              <title>{smooth ? 'Smooth point — Alt-click for a corner' : 'Corner point — Alt-click to make it smooth'}</title>
+              <title>{smooth ? tr('Smooth point — Alt-click for a corner') : tr('Corner point — Alt-click to make it smooth')}</title>
               <circle className="path-edit__hit" cx={p.x} cy={p.y} r={8} />
               {smooth ? <circle className="path-edit__dot" cx={p.x} cy={p.y} r={4.5} /> : <rect className="path-edit__dot" x={p.x - 4} y={p.y - 4} width={8} height={8} rx={1.5} />}
             </g>
@@ -555,9 +560,10 @@ export function PenOverlay({ k, stageW, stageH }: StageProps): ReactNode {
 
 /** Transport button that toggles the pen tool. */
 export function PenToolButton(): ReactNode {
+  const tr = useT();
   const active = useUI((s) => s.tool === 'pen');
   return (
-    <button type="button" className={`icon-btn ${active ? 'is-active' : ''}`} title="Pen tool — draw a shape or a line (P)" data-pen-tool onClick={() => useUI.getState().setTool(active ? 'select' : 'pen')}>
+    <button type="button" className={`icon-btn ${active ? 'is-active' : ''}`} title={tr('Pen tool — draw a shape or a line (P)')} data-pen-tool onClick={() => useUI.getState().setTool(active ? 'select' : 'pen')}>
       <PenTool size={15} />
     </button>
   );

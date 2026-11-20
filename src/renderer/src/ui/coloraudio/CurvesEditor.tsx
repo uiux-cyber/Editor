@@ -21,15 +21,16 @@ import type { CurvePoints, ID, VisualClip } from '@/core/types';
 import { frameTap } from '@/engine/scopes/frameTap';
 import { useProjectStore } from '@/store/project';
 import { openContextMenu } from '../common/overlays';
+import { tk, tMaybe, useT } from '../i18n';
 import { clipCurves, setCurveChannel, setCurves } from './gradeEdit';
 import { useColorAudioPrefs } from './prefs';
 import { drawCurveHistogram } from './scopeDraw';
 
 const CHANNEL_META: Record<CurveChannel, { label: string; color: string; hist: string; title: string }> = {
-  master: { label: 'Y', color: '#f4f6fa', hist: 'rgba(220,226,240,0.16)', title: 'Master (all channels)' },
-  r: { label: 'R', color: '#ff6b74', hist: 'rgba(255,80,90,0.2)', title: 'Red' },
-  g: { label: 'G', color: '#4ade80', hist: 'rgba(60,220,110,0.18)', title: 'Green' },
-  b: { label: 'B', color: '#60a5fa', hist: 'rgba(70,130,255,0.24)', title: 'Blue' },
+  master: { label: 'Y', color: '#f4f6fa', hist: 'rgba(220,226,240,0.16)', title: tk('Master (all channels)') },
+  r: { label: 'R', color: '#ff6b74', hist: 'rgba(255,80,90,0.2)', title: tk('Red') },
+  g: { label: 'G', color: '#4ade80', hist: 'rgba(60,220,110,0.18)', title: tk('Green') },
+  b: { label: 'B', color: '#60a5fa', hist: 'rgba(70,130,255,0.24)', title: tk('Blue') },
 };
 
 const SIZE = 256; // SVG user units
@@ -83,6 +84,7 @@ interface Drag {
 }
 
 export function CurvesEditor({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const channel = useColorAudioPrefs((s) => s.curveChannel);
   const setPrefs = useColorAudioPrefs((s) => s.set);
   const curves = useMemo(() => clipCurves(clip), [clip]);
@@ -220,14 +222,14 @@ export function CurvesEditor({ clip, ids }: { clip: VisualClip; ids: ID[] }): Re
       <div className="curves__bar">
         <div className="segmented curves__tabs">
           {CURVE_CHANNELS.map((ch) => (
-            <button key={ch} type="button" title={CHANNEL_META[ch].title} className={ch === channel ? 'is-active' : ''} data-channel={ch} onClick={() => setPrefs({ curveChannel: ch })}>
+            <button key={ch} type="button" title={tMaybe(CHANNEL_META[ch].title)} className={ch === channel ? 'is-active' : ''} data-channel={ch} onClick={() => setPrefs({ curveChannel: ch })}>
               <span className="curves__dot" style={{ background: CHANNEL_META[ch].color }} />
               {CHANNEL_META[ch].label}
               {!isIdentityCurve(curves[ch]) && <span className="curves__mod" />}
             </button>
           ))}
         </div>
-        <button type="button" className="icon-btn icon-btn--sm" title={`Reset the ${CHANNEL_META[channel].title.toLowerCase()} curve`} disabled={points.length <= 2 && isIdentityCurve(points)} onClick={() => write(identityCurve())}>
+        <button type="button" className="icon-btn icon-btn--sm" title={t('Reset the {channel, select, master {master (all channels)} r {red} g {green} other {blue}} curve', { channel })} disabled={points.length <= 2 && isIdentityCurve(points)} onClick={() => write(identityCurve())}>
           <RotateCcw size={12} />
         </button>
       </div>
@@ -275,8 +277,8 @@ export function CurvesEditor({ clip, ids }: { clip: VisualClip; ids: ID[] }): Re
               onContextMenu={(e) => {
                 e.stopPropagation();
                 openContextMenu(e, [
-                  { label: i === 0 || i === points.length - 1 ? 'Reset end point' : 'Delete point', run: () => removeAt(i) },
-                  { label: `Reset ${CHANNEL_META[channel].title.toLowerCase()} curve`, run: () => write(identityCurve()) },
+                  { label: i === 0 || i === points.length - 1 ? t('Reset end point') : t('Delete point'), run: () => removeAt(i) },
+                  { label: t('Reset {channel, select, master {master (all channels)} r {red} g {green} other {blue}} curve', { channel }), run: () => write(identityCurve()) },
                 ]);
               }}
             />
@@ -284,16 +286,16 @@ export function CurvesEditor({ clip, ids }: { clip: VisualClip; ids: ID[] }): Re
         </svg>
         {readout && (
           <div className="curves__readout mono">
-            <span>In {Math.round(readout[0] * 255)}</span>
-            <span>Out {Math.round(Math.min(1, Math.max(0, readout[1])) * 255)}</span>
+            <span>{t('In {value}', { value: Math.round(readout[0] * 255) })}</span>
+            <span>{t('Out {value}', { value: Math.round(Math.min(1, Math.max(0, readout[1])) * 255) })}</span>
           </div>
         )}
       </div>
       <div className="curves__foot">
-        <span className="hint">Click to add · drag (Shift = fine) · double-click or drag out to delete</span>
+        <span className="hint">{t('Click to add · drag (Shift = fine) · double-click or drag out to delete')}</span>
         {!isDefaultCurves(curves) && (
           <button type="button" className="btn btn--sm btn--ghost" onClick={() => setCurves(ids, { master: identityCurve(), r: identityCurve(), g: identityCurve(), b: identityCurve() })}>
-            Reset all
+            {t('Reset all')}
           </button>
         )}
       </div>

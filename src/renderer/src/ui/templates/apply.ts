@@ -29,6 +29,7 @@ import type { TemplateDef, TemplateMusic } from "@/library/types";
 import { api } from "@/platform/api";
 import { getProject, updateProject, useProjectStore } from "@/store/project";
 import { toast, useUI } from "@/store/ui";
+import { t, tk } from "../i18n";
 import { newProject } from "../projectIO";
 import { templateThumbProject, type ThumbSpec } from "../library/thumbs";
 import { useTemplates } from "./store";
@@ -94,7 +95,7 @@ export function applyTemplateVariation(
   const { cw, ch } = designSize(project.settings);
   const built = buildTemplate(v, cw, ch);
   if (!built || built.clips.length === 0) {
-    toast("error", "This template could not be built for the current project.");
+    toast("error", t("This template could not be built for the current project."));
     return { ids: [], done: Promise.resolve([]) };
   }
   const at = snapToFrame(opts.time ?? engine.time, project.settings.fps);
@@ -115,7 +116,8 @@ export function applyTemplateVariation(
 
   const store = useProjectStore.getState();
   const transaction = pending.length > 0;
-  if (transaction) store.begin("Apply template");
+  // History labels stay English (tk marks them for the History panel, which translates them).
+  if (transaction) store.begin(tk("Apply template"));
   let ids: ID[] = [];
   let groupId: ID | undefined;
   updateProject(
@@ -126,7 +128,7 @@ export function applyTemplateVariation(
         : [];
       groupId = ids.length ? p.clips[ids[0]]?.groupId : undefined;
     },
-    { label: "Apply template" },
+    { label: tk("Apply template") },
   );
   if (ids.length) useUI.getState().select(ids);
   if (!transaction) return { ids, done: Promise.resolve(ids) };
@@ -179,7 +181,7 @@ export function applyTemplateVariation(
     } catch (err) {
       toast(
         "error",
-        "The template music could not be added",
+        t("The template music could not be added"),
         (err as Error).message,
       );
     } finally {
@@ -228,16 +230,16 @@ export function applyBrandToSelection(): number {
   if (!brandSet) {
     toast(
       "info",
-      "Set up your brand kit first",
-      "Add your colours, fonts and logo in the Brand Kit.",
+      t("Set up your brand kit first"),
+      t("Add your colours, fonts and logo in the Brand Kit."),
     );
     return 0;
   }
   if (targets.length === 0) {
     toast(
       "info",
-      "Select text or shapes to brand",
-      "Apply brand restyles selected text, shapes, stickers and animated backgrounds.",
+      t("Select text or shapes to brand"),
+      t("Apply brand restyles selected text, shapes, stickers and animated backgrounds."),
     );
     return 0;
   }
@@ -250,14 +252,14 @@ export function applyBrandToSelection(): number {
         brandFontPair(brand),
       ).changed;
     },
-    { label: "Apply brand" },
+    { label: tk("Apply brand") },
   );
   if (changed)
     toast(
       "success",
-      `Brand applied to ${changed} layer${changed === 1 ? "" : "s"}`,
+      t("{count, plural, one {Brand applied to # layer} other {Brand applied to # layers}}", { count: changed }),
     );
-  else toast("info", "The selection already uses your brand");
+  else toast("info", t("The selection already uses your brand"));
   return changed;
 }
 

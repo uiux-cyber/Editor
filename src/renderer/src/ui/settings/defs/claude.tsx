@@ -9,7 +9,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '@/platform/api';
 import { connectClaudeDesktop, useClaude } from '../../claude/store';
 import { Toggle } from '../../common/controls';
-import { formatRelative, useT } from '../../i18n';
+import { formatRelative, tMaybe, useT } from '../../i18n';
+import { PROMPTS } from '@shared/claude';
 import { prettyClient } from '../../shell/Claude';
 import type { SettingsSectionDef } from '../index';
 import { SettingRow, SettingsGroup } from '../kit';
@@ -30,6 +31,7 @@ function ClaudeSettings(): ReactNode {
   const step = useClaude((s) => s.connectStep);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState<string | null>(null);
 
   const refresh = (): void => void api.call<Status>('x:claude:status').then(setStatus);
   useEffect(refresh, [clients.length]);
@@ -109,9 +111,39 @@ function ClaudeSettings(): ReactNode {
         </SettingRow>
       </SettingsGroup>
 
+      <SettingsGroup
+        title={t('Ready-made requests')}
+        description={t('Start a task in one click: in Claude Desktop, click + in the message box, choose Kinora and pick one. In Claude Code, type /mcp__kinora__ and pick one. Copy one to use it anywhere.')}
+      >
+        <ul className="claude-prompts">
+          {PROMPTS.map((p) => (
+            <li key={p.name} data-prompt={p.name}>
+              <span>
+                <strong>{tMaybe(p.title)}</strong>
+                <small>{tMaybe(p.description)}</small>
+              </span>
+              <button
+                type="button"
+                className="icon-btn icon-btn--sm"
+                title={t('Copy the request')}
+                aria-label={t('Copy the request')}
+                onClick={() => {
+                  void navigator.clipboard.writeText(p.text({}));
+                  setCopiedPrompt(p.name);
+                  setTimeout(() => setCopiedPrompt((c) => (c === p.name ? null : c)), 1600);
+                }}
+              >
+                {copiedPrompt === p.name ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </SettingsGroup>
+
       <SettingsGroup title={t('What Claude can do')}>
         <ul className="claude-steps">
           <li>{t('Read the timeline, look at frames and run any command from the command palette.')}</li>
+          <li>{t('Write custom animation (Motion clips) with three.js, GSAP, D3 and more, with settings you can change in the inspector.')}</li>
           <li>{t('Import media, add templates, text, stickers, music and effects, trim, split and arrange clips.')}</li>
           <li>{t('Run captions, silence and filler removal and other smart features, and export for every platform.')}</li>
           <li>{t('Every change appears in History as “Claude: …”, so you can undo it.')}</li>

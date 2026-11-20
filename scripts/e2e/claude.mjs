@@ -143,6 +143,11 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   b.notify('notifications/initialized');
   const list = await b.request('tools/list');
   expect(list.result.tools.length === 24, `Claude sees ${list.result.tools.length} tools`);
+  expect(!!init.result?.capabilities?.prompts, 'Kinora offers ready-made requests (prompts)');
+  const prompts = await b.request('prompts/list');
+  expect(prompts.result?.prompts?.length === 9, `Claude lists ${prompts.result?.prompts?.length} ready-made requests`);
+  const prompt = await b.request('prompts/get', { name: 'animated_title', arguments: { text: 'Hello Kinora' } });
+  expect(/“Hello Kinora”/.test(prompt.result?.messages?.[0]?.content?.text ?? ''), 'a ready-made request is filled in with what the user typed');
 
   let s = json(await b.call('get_status'));
   expect(s.screen === 'home', 'get_status reports the start screen');
@@ -294,6 +299,20 @@ export default async function claude({ win, run, shot, sleep, outDir }) {
   r = await b.call('capture_frame', { time: 2.5, width: 640 });
   expect(r.content.some((c) => c.type === 'image'), 'capture_frame shows the Motion clip in the preview');
   writeFileSync(path.join(outDir, 'claude-motion-frame.jpg'), Buffer.from(r.content.find((c) => c.type === 'image').data, 'base64'));
+
+  // Settings: Claude declares them, then changes a value without new code.
+  const kinetic = MOTION_EXAMPLES.find((e) => e.name === 'Kinetic title');
+  r = await b.call('update_motion', { media_id: created.media_id, code: kinetic.code, params: kinetic.params, duration: 4 }, 120000);
+  expect(!r.isError && /"values"/.test(textOf(r)), `update_motion declares the clip's settings${r.isError ? ` (${textOf(r)})` : ''}`);
+  r = await b.call('update_motion', { media_id: created.media_id, values: { title: 'CLAUDE WAS HERE', accent: '#ff3366' } });
+  const changedInfo = r.isError ? null : JSON.parse(textOf(r).slice(textOf(r).indexOf('{')));
+  expect(!!changedInfo && !changedInfo.file && changedInfo.values.title === 'CLAUDE WAS HERE', 'update_motion changes setting values without writing new code');
+  r = await b.call('get_motion', { media_id: created.media_id });
+  expect(/setting values: .*CLAUDE WAS HERE/.test(textOf(r)) && /"id":"accent"/.test(textOf(r)), 'get_motion shows the settings and their values');
+  r = await b.call('update_motion', { media_id: created.media_id, values: { nope: 1 } });
+  expect(r.isError && /no setting "nope"/.test(textOf(r)) && /title/.test(textOf(r)), 'an unknown setting is refused with the list of settings');
+  const values = await run((id) => window.__kinora.useProjectStore.getState().project.assets[id].motionValues, created.media_id);
+  expect(values?.title === 'CLAUDE WAS HERE', 'the values are stored on the clip, as if the user had changed them');
 
   // ---- Status in Settings, then turning access off ---------------------------------------------
   await win.click('[data-action="settings"]');

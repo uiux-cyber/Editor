@@ -9,6 +9,7 @@ import { engine } from '@/engine/engine';
 import { clearInOut, selectionSpan, setInPoint, setOutPoint } from '@/engine/export/range';
 import { getProject, updateProject } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
+import { t } from '../i18n';
 
 const playhead = (): number => snapToFrame(engine.time, getProject().settings.fps);
 
@@ -32,7 +33,7 @@ export function clearMarks(): void {
 export function markSelection(): void {
   const span = selectionSpan(getProject(), useUI.getState().selection);
   if (!span) {
-    toast('info', 'Select one or more clips to mark their range.');
+    toast('info', t('Select one or more clips to mark their range.'));
     return;
   }
   updateProject((p) => {

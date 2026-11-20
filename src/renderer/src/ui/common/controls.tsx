@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useProjectStore } from '@/store/project';
+import { useT } from '../i18n';
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 const round = (v: number, precision: number): number => {
@@ -303,6 +304,7 @@ export const SWATCHES = ['#ffffff', '#000000', '#f8717a', '#fb923c', '#fbbf24', 
  * opacity value stored as the alpha byte of `#rrggbbaa`.
  */
 export function ColorInput({ value, onChange: onChangeRaw, alpha = false, swatches = false }: { value: string; onChange: (v: string) => void; alpha?: boolean; swatches?: boolean }): ReactNode {
+  const t = useT();
   // The system picker streams changes while dragging; group a burst into one undo step.
   const burst = useRef<number | null>(null);
   const onChange = (v: string): void => {
@@ -325,7 +327,7 @@ export function ColorInput({ value, onChange: onChangeRaw, alpha = false, swatch
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <label className="swatch" title="Pick a colour">
+        <label className="swatch" title={t('Pick a colour')}>
           <span style={{ background: full }} />
           <input
             type="color"
@@ -354,7 +356,7 @@ export function ColorInput({ value, onChange: onChangeRaw, alpha = false, swatch
             e.stopPropagation();
           }}
         />
-        {alpha && <NumberInput value={a} onChange={(v) => onChange(withAlpha(rgb, v))} min={0} max={1} step={1} scale={100} suffix="%" style={{ flex: 'none', width: 58 }} title="Opacity" />}
+        {alpha && <NumberInput value={a} onChange={(v) => onChange(withAlpha(rgb, v))} min={0} max={1} step={1} scale={100} suffix="%" style={{ flex: 'none', width: 58 }} title={t('Opacity')} />}
       </div>
       {swatches && (
         <div className="swatch-row">

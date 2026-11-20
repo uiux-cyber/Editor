@@ -9,14 +9,15 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { hueToScopeAngle, isNeutralWheel, isNeutralWheels, scopeAngleToHue, WHEEL_IDS, wheelChroma, type WheelId } from '@/core/color/wheels';
 import type { ID, VisualClip, WheelValue } from '@/core/types';
 import { useProjectStore } from '@/store/project';
+import { tk, tMaybe, useT } from '../i18n';
 import { clipWheels, resetWheels, setWheel } from './gradeEdit';
 
-const LABELS: Record<WheelId, string> = { lift: 'Lift', gamma: 'Gamma', gain: 'Gain', offset: 'Offset' };
+const LABELS: Record<WheelId, string> = { lift: tk('Lift'), gamma: tk('Gamma'), gain: tk('Gain'), offset: tk('Offset') };
 const TIPS: Record<WheelId, string> = {
-  lift: 'Shadows: tint and raise / lower the blacks',
-  gamma: 'Midtones: tint and brighten / darken the mids',
-  gain: 'Highlights: tint and brighten / darken the whites',
-  offset: 'Everything: shift the whole image',
+  lift: tk('Shadows: tint and raise / lower the blacks'),
+  gamma: tk('Midtones: tint and brighten / darken the mids'),
+  gain: tk('Highlights: tint and brighten / darken the whites'),
+  offset: tk('Everything: shift the whole image'),
 };
 
 /** Disc background: the Cb/Cr plane at mid luminance, fading to grey in the centre. */
@@ -64,6 +65,7 @@ function puckOf(w: WheelValue): { x: number; y: number } {
 }
 
 function Wheel({ id, clip, ids }: { id: WheelId; clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const w = clipWheels(clip)[id];
   const discRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -129,10 +131,10 @@ function Wheel({ id, clip, ids }: { id: WheelId; clip: VisualClip; ids: ID[] }):
 
   const lumaPct = ((w.luma + 1) / 2) * 100;
   return (
-    <div className={`wheel ${neutral ? '' : 'is-active'}`} data-wheel={id} title={TIPS[id]}>
+    <div className={`wheel ${neutral ? '' : 'is-active'}`} data-wheel={id} title={tMaybe(TIPS[id])}>
       <div className="wheel__head">
-        <span className="wheel__name">{LABELS[id]}</span>
-        <button type="button" className="icon-btn icon-btn--sm wheel__reset" title={`Reset ${LABELS[id].toLowerCase()}`} disabled={neutral} onClick={() => setWheel(ids, clip, id, { hue: 0, amount: 0, luma: 0 })}>
+        <span className="wheel__name">{tMaybe(LABELS[id])}</span>
+        <button type="button" className="icon-btn icon-btn--sm wheel__reset" title={t('Reset {wheel, select, lift {lift} gamma {gamma} gain {gain} other {offset}}', { wheel: id })} disabled={neutral} onClick={() => setWheel(ids, clip, id, { hue: 0, amount: 0, luma: 0 })}>
           <RotateCcw size={11} />
         </button>
       </div>
@@ -166,20 +168,21 @@ function Wheel({ id, clip, ids }: { id: WheelId; clip: VisualClip; ids: ID[] }):
         onPointerUp={up}
         onPointerCancel={up}
         onDoubleClick={() => setWheel(ids, clip, id, { luma: 0 })}
-        title="Luma: drag or scroll (Shift = fine), double-click to reset"
+        title={t('Luma: drag or scroll (Shift = fine), double-click to reset')}
       >
         <span className="wheel__luma-fill" style={{ left: `${Math.min(50, lumaPct)}%`, width: `${Math.abs(lumaPct - 50)}%` }} />
         <span className="wheel__luma-knob" style={{ left: `${lumaPct}%` }} />
       </div>
       <div className="wheel__vals mono">
-        <span title="Hue / amount">{w.amount > 0.0005 ? `${Math.round(w.hue)}° ${Math.round(w.amount * 100)}%` : '—'}</span>
-        <span title="Luma">{`${w.luma >= 0 ? '+' : ''}${w.luma.toFixed(2)}`}</span>
+        <span title={t('Hue / amount')}>{w.amount > 0.0005 ? `${Math.round(w.hue)}° ${Math.round(w.amount * 100)}%` : '—'}</span>
+        <span title={t('Luma')}>{`${w.luma >= 0 ? '+' : ''}${w.luma.toFixed(2)}`}</span>
       </div>
     </div>
   );
 }
 
 export function ColorWheels({ clip, ids }: { clip: VisualClip; ids: ID[] }): ReactNode {
+  const t = useT();
   const neutral = isNeutralWheels(clipWheels(clip));
   return (
     <div className="wheels">
@@ -189,10 +192,10 @@ export function ColorWheels({ clip, ids }: { clip: VisualClip; ids: ID[] }): Rea
         ))}
       </div>
       <div className="wheels__foot">
-        <span className="hint">Drag to tint · Shift = fine · double-click resets</span>
+        <span className="hint">{t('Drag to tint · Shift = fine · double-click resets')}</span>
         {!neutral && (
           <button type="button" className="btn btn--sm btn--ghost" onClick={() => resetWheels(ids)}>
-            Reset all
+            {t('Reset all')}
           </button>
         )}
       </div>

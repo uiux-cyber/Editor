@@ -4,6 +4,7 @@ import { STICKERS } from '@/library';
 import type { CanvasStickerDef, StickerCategory, StickerDef } from '@/library/types';
 import { addSticker } from '../actions';
 import { startDrag } from '../dnd';
+import { formatNumber, useT } from '../i18n';
 import { Chips, SearchBox, labelOf, unique, useIncremental } from './common';
 
 /** Canvas sticker tile: static poster, plays while hovered. */
@@ -83,6 +84,7 @@ const EmojiTile = memo(function EmojiTile({ def }: { def: Extract<StickerDef, { 
 const CATEGORY_ORDER: StickerCategory[] = ['animated', 'social', 'callouts', 'badges', 'arrows', 'celebration', 'decor', 'smileys', 'gestures', 'people', 'animals', 'food', 'travel', 'activities', 'objects', 'nature', 'symbols'];
 
 export function StickersTab(): ReactNode {
+  const t = useT();
   const [category, setCategory] = useState<StickerCategory | 'all'>('all');
   const [search, setSearch] = useState('');
   const categories = useMemo(() => {
@@ -108,18 +110,18 @@ export function StickersTab(): ReactNode {
   return (
     <div className="lib">
       <header className="lib__head">
-        <h3>Stickers</h3>
-        <span className="badge">{STICKERS.length.toLocaleString()}</span>
+        <h3>{t('Stickers')}</h3>
+        <span className="badge">{formatNumber(STICKERS.length)}</span>
       </header>
       <div className="lib__search">
-        <SearchBox value={search} onChange={setSearch} placeholder="Search stickers & emoji" />
+        <SearchBox value={search} onChange={setSearch} placeholder={t('Search stickers & emoji')} />
       </div>
-      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: 'All' }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
+      <Chips value={category} onChange={setCategory} options={[{ value: 'all' as const, label: t('All') }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
       <div className="lib__scroll">
         {list.length === 0 ? (
           <div className="empty">
-            <div className="empty__title">No stickers found</div>
-            <p>Try another word, like “arrow” or “party”.</p>
+            <div className="empty__title">{t('No stickers found')}</div>
+            <p>{t('Try another word, like “arrow” or “party”.')}</p>
           </div>
         ) : (
           <>

@@ -18,6 +18,7 @@ interface Meta {
   seed: number;
 }
 type Render = (t: number) => void | Promise<void>;
+type Values = Record<string, string | number | boolean | ImageBitmap | null>;
 interface Msg {
   __kinoraMotion: true;
   id: number;
@@ -25,6 +26,8 @@ interface Msg {
   code?: string;
   meta?: Meta;
   images?: Images;
+  /** Settings (k.params), image settings already resolved to pictures. */
+  params?: Values;
   t?: number;
 }
 
@@ -151,7 +154,7 @@ function rgba(color: string): [number, number, number, number] {
   return [p[0], p[1], p[2], p[3] ?? 1];
 }
 
-function makeKit(meta: Meta, canvas: HTMLCanvasElement, images: Images) {
+function makeKit(meta: Meta, canvas: HTMLCanvasElement, images: Images, params: Values) {
   let ctx2d: CanvasRenderingContext2D | null = null;
   const kit = {
     width: meta.width,
@@ -161,6 +164,7 @@ function makeKit(meta: Meta, canvas: HTMLCanvasElement, images: Images) {
     seed: meta.seed,
     canvas,
     images,
+    params: Object.freeze({ ...params }),
     ease,
     clamp,
     lerp,
@@ -283,7 +287,7 @@ async function init(msg: Msg): Promise<void> {
   const canvas = document.createElement('canvas');
   canvas.width = meta.width;
   canvas.height = meta.height;
-  const kit = makeKit(meta, canvas, msg.images ?? {});
+  const kit = makeKit(meta, canvas, msg.images ?? {}, msg.params ?? {});
   kitRef = kit;
   const url = URL.createObjectURL(new Blob([msg.code ?? ''], { type: 'text/javascript' }));
   let mod: { default?: unknown };
@@ -306,14 +310,24 @@ async function init(msg: Msg): Promise<void> {
   after = kit._after;
 }
 
+/** Step-by-step timing of each frame, posted as 'trace' logs when Kinora asks for it (diagnostics). */
+let tracing = false;
+const trace = (text: string): void => {
+  if (tracing) post({ type: 'log', level: 'trace', text: `${Math.round(performance.now())} ${text}` });
+};
+
 async function renderAt(t: number): Promise<ImageBitmap> {
   if (!render || !output) throw new Error('The clip is not loaded.');
   nowMs = t * 1000;
+  trace(`frame ${t.toFixed(3)}: start`);
   for (const hook of timeHooks) hook(t);
   flushAnimationFrames();
   await render(t);
   (after ?? kitRef?._after)?.();
-  return createImageBitmap(output);
+  trace(`frame ${t.toFixed(3)}: drawn`);
+  const bitmap = await createImageBitmap(output);
+  trace(`frame ${t.toFixed(3)}: captured`);
+  return bitmap;
 }
 
 let chain: Promise<void> = Promise.resolve();
@@ -321,6 +335,8 @@ window.addEventListener('message', (e: MessageEvent) => {
   if (e.source !== parent) return;
   const msg = e.data as Msg;
   if (!msg || msg.__kinoraMotion !== true) return;
+  if ((msg as { trace?: boolean }).trace) tracing = true;
+  trace(`received ${msg.type} #${msg.id}`);
   chain = chain.then(async () => {
     if (msg.type === 'init') {
       try {

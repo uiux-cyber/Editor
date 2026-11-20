@@ -80,10 +80,12 @@ import {
   unlinkSelection,
   type Placement,
 } from '../actions';
+import { addMotionPresetById } from '../motion/actions';
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { InOutMarks } from '../export/InOutMarks';
+import { tk, tMaybe, useT } from '../i18n';
 import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
 import { cachedThemeColor, useTheme } from '../theme';
 import { SpeechTimelineOverlay } from '../speech/TimelineOverlay';
@@ -142,6 +144,7 @@ function payloadDuration(p: DragPayload, project: Project): number {
     return def ? soundAssetDuration(def) : p.duration;
   }
   if (p.kind === 'template') return getTemplate(p.variation.templateId)?.duration ?? p.duration;
+  if (p.kind === 'motion') return p.duration;
   return 5;
 }
 
@@ -258,6 +261,7 @@ const sliderToZoom = (v: number): number => MIN_PPS * Math.pow(MAX_PPS / MIN_PPS
 
 function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () => void }): ReactNode {
   useKeymapVersion();
+  const tr = useT();
   const tool = useUI((s) => s.tool);
   const snapping = useUI((s) => s.snapping);
   const pps = useUI((s) => s.pxPerSec);
@@ -268,42 +272,42 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
   return (
     <div className="tl-toolbar">
       <div className="tl-toolbar__group">
-        <button type="button" data-tool="select" className={`icon-btn ${tool === 'select' ? 'is-active' : ''}`} title={`${withShortcut('Select tool', 'tool.select')} — Shift-drag a clip edge to ripple trim, Alt-click to pick one clip of a group or link`} onClick={() => set({ tool: 'select' })}>
+        <button type="button" data-tool="select" className={`icon-btn ${tool === 'select' ? 'is-active' : ''}`} title={`${withShortcut(tr('Select tool'), 'tool.select')} — ${tr('Shift-drag a clip edge to ripple trim, Alt-click to pick one clip of a group or link')}`} onClick={() => set({ tool: 'select' })}>
           <MousePointer2 size={15} />
         </button>
-        <button type="button" data-tool="blade" className={`icon-btn ${tool === 'blade' ? 'is-active' : ''}`} title={`${withShortcut('Blade tool', 'tool.blade')} — click a clip to cut it`} onClick={() => set({ tool: 'blade' })}>
+        <button type="button" data-tool="blade" className={`icon-btn ${tool === 'blade' ? 'is-active' : ''}`} title={`${withShortcut(tr('Blade tool'), 'tool.blade')} — ${tr('click a clip to cut it')}`} onClick={() => set({ tool: 'blade' })}>
           <Scissors size={15} />
         </button>
         <TrimToolButtons />
         <span className="vdivider" />
-        <button type="button" className="icon-btn" title={withShortcut('Undo', 'edit.undo')} disabled={!canUndo} onClick={undo}>
+        <button type="button" className="icon-btn" title={withShortcut(tr('Undo'), 'edit.undo')} disabled={!canUndo} onClick={undo}>
           <Undo2 size={15} />
         </button>
-        <button type="button" className="icon-btn" title={withShortcut('Redo', 'edit.redo')} disabled={!canRedo} onClick={redo}>
+        <button type="button" className="icon-btn" title={withShortcut(tr('Redo'), 'edit.redo')} disabled={!canRedo} onClick={redo}>
           <Redo2 size={15} />
         </button>
         <HistoryButton />
         <span className="vdivider" />
-        <button type="button" className="icon-btn" title={withShortcut('Split at playhead', 'clip.split')} onClick={splitAtPlayhead}>
+        <button type="button" className="icon-btn" title={withShortcut(tr('Split at playhead'), 'clip.split')} onClick={splitAtPlayhead}>
           <SquareSplitHorizontal size={15} />
         </button>
-        <button type="button" className="icon-btn" title={withShortcut('Duplicate', 'edit.duplicate')} disabled={!hasSelection} onClick={duplicateSelection}>
+        <button type="button" className="icon-btn" title={withShortcut(tr('Duplicate'), 'edit.duplicate')} disabled={!hasSelection} onClick={duplicateSelection}>
           <Copy size={15} />
         </button>
-        <button type="button" className="icon-btn" title="Delete (Del) · Shift+Del closes the gap" disabled={!hasSelection} onClick={() => deleteSelection(false)}>
+        <button type="button" className="icon-btn" title={tr('Delete (Del) · Shift+Del closes the gap')} disabled={!hasSelection} onClick={() => deleteSelection(false)}>
           <Trash2 size={15} />
         </button>
         <span className="vdivider" />
-        <button type="button" className={`icon-btn ${snapping ? 'is-active' : ''}`} title={withShortcut('Snapping', 'timeline.snapping')} onClick={() => set({ snapping: !snapping })}>
+        <button type="button" className={`icon-btn ${snapping ? 'is-active' : ''}`} title={withShortcut(tr('Snapping'), 'timeline.snapping')} onClick={() => set({ snapping: !snapping })}>
           <Magnet size={15} />
         </button>
         <MagneticButton />
-        <button type="button" className="icon-btn" title={withShortcut('Add marker at playhead', 'timeline.addMarker')} onClick={addMarker}>
+        <button type="button" className="icon-btn" title={withShortcut(tr('Add marker at playhead'), 'timeline.addMarker')} onClick={addMarker}>
           <Bookmark size={15} />
         </button>
       </div>
       <div className="tl-toolbar__group">
-        <button type="button" className="icon-btn" title="Zoom out (-)" onClick={() => onZoom(pps / 1.4)}>
+        <button type="button" className="icon-btn" title={tr('Zoom out (-)')} onClick={() => onZoom(pps / 1.4)}>
           <ZoomOut size={15} />
         </button>
         <input
@@ -314,13 +318,13 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
           max={1}
           step={0.001}
           value={zoomToSlider(pps)}
-          title="Timeline zoom (Ctrl + scroll)"
+          title={tr('Timeline zoom (Ctrl + scroll)')}
           onChange={(e) => onZoom(sliderToZoom(parseFloat(e.target.value)))}
         />
-        <button type="button" className="icon-btn" title="Zoom in (+)" onClick={() => onZoom(pps * 1.4)}>
+        <button type="button" className="icon-btn" title={tr('Zoom in (+)')} onClick={() => onZoom(pps * 1.4)}>
           <ZoomIn size={15} />
         </button>
-        <button type="button" className="icon-btn" title={withShortcut('Fit the whole project', 'timeline.fit')} onClick={onFit}>
+        <button type="button" className="icon-btn" title={withShortcut(tr('Fit the whole project'), 'timeline.fit')} onClick={onFit}>
           <Maximize2 size={14} />
         </button>
       </div>
@@ -333,6 +337,7 @@ function Toolbar({ onZoom, onFit }: { onZoom: (pps: number) => void; onFit: () =
 // ---------------------------------------------------------------------------------------------
 
 export function Timeline(): ReactNode {
+  const tr = useT();
   const project = useProjectStore((s) => s.project);
   const pps = useUI((s) => s.pxPerSec);
   const selection = useUI((s) => s.selection);
@@ -568,7 +573,7 @@ export function Timeline(): ReactNode {
     const grab = locate(e.clientX, e.clientY).time;
     const minStart = Math.min(...ids.map((id) => origin.get(id)!.start));
     const points = snapPoints(base, moving);
-    const label = ids.length > 1 ? 'Move clips' : 'Move clip';
+    const label = ids.length > 1 ? tk('Move clips') : tk('Move clip');
     let last = { dt: 0, trackId: lead.trackId };
     let zone: 'above' | 'below' | null = null;
     let started = false;
@@ -708,7 +713,7 @@ export function Timeline(): ReactNode {
     const rippling = ripple || isMagneticTrack(base, orig.trackId);
     startEditGesture(e, gestureCtx, {
       op: { kind: 'trim', clipId, edge, ripple: rippling, linked },
-      label: rippling ? 'Ripple trim' : 'Trim',
+      label: rippling ? tk('Ripple trim') : tk('Trim'),
       snapEdges: [edge === 'l' ? orig.start : clipEnd(orig)],
       exclude: ids,
       seek: (_d, p) => {
@@ -716,7 +721,7 @@ export function Timeline(): ReactNode {
         if (!c) return null;
         return edge === 'l' ? c.start : Math.max(c.start, clipEnd(c) - 1 / f);
       },
-      note: (_d, p) => (p.clips[clipId] ? `Length ${formatTimecode(p.clips[clipId].duration, f)}` : undefined),
+      note: (_d, p) => (p.clips[clipId] ? tr('Length {tc}', { tc: formatTimecode(p.clips[clipId].duration, f) }) : undefined),
     });
   };
 
@@ -733,11 +738,11 @@ export function Timeline(): ReactNode {
     const cut = right.start;
     startEditGesture(e, gestureCtx, {
       op: { kind: 'roll', leftId, rightId, linked },
-      label: 'Roll edit',
+      label: tk('Roll edit'),
       snapEdges: [cut],
       exclude: ids,
       seek: (d) => cut + d,
-      note: (d) => `Cut at ${formatTimecode(cut + d, f)}`,
+      note: (d) => tr('Cut at {tc}', { tc: formatTimecode(cut + d, f) }),
       monitor:
         left.type === 'audio'
           ? undefined
@@ -747,8 +752,8 @@ export function Timeline(): ReactNode {
               if (!l || !r) return null;
               return {
                 mode: 'roll',
-                left: { clipId: leftId, time: clipEnd(l) - 1 / f, title: 'Outgoing', detail: `Out ${sourceTc(l, 'out', f)}` },
-                right: { clipId: rightId, time: r.start, title: 'Incoming', detail: `In ${sourceTc(r, 'in', f)}` },
+                left: { clipId: leftId, time: clipEnd(l) - 1 / f, title: tr('Outgoing'), detail: tr('Out {tc}', { tc: sourceTc(l, 'out', f) }) },
+                right: { clipId: rightId, time: r.start, title: tr('Incoming'), detail: tr('In {tc}', { tc: sourceTc(r, 'in', f) }) },
               };
             },
     });
@@ -761,7 +766,7 @@ export function Timeline(): ReactNode {
     if (!clip) return;
     if (!hasTrimIn(clip)) {
       useUI.getState().select([clipId]);
-      toast('info', 'Nothing to slip in this clip', 'Slip changes which part of a video or audio clip plays. Use it on a video or audio clip.');
+      toast('info', tr('Nothing to slip in this clip'), tr('Slip changes which part of a video or audio clip plays. Use it on a video or audio clip.'));
       return;
     }
     const linked = !e.altKey;
@@ -770,10 +775,10 @@ export function Timeline(): ReactNode {
     const f = base.settings.fps;
     startEditGesture(e, gestureCtx, {
       op: { kind: 'slip', clipId, linked },
-      label: 'Slip',
+      label: tk('Slip'),
       snapEdges: [],
       exclude: ids,
-      note: (_d, p) => (p.clips[clipId] ? `In ${sourceTc(p.clips[clipId], 'in', f)} · Out ${sourceTc(p.clips[clipId], 'out', f)}` : undefined),
+      note: (_d, p) => (p.clips[clipId] ? tr('In {inTc} · Out {outTc}', { inTc: sourceTc(p.clips[clipId], 'in', f), outTc: sourceTc(p.clips[clipId], 'out', f) }) : undefined),
       monitor:
         clip.type === 'audio'
           ? undefined
@@ -782,8 +787,8 @@ export function Timeline(): ReactNode {
               if (!c) return null;
               return {
                 mode: 'slip',
-                left: { clipId, time: c.start, title: 'In', detail: sourceTc(c, 'in', f) },
-                right: { clipId, time: clipEnd(c) - 1 / f, title: 'Out', detail: sourceTc(c, 'out', f) },
+                left: { clipId, time: c.start, title: tr('In'), detail: sourceTc(c, 'in', f) },
+                right: { clipId, time: clipEnd(c) - 1 / f, title: tr('Out'), detail: sourceTc(c, 'out', f) },
               };
             },
     });
@@ -801,11 +806,11 @@ export function Timeline(): ReactNode {
     const f = base.settings.fps;
     startEditGesture(e, gestureCtx, {
       op: { kind: 'slide', clipId, linked },
-      label: 'Slide',
+      label: tk('Slide'),
       snapEdges: [clip.start, clipEnd(clip)],
       exclude: [...ids, ...touching],
       seek: (_d, p) => p.clips[clipId]?.start ?? null,
-      note: (_d, p) => (p.clips[clipId] ? `Starts at ${formatTimecode(p.clips[clipId].start, f)}` : undefined),
+      note: (_d, p) => (p.clips[clipId] ? tr('Starts at {tc}', { tc: formatTimecode(p.clips[clipId].start, f) }) : undefined),
     });
   };
 
@@ -826,7 +831,7 @@ export function Timeline(): ReactNode {
         const store = useProjectStore.getState();
         if (!started) {
           started = true;
-          store.begin('Resize track');
+          store.begin(tk('Resize track'));
         }
         const h = clampTrackHeight(track.kind, h0 + ev.clientY - y0);
         store.updateFromBase((p) => {
@@ -838,7 +843,7 @@ export function Timeline(): ReactNode {
         if (!started) return;
         const store = useProjectStore.getState();
         if (cancelled) store.cancel();
-        else store.commit('Resize track');
+        else store.commit(tk('Resize track'));
       },
     });
   };
@@ -948,7 +953,7 @@ export function Timeline(): ReactNode {
     if (trans) {
       const id = trans.dataset.transition!;
       useUI.getState().selectTransition(id);
-      openContextMenu(e, [{ label: 'Remove transition', icon: <Trash2 size={14} />, danger: true, run: () => deleteSelection() }]);
+      openContextMenu(e, [{ label: tr('Remove transition'), icon: <Trash2 size={14} />, danger: true, run: () => deleteSelection() }]);
       return;
     }
     const clipEl = target.closest<HTMLElement>('[data-clip]');
@@ -960,40 +965,40 @@ export function Timeline(): ReactNode {
       const clip = getProject().clips[id];
       const sel = useUI.getState().selection.map((x) => getProject().clips[x]).filter(Boolean);
       const items: MenuItem[] = [
-        { label: 'Split at playhead', icon: <SquareSplitHorizontal size={14} />, shortcut: sc('clip.split'), run: splitAtPlayhead },
-        { label: 'Duplicate', icon: <Copy size={14} />, shortcut: sc('edit.duplicate'), run: duplicateSelection },
+        { label: tr('Split at playhead'), icon: <SquareSplitHorizontal size={14} />, shortcut: sc('clip.split'), run: splitAtPlayhead },
+        { label: tr('Duplicate'), icon: <Copy size={14} />, shortcut: sc('edit.duplicate'), run: duplicateSelection },
         { type: 'separator' },
-        { label: 'Cut', shortcut: sc('edit.cut'), run: cutSelection },
-        { label: 'Copy', shortcut: sc('edit.copy'), run: () => void copySelection() },
-        { label: 'Paste at playhead', shortcut: sc('edit.paste'), disabled: !ui.clipboard, run: paste },
-        ...(clip?.type === 'video' ? [{ type: 'separator' as const }, { label: 'Detach audio', run: detachAudioFromSelection }] : []),
+        { label: tr('Cut'), shortcut: sc('edit.cut'), run: cutSelection },
+        { label: tr('Copy'), shortcut: sc('edit.copy'), run: () => void copySelection() },
+        { label: tr('Paste at playhead'), shortcut: sc('edit.paste'), disabled: !ui.clipboard, run: paste },
+        ...(clip?.type === 'video' ? [{ type: 'separator' as const }, { label: tr('Detach audio'), run: detachAudioFromSelection }] : []),
         ...timeMenuItems(clip),
         { type: 'separator' },
         sel.some((c) => c.groupId)
-          ? { label: 'Ungroup', icon: <Ungroup size={14} />, shortcut: sc('clip.ungroup'), run: ungroupSelection }
-          : { label: 'Group', icon: <Group size={14} />, shortcut: sc('clip.group'), disabled: sel.length < 2, run: groupSelection },
+          ? { label: tr('Ungroup'), icon: <Ungroup size={14} />, shortcut: sc('clip.ungroup'), run: ungroupSelection }
+          : { label: tr('Group'), icon: <Group size={14} />, shortcut: sc('clip.group'), disabled: sel.length < 2, run: groupSelection },
         sel.some((c) => c.linkId)
-          ? { label: 'Unlink', icon: <Unlink2 size={14} />, shortcut: sc('clip.unlink'), run: unlinkSelection }
-          : { label: 'Link', icon: <Link2 size={14} />, shortcut: sc('clip.link'), disabled: sel.length < 2, run: linkSelection },
+          ? { label: tr('Unlink'), icon: <Unlink2 size={14} />, shortcut: sc('clip.unlink'), run: unlinkSelection }
+          : { label: tr('Link'), icon: <Link2 size={14} />, shortcut: sc('clip.link'), disabled: sel.length < 2, run: linkSelection },
         { type: 'separator' },
-        { label: 'Delete', icon: <Trash2 size={14} />, shortcut: sc('edit.delete'), danger: true, run: () => deleteSelection(false) },
-        { label: 'Delete and close gap', shortcut: sc('edit.rippleDelete'), danger: true, run: () => deleteSelection(true) },
+        { label: tr('Delete'), icon: <Trash2 size={14} />, shortcut: sc('edit.delete'), danger: true, run: () => deleteSelection(false) },
+        { label: tr('Delete and close gap'), shortcut: sc('edit.rippleDelete'), danger: true, run: () => deleteSelection(true) },
       ];
       openContextMenu(e, items);
       return;
     }
     const row = typeof pos.row === 'object' && pos.row ? pos.row : null;
     openContextMenu(e, [
-      { label: 'Paste here', shortcut: sc('edit.paste'), disabled: !useUI.getState().clipboard, run: () => { engine.seek(pos.time); paste(); } },
-      { label: 'Add marker here', icon: <Bookmark size={14} />, run: () => { engine.seek(pos.time); addMarker(); } },
+      { label: tr('Paste here'), shortcut: sc('edit.paste'), disabled: !useUI.getState().clipboard, run: () => { engine.seek(pos.time); paste(); } },
+      { label: tr('Add marker here'), icon: <Bookmark size={14} />, run: () => { engine.seek(pos.time); addMarker(); } },
       { type: 'separator' },
-      { label: 'Add video track', icon: <Plus size={14} />, run: () => addTrackOfKind('visual') },
-      { label: 'Add audio track', icon: <Plus size={14} />, run: () => addTrackOfKind('audio') },
+      { label: tr('Add video track'), icon: <Plus size={14} />, run: () => addTrackOfKind('visual') },
+      { label: tr('Add audio track'), icon: <Plus size={14} />, run: () => addTrackOfKind('audio') },
       ...(row
         ? [
             { type: 'separator' as const },
-            { label: 'Select all clips on this track', run: () => useUI.getState().select((getIndex(getProject()).byTrack.get(row.id) ?? []).map((c) => c.id)) },
-            { label: 'Delete track', danger: true, run: () => updateProject((p) => removeTrack(p, row.id), { label: 'Delete track' }) },
+            { label: tr('Select all clips on this track'), run: () => useUI.getState().select((getIndex(getProject()).byTrack.get(row.id) ?? []).map((c) => c.id)) },
+            { label: tr('Delete track'), danger: true, run: () => updateProject((p) => removeTrack(p, row.id), { label: tk('Delete track') }) },
           ]
         : []),
     ]);
@@ -1047,7 +1052,7 @@ export function Timeline(): ReactNode {
       if (payload.kind === 'template') {
         return {
           plan: { type: 'template', time, duration: dur },
-          hint: { ghost: { left: timeToX(time, s.pps), width: dur * s.pps, top: RULER_H + 2, height: TOP_ZONE - 4, label: 'New tracks' }, clipId: null, cut: null },
+          hint: { ghost: { left: timeToX(time, s.pps), width: dur * s.pps, top: RULER_H + 2, height: TOP_ZONE - 4, label: tk('New tracks') }, clipId: null, cut: null },
         };
       }
 
@@ -1058,7 +1063,7 @@ export function Timeline(): ReactNode {
         const cut = mainInsertionCut(s.project, pos.time);
         return {
           plan: { type: 'clip', kind, time: cut, duration: dur, row: usable, zone: null },
-          hint: { ghost: { left: timeToX(cut, s.pps), width: dur * s.pps, top: RULER_H + usable.top, height: usable.height, label: 'Insert' }, clipId: null, cut: { x: timeToX(cut, s.pps), top: RULER_H + usable.top, height: usable.height } },
+          hint: { ghost: { left: timeToX(cut, s.pps), width: dur * s.pps, top: RULER_H + usable.top, height: usable.height, label: tk('Insert') }, clipId: null, cut: { x: timeToX(cut, s.pps), top: RULER_H + usable.top, height: usable.height } },
         };
       }
       if (usable) {
@@ -1072,7 +1077,7 @@ export function Timeline(): ReactNode {
       const top = zone === 'above' ? RULER_H + 2 : RULER_H + s.layout.height - 34;
       return {
         plan: { type: 'clip', kind, time, duration: dur, row: null, zone },
-        hint: { ghost: { left: timeToX(time, s.pps), width: dur * s.pps, top, height: zone === 'above' ? TOP_ZONE - 4 : TRACK_HEIGHT.audio - 14, label: 'New track' }, clipId: null, cut: null },
+        hint: { ghost: { left: timeToX(time, s.pps), width: dur * s.pps, top, height: zone === 'above' ? TOP_ZONE - 4 : TRACK_HEIGHT.audio - 14, label: tk('New track') }, clipId: null, cut: null },
       };
     },
     [locate],
@@ -1124,6 +1129,9 @@ export function Timeline(): ReactNode {
             break;
           case 'generator':
             addGenerator(payload.generatorId, where);
+            break;
+          case 'motion':
+            void addMotionPresetById(payload.presetId, where);
             break;
           case 'adjustment':
             addAdjustment(where);
@@ -1178,10 +1186,10 @@ export function Timeline(): ReactNode {
       <div className="tl-body" ref={bodyRef}>
         <div className="tl-headers" style={{ width: HEADER_W }}>
           <div className="tl-headers__corner" style={{ height: RULER_H }}>
-            <button type="button" className="icon-btn icon-btn--sm" title="Add video track" onClick={() => addTrackOfKind('visual')}>
+            <button type="button" className="icon-btn icon-btn--sm" title={tr('Add video track')} onClick={() => addTrackOfKind('visual')}>
               <Plus size={13} />
             </button>
-            <span>Tracks</span>
+            <span>{tr('Tracks')}</span>
           </div>
           <div className="tl-headers__list" ref={headersRef} style={{ height: layout.height }}>
             {layout.rows.map((row) => {
@@ -1197,18 +1205,18 @@ export function Timeline(): ReactNode {
                   data-track-header={track.id}
                   onContextMenu={(e) =>
                     openContextMenu(e, [
-                      { label: 'Rename track', run: () => setRenaming(track.id) },
-                      { label: row.kind === 'visual' ? 'Add video track above' : 'Add audio track below', icon: <Plus size={14} />, run: () => updateProject((p) => void addTrack(p, row.kind, { trackId: row.id, where: row.kind === 'visual' ? 'above' : 'below' }), { label: 'Add track' }) },
+                      { label: tr('Rename track'), run: () => setRenaming(track.id) },
+                      { label: row.kind === 'visual' ? tr('Add video track above') : tr('Add audio track below'), icon: <Plus size={14} />, run: () => updateProject((p) => void addTrack(p, row.kind, { trackId: row.id, where: row.kind === 'visual' ? 'above' : 'below' }), { label: tk('Add track') }) },
                       ...(row.kind === 'visual' && row.id === mainTrackId(project)
-                        ? [{ label: 'Magnetic main track', icon: <MainMagnetIcon size={14} />, checked: !!project.magneticMain, run: toggleMagneticMain }]
+                        ? [{ label: tr('Magnetic main track'), icon: <MainMagnetIcon size={14} />, checked: !!project.magneticMain, run: toggleMagneticMain }]
                         : []),
                       { type: 'separator' },
-                      { type: 'label', label: 'Track height' },
-                      { label: 'Small', checked: h === TRACK_SIZES.small[row.kind], run: () => setTrackHeight(track.id, TRACK_SIZES.small[row.kind]) },
-                      { label: 'Medium', checked: h === TRACK_SIZES.medium[row.kind], run: () => setTrackHeight(track.id, undefined) },
-                      { label: 'Large', checked: h === TRACK_SIZES.large[row.kind], run: () => setTrackHeight(track.id, TRACK_SIZES.large[row.kind]) },
+                      { type: 'label', label: tr('Track height') },
+                      { label: tr('Small'), checked: h === TRACK_SIZES.small[row.kind], run: () => setTrackHeight(track.id, TRACK_SIZES.small[row.kind]) },
+                      { label: tr('Medium'), checked: h === TRACK_SIZES.medium[row.kind], run: () => setTrackHeight(track.id, undefined) },
+                      { label: tr('Large'), checked: h === TRACK_SIZES.large[row.kind], run: () => setTrackHeight(track.id, TRACK_SIZES.large[row.kind]) },
                       { type: 'separator' },
-                      { label: 'Delete track', icon: <Trash2 size={14} />, danger: true, run: () => updateProject((p) => removeTrack(p, row.id), { label: 'Delete track' }) },
+                      { label: tr('Delete track'), icon: <Trash2 size={14} />, danger: true, run: () => updateProject((p) => removeTrack(p, row.id), { label: tk('Delete track') }) },
                     ])
                   }
                 >
@@ -1228,25 +1236,25 @@ export function Timeline(): ReactNode {
                       }}
                     />
                   ) : isMain ? (
-                    <span className="tl-header__name tl-header__name--main truncate" onDoubleClick={() => setRenaming(track.id)} title={`Main track (${track.name}) — magnetic: clips stay together with no gaps, and clips dropped here are inserted at the nearest cut. Double-click to rename.`}>
+                    <span className="tl-header__name tl-header__name--main truncate" onDoubleClick={() => setRenaming(track.id)} title={tr('Main track ({name}) — magnetic: clips stay together with no gaps, and clips dropped here are inserted at the nearest cut. Double-click to rename.', { name: track.name })}>
                       <MainMagnetIcon size={12} />
-                      Main
+                      {tr('Main')}
                     </span>
                   ) : (
-                    <span className="tl-header__name truncate" onDoubleClick={() => setRenaming(track.id)} title="Double-click to rename">
+                    <span className="tl-header__name truncate" onDoubleClick={() => setRenaming(track.id)} title={tr('Double-click to rename')}>
                       {track.name}
                     </span>
                   )}
                   <span className="tl-header__btns">
                     {row.kind === 'visual' && (
-                      <button type="button" className={`icon-btn icon-btn--sm ${track.hidden ? 'is-active' : ''}`} title={track.hidden ? 'Show track' : 'Hide track'} onClick={() => toggleTrack(track.id, 'hidden')}>
+                      <button type="button" className={`icon-btn icon-btn--sm ${track.hidden ? 'is-active' : ''}`} title={track.hidden ? tr('Show track') : tr('Hide track')} onClick={() => toggleTrack(track.id, 'hidden')}>
                         {track.hidden ? <EyeOff size={13} /> : <Eye size={13} />}
                       </button>
                     )}
-                    <button type="button" className={`icon-btn icon-btn--sm ${track.muted ? 'is-active' : ''}`} title={track.muted ? 'Unmute track' : 'Mute track'} onClick={() => toggleTrack(track.id, 'muted')}>
+                    <button type="button" className={`icon-btn icon-btn--sm ${track.muted ? 'is-active' : ''}`} title={track.muted ? tr('Unmute track') : tr('Mute track')} onClick={() => toggleTrack(track.id, 'muted')}>
                       {track.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
                     </button>
-                    <button type="button" className={`icon-btn icon-btn--sm ${track.locked ? 'is-active' : ''}`} title={track.locked ? 'Unlock track' : 'Lock track'} onClick={() => toggleTrack(track.id, 'locked')}>
+                    <button type="button" className={`icon-btn icon-btn--sm ${track.locked ? 'is-active' : ''}`} title={track.locked ? tr('Unlock track') : tr('Lock track')} onClick={() => toggleTrack(track.id, 'locked')}>
                       {track.locked ? <Lock size={13} /> : <LockOpen size={13} />}
                     </button>
                     {soundTracks.has(track.id) && <TrackMeter trackId={track.id} muted={track.muted} />}
@@ -1254,7 +1262,7 @@ export function Timeline(): ReactNode {
                   <span
                     className="tl-header__resize"
                     data-track-resize={track.id}
-                    title="Drag to resize the track · double-click to reset"
+                    title={tr('Drag to resize the track · double-click to reset')}
                     onPointerDown={(e) => startTrackResize(e, track.id)}
                     onDoubleClick={() => track.height !== undefined && setTrackHeight(track.id, undefined)}
                   />
@@ -1270,7 +1278,7 @@ export function Timeline(): ReactNode {
             {/* Export In / Out marks (ui/export/InOutMarks): range band + draggable handles on the ruler. */}
             <InOutMarks pps={pps} scrollEl={scrollRef} height={contentH} />
 
-            {newTrackZone && <div className={`tl-zone tl-zone--${newTrackZone}`} style={newTrackZone === 'above' ? { top: RULER_H + 2, height: TOP_ZONE - 4 } : { top: RULER_H + layout.height - 36, height: 30 }}>New track</div>}
+            {newTrackZone && <div className={`tl-zone tl-zone--${newTrackZone}`} style={newTrackZone === 'above' ? { top: RULER_H + 2, height: TOP_ZONE - 4 } : { top: RULER_H + layout.height - 36, height: 30 }}>{tr('New track')}</div>}
 
             {layout.rows.map((row) => {
               const track = project.tracks[row.index];
@@ -1305,13 +1313,13 @@ export function Timeline(): ReactNode {
                     );
                   })}
                   {clips.map((clip) => {
-                    const tr = idx.transIn.get(clip.id);
-                    if (!tr) return null;
-                    const w = Math.max(22, tr.duration * pps);
+                    const trans = idx.transIn.get(clip.id);
+                    if (!trans) return null;
+                    const w = Math.max(22, trans.duration * pps);
                     const x = timeToX(clip.start, pps);
                     if (x < lo || x > hi) return null;
                     return (
-                      <button key={tr.id} type="button" className={`tl-trans ${selectedTransition === tr.id ? 'is-selected' : ''}`} data-transition={tr.id} style={{ left: x - w / 2, width: w }} title="Transition — click to edit, Del to remove">
+                      <button key={trans.id} type="button" className={`tl-trans ${selectedTransition === trans.id ? 'is-selected' : ''}`} data-transition={trans.id} style={{ left: x - w / 2, width: w }} title={tr('Transition — click to edit, Del to remove')}>
                         <Blend size={12} />
                       </button>
                     );
@@ -1325,7 +1333,7 @@ export function Timeline(): ReactNode {
 
             {hint.ghost && (
               <div className="tl-ghost" style={{ left: hint.ghost.left, width: Math.max(4, hint.ghost.width), top: hint.ghost.top, height: hint.ghost.height }}>
-                {hint.ghost.label && <span>{hint.ghost.label}</span>}
+                {hint.ghost.label && <span>{tMaybe(hint.ghost.label)}</span>}
               </div>
             )}
             {hint.cut && <div className="tl-cut" style={{ left: hint.cut.x, top: hint.cut.top, height: hint.cut.height }} />}
@@ -1337,7 +1345,7 @@ export function Timeline(): ReactNode {
 
             {empty && (
               <div className="tl-empty" style={{ top: RULER_H + TOP_ZONE, width: view.width }}>
-                Drag media, templates and text here — or just click them in the library.
+                {tr('Drag media, templates and text here — or just click them in the library.')}
               </div>
             )}
           </div>

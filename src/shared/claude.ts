@@ -50,6 +50,33 @@ const obj = (properties: Record<string, Schema>, required: string[] = []): Schem
 const str = (description: string, extra: Schema = {}): Schema => ({ type: 'string', description, ...extra });
 const num = (description: string, extra: Schema = {}): Schema => ({ type: 'number', description, ...extra });
 const bool = (description: string): Schema => ({ type: 'boolean', description });
+
+/** Motion clip settings (k.params), shown in Kinora's inspector. */
+const MOTION_PARAMS: Schema = {
+  type: 'array',
+  maxItems: 24,
+  description:
+    'Settings the user can change in Kinora’s inspector without code; the clip reads them as k.params.<id>. Declare the visible text and main colours at least. See motion_guide.',
+  items: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'Name in k.params (letters, digits, _).' },
+      type: { type: 'string', enum: ['text', 'color', 'number', 'font', 'toggle', 'select', 'image'] },
+      label: { type: 'string', description: 'Label in the inspector, e.g. "Title".' },
+      default: { type: ['string', 'number', 'boolean'], description: 'Default value (image: "" or a media id).' },
+      min: { type: 'number' },
+      max: { type: 'number' },
+      step: { type: 'number' },
+      suffix: { type: 'string', description: 'number: unit shown after the value, e.g. " s" or "%".' },
+      options: { type: 'array', items: { type: 'string' }, description: 'select: the choices.' },
+      multiline: { type: 'boolean', description: 'text: several lines.' },
+      brand: { type: 'string', enum: ['primary', 'secondary', 'accent', 'background', 'text', 'heading', 'body', 'logo', 'name'], description: 'Link to the user’s brand kit.' },
+    },
+    required: ['id', 'type', 'label', 'default'],
+    additionalProperties: false,
+  },
+};
+const MOTION_VALUES: Schema = { type: 'object', additionalProperties: { type: ['string', 'number', 'boolean'] }, description: 'Values for the clip’s settings, as { id: value } (as if the user changed them in the inspector).' };
 const ids = (description: string): Schema => ({ type: 'array', items: { type: 'string' }, description, minItems: 1 });
 
 export interface ToolDef {
@@ -216,6 +243,7 @@ export const TOOLS: ToolDef[] = [
         width: num('Canvas width in pixels (default: the project’s).', { minimum: 16, maximum: 4096 }),
         height: num('Canvas height in pixels (default: the project’s).', { minimum: 16, maximum: 4096 }),
         images: { type: 'object', additionalProperties: { type: 'string' }, description: 'Project images to use, as { name: media id } → k.images.name.' },
+        params: MOTION_PARAMS,
         add_to_timeline: bool('Place it on the timeline (default true).'),
         time: num('Start time on the timeline (default: the playhead).', { minimum: 0 }),
         track_id: str('Preferred track id.'),
@@ -226,7 +254,7 @@ export const TOOLS: ToolDef[] = [
   tool(
     'update_motion',
     'Change a Motion clip',
-    'Replace the code and/or settings of a Motion clip (its media id from create_motion or get_project). Kinora tests the new version first; every timeline clip using it updates, and the change can be undone.',
+    'Change a Motion clip (its media id from create_motion or get_project): new code, size, length, settings declarations (params), or just the values of its settings (values, e.g. new words or colours; no new code needed). Kinora tests the new version first; every timeline clip using it updates, and the change can be undone.',
     obj(
       {
         media_id: str('The Motion clip’s media id.'),
@@ -236,11 +264,13 @@ export const TOOLS: ToolDef[] = [
         width: num('Canvas width in pixels.', { minimum: 16, maximum: 4096 }),
         height: num('Canvas height in pixels.', { minimum: 16, maximum: 4096 }),
         images: { type: 'object', additionalProperties: { type: 'string' }, description: 'Project images, as { name: media id }.' },
+        params: MOTION_PARAMS,
+        values: MOTION_VALUES,
       },
       ['media_id'],
     ),
   ),
-  tool('get_motion', 'Read a Motion clip', 'The code and settings of a Motion clip, to read or change it.', obj({ media_id: str('The Motion clip’s media id.') }, ['media_id']), { readOnly: true }),
+  tool('get_motion', 'Read a Motion clip', 'The code, settings declarations and current setting values of a Motion clip, to read or change it.', obj({ media_id: str('The Motion clip’s media id.') }, ['media_id']), { readOnly: true }),
   tool('undo', 'Undo', 'Undo the last change(s), as Ctrl+Z.', obj({ steps: num('How many steps (default 1).', { minimum: 1, maximum: 50 }) })),
   tool('redo', 'Redo', 'Redo undone change(s), as Ctrl+Shift+Z.', obj({ steps: num('How many steps (default 1).', { minimum: 1, maximum: 50 }) })),
 ];
@@ -255,6 +285,178 @@ export const SERVER_INSTRUCTIONS = [
   'Use capture_frame to check how things look. Replacing or deleting files on disk always asks the user in Kinora first.',
   'For custom animation (kinetic type, 3D, charts, physics, generative art), write a Motion clip: read motion_guide, then create_motion.',
 ].join(' ');
+
+// ---------------------------------------------------------------------------------------------
+// Ready-made requests (MCP prompts): one click in Claude Desktop's "+" menu, /commands in Claude Code
+// ---------------------------------------------------------------------------------------------
+
+export interface PromptArgument {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+export interface KinoraPrompt {
+  name: string;
+  title: string;
+  description: string;
+  arguments: PromptArgument[];
+  /** The request sent to Claude, built from the arguments the user filled in. */
+  text: (args: Record<string, string>) => string;
+}
+
+const given = (v: string | undefined): string | null => (v && v.trim() ? v.trim() : null);
+
+const WORK_STYLE =
+  'Work in Kinora with its tools. Start with get_status and get_project. Check your work with capture_frame as you go. Every change is undoable in Kinora, so make the edit rather than asking about each step, but ask me before deleting media or replacing files. When you finish, tell me in a few lines what you did and what I might want to adjust.';
+
+export const PROMPTS: KinoraPrompt[] = [
+  {
+    name: 'make_shorts',
+    title: 'Turn a long video into shorts',
+    description: 'Finds the strongest moments of a long video and makes vertical short clips with captions, ready for TikTok, Reels and Shorts.',
+    arguments: [
+      { name: 'count', description: 'How many shorts (default 3).' },
+      { name: 'length', description: 'Length of each short in seconds (default 30 to 45).' },
+      { name: 'focus', description: 'What the shorts should be about, if anything in particular.' },
+    ],
+    text: (a) =>
+      [
+        `Turn the long video in my Kinora project into ${given(a.count) ?? '3'} vertical (9:16) short clips of about ${given(a.length) ?? '30 to 45'} seconds each.`,
+        given(a.focus) ? `Focus on: ${a.focus.trim()}.` : 'Pick the most engaging, self-contained moments: a clear hook in the first seconds, one idea per short.',
+        'Generate captions first so you can read what is said and choose the moments from the transcript. For each short: keep only that moment, reframe it to 9:16 so the speaker stays in frame, keep the captions with word highlighting, remove long pauses, and add a short hook title at the start (a Motion clip with editable text works well).',
+        'Then export each short as its own MP4 into a folder I choose (ask me for the folder).',
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'clean_talking_head',
+    title: 'Caption and clean up a talking-head video',
+    description: 'Removes silences and filler words, adds captions and a name title, and evens out the audio.',
+    arguments: [
+      { name: 'name', description: 'Name (and role) of the speaker for the lower third.' },
+      { name: 'caption_style', description: 'How the captions should look, e.g. "bold yellow words" (optional).' },
+    ],
+    text: (a) =>
+      [
+        'Clean up the talking-head video in my Kinora project:',
+        '1. Find silences and filler words ("um", "uh", repeated starts) and remove them, keeping the speech natural (don’t cut mid-word or remove meaningful pauses).\n2. Add captions with word-by-word highlighting' +
+          (given(a.caption_style) ? ` styled as: ${a.caption_style.trim()}` : ', readable on any background') +
+          '.\n3. Even out the audio level and reduce background noise if it is noticeable.\n4. ' +
+          (given(a.name) ? `Add a clean lower third with “${a.name.trim()}” near the start.` : 'If you can tell who is speaking, add a lower third with their name near the start; otherwise skip it.'),
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'promo_from_photos',
+    title: 'Make a promo video from photos',
+    description: 'Builds a short promo from your photos with motion, transitions, music, a title and an end card.',
+    arguments: [
+      { name: 'subject', description: 'What the promo is for (product, event, place…).', required: true },
+      { name: 'photos', description: 'Folder or files to use (default: the images already in the project).' },
+      { name: 'length', description: 'Length in seconds (default 20).' },
+      { name: 'format', description: 'Shape: 9:16 (default), 16:9, 1:1 or 4:5.' },
+    ],
+    text: (a) =>
+      [
+        `Make a ${given(a.length) ?? '20'}-second promo video for: ${a.subject?.trim() || 'my product'}.`,
+        `Format: ${given(a.format) ?? '9:16 vertical'}. Photos: ${given(a.photos) ? `import them from ${a.photos.trim()}` : 'use the images in the project (import some if there are none, after asking me where they are)'}.`,
+        'Give every photo gentle motion (zoom or pan), use a few matching transitions, add an upbeat music bed from Kinora’s library and fit the cuts to its beat, open with an animated title and end with an end card (call to action). Use my brand kit if I have one set up. Keep text short and readable on a phone.',
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'animated_title',
+    title: 'Add an animated title',
+    description: 'Creates a custom animated title as a Motion clip, with its words, colours and font editable in Kinora.',
+    arguments: [
+      { name: 'text', description: 'The words of the title.', required: true },
+      { name: 'style', description: 'The look and movement, e.g. "bold, glitchy, neon" or "elegant serif that fades in" (optional).' },
+    ],
+    text: (a) =>
+      [
+        `Add an animated title that says “${a.text?.trim() || 'Title'}” at the playhead in my Kinora project.`,
+        given(a.style) ? `Style: ${a.style.trim()}.` : 'Choose a style that suits the project (look at a frame of it first).',
+        'Write it as a Motion clip: read motion_guide, then create_motion. Declare params so I can change the words, colours, font and speed in Kinora’s inspector, and link them to my brand kit where it makes sense. Check the preview frame you get back and refine until it looks polished.',
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'animated_chart',
+    title: 'Turn numbers into an animated chart',
+    description: 'Makes an animated chart (bars, line, pie or a counter) from your numbers as a Motion clip.',
+    arguments: [
+      { name: 'data', description: 'The numbers, e.g. "Jan 120, Feb 180, Mar 240".', required: true },
+      { name: 'title', description: 'Chart title (optional).' },
+      { name: 'kind', description: 'Bars, line, pie, counter… (optional: you choose).' },
+    ],
+    text: (a) =>
+      [
+        `Make an animated chart from this data and add it at the playhead in my Kinora project: ${a.data?.trim() || '(ask me for the data)'}.`,
+        `${given(a.title) ? `Title: “${a.title.trim()}”. ` : ''}${given(a.kind) ? `Chart type: ${a.kind.trim()}.` : 'Pick the chart type that tells this story best.'}`,
+        'Write it as a Motion clip with D3 (read motion_guide, then create_motion): animate the values in, label them clearly, and highlight the most important one. Declare params for the title, the data (as editable text), the colours and the font so I can change them in the inspector.',
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'logo_intro',
+    title: 'Make a logo intro',
+    description: 'Creates a short logo reveal for the start of your videos, using your brand kit.',
+    arguments: [
+      { name: 'style', description: 'The feel, e.g. "3D and glossy", "minimal", "energetic" (optional).' },
+      { name: 'tagline', description: 'A line under the logo (optional).' },
+    ],
+    text: (a) =>
+      [
+        'Make a 3 to 5 second logo intro at the start of my Kinora project.',
+        `Use my logo: from my brand kit if I have one, otherwise ask me which image in the project is the logo. ${given(a.tagline) ? `Add the tagline “${a.tagline.trim()}” under it.` : ''} ${given(a.style) ? `Style: ${a.style.trim()}.` : 'Keep it clean and confident.'}`,
+        'Write it as a Motion clip (read motion_guide, then create_motion) with the logo as an image setting and my brand colours as colour settings, so I can swap them later. Add a short whoosh or hit sound from Kinora’s library if it fits.',
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'cut_to_beat',
+    title: 'Cut clips to the beat of a song',
+    description: 'Detects the beats of the music and lines your clips and photos up with them.',
+    arguments: [{ name: 'music', description: 'The song to use: a file path, or "library" for one from Kinora’s library (default: the music already in the project).' }],
+    text: (a) =>
+      [
+        `Cut my clips to the beat of ${given(a.music) ? (a.music.trim().toLowerCase() === 'library' ? 'an upbeat track from Kinora’s music library' : `the song at ${a.music.trim()}`) : 'the music in my Kinora project'}.`,
+        'Detect the beats, then place the clips and photos so every cut lands on a beat (use every beat, or every second or fourth one for slower sections). Keep the best part of each clip, fade the music out at the end, and make the video end on a strong beat.',
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'export_for',
+    title: 'Export for a platform',
+    description: 'Exports the project in the right shape and settings for YouTube, TikTok, Instagram and others.',
+    arguments: [
+      { name: 'platforms', description: 'Where it will be posted, e.g. "YouTube and Instagram Reels".', required: true },
+      { name: 'folder', description: 'Folder to save the files in (optional: you ask).' },
+    ],
+    text: (a) =>
+      [
+        `Export my Kinora project for: ${a.platforms?.trim() || 'YouTube'}.`,
+        'Use the matching export presets. When a platform needs a different shape than the project (e.g. 9:16 for Reels from a 16:9 edit), make that version with auto-reframe and check with capture_frame that titles and captions still fit inside the safe area.',
+        `Save the files in ${given(a.folder) ?? 'a folder I choose (ask me)'}, one per platform, and tell me where they are when the exports finish.`,
+        WORK_STYLE,
+      ].join('\n\n'),
+  },
+  {
+    name: 'review_edit',
+    title: 'Review my edit',
+    description: 'Watches through the project and suggests concrete improvements, without changing anything.',
+    arguments: [{ name: 'goal', description: 'What the video is for, e.g. "a YouTube tutorial" (optional).' }],
+    text: (a) =>
+      [
+        `Review the edit in my Kinora project${given(a.goal) ? ` (it is ${a.goal.trim()})` : ''}. Don’t change anything yet.`,
+        'Look at the timeline with get_project and at frames across the video with capture_frame (the opening seconds closely). Check the hook, pacing, cuts, text legibility and safe areas, colour consistency between clips, audio levels and music balance, and the ending.',
+        'Give me a short, prioritised list of concrete improvements, each with where it is (time) and what you would do. Then ask which ones I want you to make.',
+      ].join('\n\n'),
+  },
+];
+
+export const PROMPT_NAMES = new Set(PROMPTS.map((p) => p.name));
 
 // ---------------------------------------------------------------------------------------------
 // Claude Desktop extension (.mcpb): the one-click way to connect

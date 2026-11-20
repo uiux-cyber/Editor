@@ -1,6 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MOTION_EXAMPLES, MOTION_FONTS, MOTION_LIBRARIES, motionGuide, normalizeMotionMeta, parseMotionFile, serializeMotionFile, type MotionMeta } from '@shared/motion';
+import {
+  changedMotionValues,
+  MOTION_EXAMPLES,
+  MOTION_FONTS,
+  MOTION_LIBRARIES,
+  motionGuide,
+  motionParamValues,
+  motionValuesKey,
+  normalizeMotionMeta,
+  normalizeMotionParams,
+  parseMotionFile,
+  serializeMotionFile,
+  type MotionMeta,
+} from '@shared/motion';
 
 const meta: MotionMeta = { name: 'Intro', width: 1920, height: 1080, duration: 4, fps: 30, seed: 1, images: { logo: 'as_1' } };
 const code = 'export default function setup(k) {\n  return (t) => {};\n}\n';
@@ -76,5 +89,59 @@ describe('Motion guide and bundle', () => {
       const pkg = f.replace(/ Variable$/, '').toLowerCase().replace(/ /g, '-');
       expect(fonts).toContain(pkg);
     }
+  });
+});
+
+describe('Motion clip settings (k.params)', () => {
+  const params = normalizeMotionParams([
+    { id: 'title', type: 'text', label: 'Title', default: 'Hello' },
+    { id: 'color', type: 'color', label: 'Colour', default: '#ff0000', brand: 'primary' },
+    { id: 'speed', type: 'number', label: 'Speed', default: 5, min: 0.5, max: 2 },
+    { id: 'font', type: 'font', label: 'Font', default: 'Comic Sans' },
+    { id: 'mode', type: 'select', label: 'Mode', default: 'b', options: ['a', 'b', 'b'] },
+    { id: 'on', type: 'toggle', label: 'On', default: true },
+    { id: 'logo', type: 'image', label: 'Logo', default: '', brand: 'logo' },
+    { id: 'title', type: 'text', label: 'Duplicate', default: 'x' },
+    { id: 'bad id', type: 'text', label: 'Bad', default: 'x' },
+    { id: 'weird', type: 'video', label: 'Unknown type', default: 'x' },
+    { id: 'empty', type: 'select', label: 'No options', default: 'x', options: [] },
+  ]);
+
+  it('keeps valid settings and repairs bad defaults', () => {
+    expect(params.map((p) => p.id)).toEqual(['title', 'color', 'speed', 'font', 'mode', 'on', 'logo']);
+    expect(params.find((p) => p.id === 'speed')).toMatchObject({ default: 2, min: 0.5, max: 2, step: 0.01 });
+    expect(params.find((p) => p.id === 'font')?.default).toBe('Inter Variable');
+    expect(params.find((p) => p.id === 'mode')?.options).toEqual(['a', 'b']);
+    expect(params.find((p) => p.id === 'color')?.brand).toBe('primary');
+    expect(normalizeMotionParams('nope')).toEqual([]);
+  });
+
+  it('fills in values, keeps valid choices and clamps numbers', () => {
+    const v = motionParamValues(params, { title: 'Hi', color: 'not a colour', speed: 99, font: 'Anton', mode: 'z', on: 'yes', logo: 'as_9', extra: 1 });
+    expect(v).toEqual({ title: 'Hi', color: '#ff0000', speed: 2, font: 'Anton', mode: 'b', on: true, logo: 'as_9' });
+  });
+
+  it('stores only the values that differ from the defaults', () => {
+    expect(changedMotionValues(params, { title: 'Hello', speed: 1, color: '#00ff00' })).toEqual({ speed: 1, color: '#00ff00' });
+    expect(changedMotionValues(params, {})).toEqual({});
+  });
+
+  it('keys values independently of their order', () => {
+    expect(motionValuesKey({ a: 1, b: 'x' })).toBe(motionValuesKey({ b: 'x', a: 1 }));
+    expect(motionValuesKey({ a: 1 })).not.toBe(motionValuesKey({ a: 2 }));
+    expect(motionValuesKey(undefined)).toBe('');
+    expect(motionValuesKey({})).toBe('');
+  });
+
+  it('round-trips settings in the .kmotion header and the guide documents them', () => {
+    const m = normalizeMotionMeta({ name: 'T', params }, { width: 1920, height: 1080, fps: 30 });
+    const back = normalizeMotionMeta(parseMotionFile(serializeMotionFile(m, code)).meta, { width: 1920, height: 1080, fps: 30 });
+    expect(back.params).toEqual(params);
+    expect(motionGuide()).toContain('k.params');
+    expect(motionGuide()).toContain('"brand"');
+  });
+
+  it('every example with settings declares valid ones', () => {
+    for (const ex of MOTION_EXAMPLES) if (ex.params) expect(normalizeMotionParams(ex.params)).toEqual(ex.params);
   });
 });

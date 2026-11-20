@@ -3,11 +3,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toast } from '@/store/ui';
 import samplePackText from '../../../../../resources/packs/sample.kinorapack?raw';
 import { Modal } from '../common/overlays';
+import { t, useT } from '../i18n';
 import './templates.css';
 import { errorText, installPackText, pickPackFile, removePack, useTemplates, type InstallResult } from './store';
 
 interface Failure {
-  name: string;
+  /** The bundled sample pack (otherwise a picked file). */
+  sample: boolean;
   errors: string[];
 }
 
@@ -25,11 +27,13 @@ export async function installPackFromFile(): Promise<InstallResult | null> {
 
 function announce(res: InstallResult): void {
   if (!res.ok || !res.pack) return;
-  toast('success', `${res.replaced ? 'Updated' : 'Installed'} “${res.pack.name}”`, res.pack.summary ? `Added ${res.pack.summary}.` : undefined);
+  const name = res.pack.name;
+  toast('success', res.replaced ? t('Updated “{name}”', { name }) : t('Installed “{name}”', { name }), res.pack.summary ? t('Added {items}.', { items: res.pack.summary }) : undefined);
 }
 
 /** The installed packs, with install / remove (Content packs window and Settings › Content packs). */
 export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean }): ReactNode {
+  const tr = useT();
   const packs = useTemplates((s) => s.packs);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -44,7 +48,7 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
       const res = source === 'file' ? await installPackFromFile() : await installPackText(samplePackText);
       if (!res) return;
       if (res.ok) announce(res);
-      else setFailure({ name: source === 'sample' ? 'Sample pack' : 'This pack', errors: res.errors });
+      else setFailure({ sample: source === 'sample', errors: res.errors });
     } finally {
       setBusy(false);
     }
@@ -64,11 +68,11 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
     <div className="packs">
       <div className="packs__actions">
         <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void run('file')} data-testid="install-pack">
-          {busy ? <span className="spinner" /> : <PackagePlus size={14} />} Install content pack…
+          {busy ? <span className="spinner" /> : <PackagePlus size={14} />} {tr('Install content pack…')}
         </button>
         {!sampleInstalled && (
           <button type="button" className="btn btn--outline" disabled={busy} onClick={() => void run('sample')}>
-            <FileDown size={14} /> Install the sample pack
+            <FileDown size={14} /> {tr('Install the sample pack')}
           </button>
         )}
       </div>
@@ -76,7 +80,7 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
       {failure && (
         <div className="packs__failure" role="alert" data-testid="pack-errors">
           <div className="packs__failure-title">
-            <CircleAlert size={15} /> {failure.name} can’t be installed
+            <CircleAlert size={15} /> {failure.sample ? tr('Sample pack can’t be installed') : tr('This pack can’t be installed')}
           </div>
           <ul>
             {failure.errors.slice(0, 12).map((e, i) => (
@@ -84,7 +88,7 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
                 {e}
               </li>
             ))}
-            {failure.errors.length > 12 && <li>…and {failure.errors.length - 12} more problems</li>}
+            {failure.errors.length > 12 && <li>{tr('…and {count} more problems', { count: failure.errors.length - 12 })}</li>}
           </ul>
         </div>
       )}
@@ -94,8 +98,8 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
           <div className="empty__icon">
             <Package size={20} />
           </div>
-          <div className="empty__title">No content packs yet</div>
-          <p>Packs add palettes, font pairings, filters, text styles, transitions, effects, backgrounds and templates.</p>
+          <div className="empty__title">{tr('No content packs yet')}</div>
+          <p>{tr('Packs add palettes, font pairings, filters, text styles, transitions, effects, backgrounds and templates.')}</p>
         </div>
       ) : (
         <div className="packs__list">
@@ -110,8 +114,8 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
                   {p.packVersion && <span className="badge">v{p.packVersion}</span>}
                 </div>
                 <div className="pack-card__meta">
-                  {p.loaded ? p.summary : 'Not loaded'}
-                  {p.author ? ` · by ${p.author}` : ''}
+                  {p.loaded ? p.summary : tr('Not loaded')}
+                  {p.author ? ` · ${tr('by {author}', { author: p.author })}` : ''}
                 </div>
                 {p.description && <p className="pack-card__desc">{p.description}</p>}
                 {!p.loaded && (
@@ -126,23 +130,23 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
               </div>
               {confirm === p.id ? (
                 <div className="pack-card__confirm">
-                  <span>Remove?</span>
+                  <span>{tr('Remove?')}</span>
                   <button type="button" className="btn btn--sm btn--outline" onClick={() => setConfirm(null)}>
-                    Keep
+                    {tr('Keep')}
                   </button>
                   <button
                     type="button"
                     className="btn btn--sm btn--danger"
                     onClick={() => {
                       setConfirm(null);
-                      void removePack(p.id).then(() => toast('info', `Removed “${p.name}”`, 'Projects that used its items show them as missing until it is installed again.'));
+                      void removePack(p.id).then(() => toast('info', tr('Removed “{name}”', { name: p.name }), tr('Projects that used its items show them as missing until it is installed again.')));
                     }}
                   >
-                    Remove
+                    {tr('Remove')}
                   </button>
                 </div>
               ) : (
-                <button type="button" className="icon-btn" title="Remove this pack" onClick={() => setConfirm(p.id)}>
+                <button type="button" className="icon-btn" title={tr('Remove this pack')} onClick={() => setConfirm(p.id)}>
                   <Trash2 size={15} />
                 </button>
               )}
@@ -152,16 +156,16 @@ export function PacksPanel({ installOnOpen = false }: { installOnOpen?: boolean 
       )}
 
       <p className="packs__note">
-        <ShieldCheck size={13} /> Packs are data only (JSON and shader code). Every pack is checked before it is installed — shaders are compiled in an isolated context and nothing in a pack can run
-        programs on your PC.
+        <ShieldCheck size={13} /> {tr('Packs are data only (JSON and shader code). Every pack is checked before it is installed — shaders are compiled in an isolated context and nothing in a pack can run programs on your PC.')}
       </p>
     </div>
   );
 }
 
 export function PacksWindow({ onClose, installOnOpen }: { onClose: () => void; installOnOpen?: boolean }): ReactNode {
+  const tr = useT();
   return (
-    <Modal title="Content packs" subtitle="Add palettes, styles, effects and templates made by others." onClose={onClose} width={640} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn--primary" onClick={onClose}>Done</button></>}>
+    <Modal title={tr('Content packs')} subtitle={tr('Add palettes, styles, effects and templates made by others.')} onClose={onClose} width={640} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn--primary" onClick={onClose}>{tr('Done')}</button></>}>
       <PacksPanel installOnOpen={installOnOpen} />
     </Modal>
   );

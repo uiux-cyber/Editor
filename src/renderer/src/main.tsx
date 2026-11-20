@@ -13,7 +13,9 @@ import { useProjectStore } from './store/project';
 import { useUI } from './store/ui';
 import * as exporter from './engine/export/exporter';
 import * as assets from './engine/media/assets';
-import * as motion from './engine/media/motion';
+import * as motionEngine from './engine/media/motion';
+import { MOTION_PRESETS } from './library/motionPresets';
+import * as motionActions from './ui/motion/actions';
 import * as actions from './ui/actions';
 import * as projectIO from './ui/projectIO';
 import * as time from './ui/time/probe';
@@ -82,7 +84,7 @@ if (!hasBridge) {
     useUI,
     usePlayback,
     LIBRARY_COUNTS,
-    motion,
+    motion: { ...motionEngine, ...motionActions, presets: MOTION_PRESETS },
     time: { ...time, ...timeActions },
     workflow: { commands, keymap: keymapStore, i18n, theme, palette: paletteStore, collect },
   };

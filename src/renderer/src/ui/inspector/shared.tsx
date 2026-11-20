@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Diamond } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { hasKeyframes, propAt } from '@/core/keyframes';
 import type { Clip, ID, KeyframeProp, Paint, ParamValue } from '@/core/types';
 import { usePlayback } from '@/engine/engine';
@@ -7,6 +7,17 @@ import type { ParamDef } from '@/library/types';
 import { ColorInput, Field, NumberInput, Segmented, Select, SliderField, Toggle } from '../common/controls';
 import { clearKeyframes, hasKeyframeAtPlayhead, jumpKeyframe, localTimeOf, toggleKeyframe } from '../keyframeOps';
 import { openContextMenu } from '../common/overlays';
+import { useT } from '../i18n';
+
+/**
+ * Render a translated sentence whose `{name}` placeholders are React elements (key caps, bold
+ * values…): pass the result of t() for a message such as "Press {key} to play." and
+ * `{ key: <span className="kbd">Space</span> }`. t() leaves placeholders it was given no value
+ * for untouched, so translators can move them around.
+ */
+export function rich(message: string, parts: Record<string, ReactNode>): ReactNode[] {
+  return message.split(/\{(\w+)\}/).map((piece, i) => (i % 2 === 0 ? piece || null : <Fragment key={i}>{piece in parts ? parts[piece] : `{${piece}}`}</Fragment>));
+}
 
 /** Current (possibly keyframed) value of a property at the playhead. */
 export function useLiveProp(clip: Clip, prop: KeyframeProp): number {
@@ -17,30 +28,31 @@ export function useLiveProp(clip: Clip, prop: KeyframeProp): number {
 
 /** Keyframe toggle with previous / next navigation for one or more linked properties. */
 export function KeyframeButton({ clip, ids, props }: { clip: Clip; ids: ID[]; props: KeyframeProp[] }): ReactNode {
+  const t = useT();
   usePlayback((s) => s.time);
   const animated = props.some((p) => hasKeyframes(clip, p));
   const here = props.every((p) => hasKeyframeAtPlayhead(clip, p));
   return (
     <span className="kf">
       {animated && (
-        <button type="button" className="kf__nav" title="Previous keyframe" onClick={() => jumpKeyframe(clip, props, -1)}>
+        <button type="button" className="kf__nav" title={t('Previous keyframe')} onClick={() => jumpKeyframe(clip, props, -1)}>
           <ChevronLeft size={11} />
         </button>
       )}
       <button
         type="button"
         className={`kf__btn ${here ? 'is-on' : animated ? 'is-animated' : ''}`}
-        title={here ? 'Remove keyframe at the playhead' : 'Add keyframe at the playhead'}
+        title={here ? t('Remove keyframe at the playhead') : t('Add keyframe at the playhead')}
         onClick={() => toggleKeyframe(ids, props)}
         onContextMenu={(e) =>
           animated &&
-          openContextMenu(e, [{ label: 'Remove all keyframes', danger: true, run: () => clearKeyframes(ids, props) }])
+          openContextMenu(e, [{ label: t('Remove all keyframes'), danger: true, run: () => clearKeyframes(ids, props) }])
         }
       >
         <Diamond size={11} fill={here ? 'currentColor' : 'none'} />
       </button>
       {animated && (
-        <button type="button" className="kf__nav" title="Next keyframe" onClick={() => jumpKeyframe(clip, props, 1)}>
+        <button type="button" className="kf__nav" title={t('Next keyframe')} onClick={() => jumpKeyframe(clip, props, 1)}>
           <ChevronRight size={11} />
         </button>
       )}
@@ -50,7 +62,8 @@ export function KeyframeButton({ clip, ids, props }: { clip: Clip; ids: ID[]; pr
 
 /** Controls generated from a pack item's parameter definitions. */
 export function ParamControls({ defs, values, onChange }: { defs: ParamDef[]; values: Record<string, ParamValue>; onChange: (key: string, value: ParamValue) => void }): ReactNode {
-  if (defs.length === 0) return <p className="hint">This item has no adjustable settings.</p>;
+  const t = useT();
+  if (defs.length === 0) return <p className="hint">{t('This item has no adjustable settings.')}</p>;
   return (
     <>
       {defs.map((def) => {
@@ -102,18 +115,19 @@ export function ParamControls({ defs, values, onChange }: { defs: ParamDef[]; va
 
 /** Solid / gradient paint editor. Gradients are edited as start + end colour and an angle. */
 export function PaintEditor({ paint, onChange }: { paint: Paint; onChange: (p: Paint) => void }): ReactNode {
+  const t = useT();
   const first = paint.type === 'solid' ? paint.color : (paint.stops[0]?.color ?? '#ffffff');
   const last = paint.type === 'solid' ? paint.color : (paint.stops[paint.stops.length - 1]?.color ?? '#ffffff');
   return (
     <>
-      <Field label="Fill">
+      <Field label={t('Fill')}>
         <Segmented
           value={paint.type}
           style={{ flex: 1 }}
           options={[
-            { value: 'solid', label: 'Solid' },
-            { value: 'linear', label: 'Linear' },
-            { value: 'radial', label: 'Radial' },
+            { value: 'solid', label: t('Solid') },
+            { value: 'linear', label: t('Linear') },
+            { value: 'radial', label: t('Radial') },
           ]}
           onChange={(type) => {
             if (type === paint.type) return;
@@ -126,12 +140,12 @@ export function PaintEditor({ paint, onChange }: { paint: Paint; onChange: (p: P
         />
       </Field>
       {paint.type === 'solid' ? (
-        <Field label="Color">
+        <Field label={t('Color')}>
           <ColorInput value={paint.color} alpha swatches onChange={(color) => onChange({ type: 'solid', color })} />
         </Field>
       ) : (
         <>
-          <Field label={paint.type === 'radial' ? 'Centre' : 'Start'}>
+          <Field label={paint.type === 'radial' ? t('Centre') : t('Start')}>
             <ColorInput
               value={first}
               onChange={(color) => {
@@ -140,7 +154,7 @@ export function PaintEditor({ paint, onChange }: { paint: Paint; onChange: (p: P
               }}
             />
           </Field>
-          <Field label={paint.type === 'radial' ? 'Edge' : 'End'}>
+          <Field label={paint.type === 'radial' ? t('Edge') : t('End')}>
             <ColorInput
               value={last}
               onChange={(color) => {
@@ -150,7 +164,7 @@ export function PaintEditor({ paint, onChange }: { paint: Paint; onChange: (p: P
             />
           </Field>
           {paint.type === 'linear' && (
-            <SliderField label="Angle" value={paint.angle} min={0} max={360} step={1} suffix="°" defaultValue={90} onChange={(angle) => onChange({ ...paint, angle })} />
+            <SliderField label={t('Angle')} value={paint.angle} min={0} max={360} step={1} suffix="°" defaultValue={90} onChange={(angle) => onChange({ ...paint, angle })} />
           )}
         </>
       )}

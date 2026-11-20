@@ -5,23 +5,30 @@
  */
 
 import { CircleCheck, Download, FileWarning, FolderSearch } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { FFMPEG_INSTALL_URL } from '@shared/media';
 import { browseFfmpeg, convertAndImport, dismissOffer, useFfmpeg } from '@/engine/media/ffmpeg';
 import { useMediaPrefs } from '@/engine/media/prefs';
 import { api } from '@/platform/api';
 import { Field, Select } from '../common/controls';
 import { Modal } from '../common/overlays';
+import { useT } from '../i18n';
+
+/** Put elements into a translated message at its {placeholders}. */
+function rich(message: string, parts: Record<string, ReactNode>): ReactNode[] {
+  return message.split(/\{(\w+)\}/).map((piece, i) => (i % 2 ? <Fragment key={i}>{parts[piece] ?? `{${piece}}`}</Fragment> : piece));
+}
 
 /** FFmpeg status line + installation help (shared with the Settings section). */
 export function FfmpegStatus({ compact = false }: { compact?: boolean }): ReactNode {
+  const t = useT();
   const info = useFfmpeg((s) => s.info);
   const detecting = useFfmpeg((s) => s.detecting);
   const [busy, setBusy] = useState(false);
   if (detecting && !info) {
     return (
       <div className="mx-ffmpeg-state">
-        <span className="spinner" style={{ width: 12, height: 12 }} /> Looking for FFmpeg…
+        <span className="spinner" style={{ width: 12, height: 12 }} /> {t('Looking for FFmpeg…')}
       </div>
     );
   }
@@ -30,30 +37,24 @@ export function FfmpegStatus({ compact = false }: { compact?: boolean }): ReactN
       <div className="mx-ffmpeg-state is-ok" data-ffmpeg-state="found">
         <CircleCheck size={15} />
         <span className="truncate" title={info.path ?? undefined}>
-          FFmpeg {info.version} {info.source === 'path' ? 'found on PATH' : 'selected'} — <span className="mx-code">{info.path}</span>
+          {info.source === 'path' ? t('FFmpeg {version} found on PATH', { version: info.version }) : t('FFmpeg {version} selected', { version: info.version })} — <span className="mx-code">{info.path}</span>
         </span>
       </div>
     );
   }
   return (
     <div className="mx-convert__status mx-convert__status--missing" data-ffmpeg-state="missing">
-      <strong>FFmpeg is not installed{info?.error ? ` (${info.error})` : ''}.</strong>
+      <strong>{info?.error ? t('FFmpeg is not installed ({error}).', { error: info.error }) : t('FFmpeg is not installed.')}</strong>
       {!compact && (
         <ol className="mx-convert__steps">
-          <li>
-            Download a Windows build of FFmpeg (for example the <em>release essentials</em> build linked from ffmpeg.org).
-          </li>
-          <li>
-            Unzip it, e.g. to <code>C:\ffmpeg</code>.
-          </li>
-          <li>
-            Click <em>Locate ffmpeg.exe</em> and choose <code>C:\ffmpeg\bin\ffmpeg.exe</code> — or add that <code>bin</code> folder to your PATH and restart Kinora.
-          </li>
+          <li>{rich(t('Download a Windows build of FFmpeg (for example the {build} build linked from ffmpeg.org).'), { build: <em>release essentials</em> })}</li>
+          <li>{rich(t('Unzip it, e.g. to {folder}.'), { folder: <code>C:\ffmpeg</code> })}</li>
+          <li>{rich(t('Click {locate} and choose {exe} — or add that {bin} folder to your PATH and restart Kinora.'), { locate: <em>{t('Locate ffmpeg.exe')}</em>, exe: <code>C:\ffmpeg\bin\ffmpeg.exe</code>, bin: <code>bin</code> })}</li>
         </ol>
       )}
       <div className="mx-settings__row">
         <button type="button" className="btn btn--outline btn--sm" onClick={() => void api.app.openExternal(FFMPEG_INSTALL_URL)}>
-          <Download size={13} /> Open download page
+          <Download size={13} /> {t('Open download page')}
         </button>
         <button
           type="button"
@@ -65,7 +66,7 @@ export function FfmpegStatus({ compact = false }: { compact?: boolean }): ReactN
             void browseFfmpeg().finally(() => setBusy(false));
           }}
         >
-          <FolderSearch size={13} /> Locate ffmpeg.exe…
+          <FolderSearch size={13} /> {t('Locate ffmpeg.exe…')}
         </button>
       </div>
     </div>
@@ -73,6 +74,7 @@ export function FfmpegStatus({ compact = false }: { compact?: boolean }): ReactN
 }
 
 export function ConvertDialog(): ReactNode {
+  const t = useT();
   const offer = useFfmpeg((s) => s.offer);
   const info = useFfmpeg((s) => s.info);
   const hevc = useFfmpeg((s) => s.hevc);
@@ -89,18 +91,18 @@ export function ConvertDialog(): ReactNode {
   };
   return (
     <Modal
-      title="Convert unsupported media?"
-      subtitle="WebCodecs on this PC cannot decode these files. Kinora can make a high-quality editing copy with FFmpeg — your originals stay untouched."
+      title={t('Convert unsupported media?')}
+      subtitle={t('WebCodecs on this PC cannot decode these files. Kinora can make a high-quality editing copy with FFmpeg — your originals stay untouched.')}
       onClose={dismissOffer}
       width={560}
       footer={
         <>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn--outline" onClick={dismissOffer}>
-            Not now
+            {t('Not now')}
           </button>
           <button type="button" className="btn btn--primary" data-convert-start disabled={!info?.found} onClick={start}>
-            Convert {offer.length === 1 ? 'file' : `${offer.length} files`}
+            {t('{count, plural, one {Convert file} other {Convert # files}}', { count: offer.length })}
           </button>
         </>
       }
@@ -117,18 +119,18 @@ export function ConvertDialog(): ReactNode {
       <FfmpegStatus />
       {info?.found && (
         <div style={{ marginTop: 12 }}>
-          <Field label="Convert to" labelWidth={96}>
+          <Field label={t('Convert to')} labelWidth={96}>
             <Select
               value={hevcOk ? codec : 'h264'}
               onChange={(v) => setPrefs({ convertCodec: v })}
               options={[
-                { value: 'h264', label: 'H.264 MP4 — high bitrate, plays everywhere' },
-                ...(hevcOk ? [{ value: 'hevc' as const, label: `HEVC MP4 — smaller${hevc?.main10 ? ', keeps 10-bit' : ''}` }] : []),
+                { value: 'h264', label: t('H.264 MP4 — high bitrate, plays everywhere') },
+                ...(hevcOk ? [{ value: 'hevc' as const, label: hevc?.main10 ? t('HEVC MP4 — smaller, keeps 10-bit') : t('HEVC MP4 — smaller') }] : []),
               ]}
             />
           </Field>
           <p className="hint" style={{ marginTop: 6 }}>
-            Progress shows in the preview bar; you can keep editing meanwhile. Converted files are kept in Kinora's media folder.
+            {t("Progress shows in the preview bar; you can keep editing meanwhile. Converted files are kept in Kinora's media folder.")}
           </p>
         </div>
       )}

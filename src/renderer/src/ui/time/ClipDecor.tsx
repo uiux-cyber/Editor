@@ -7,6 +7,7 @@ import { memo, type ReactNode } from 'react';
 import { clipEnd } from '@/core/time';
 import { rampSpeedAt } from '@/core/timemap';
 import type { Clip, CompoundClip } from '@/core/types';
+import { useT } from '../i18n';
 import { formatSpeed } from './SpeedCurve';
 import './time.css';
 
@@ -15,23 +16,24 @@ const LOG_MAX = Math.log2(16);
 
 /** Small tags shown next to the clip name. */
 export function TimeTags({ clip }: { clip: Clip }): ReactNode {
+  const t = useT();
   if (clip.type === 'compound') {
     const n = Object.keys(clip.sequence.clips).length;
-    return <span className="clip__tag">{n} clips</span>;
+    return <span className="clip__tag">{t('{count, plural, one {# clip} other {# clips}}', { count: n })}</span>;
   }
   if (clip.type !== 'video' && clip.type !== 'audio') return null;
-  if (clip.freeze) return <span className="clip__tag clip__tag--freeze">FREEZE</span>;
+  if (clip.freeze) return <span className="clip__tag clip__tag--freeze">{t('FREEZE')}</span>;
   return (
     <>
       {clip.speedRamp?.length ? (
-        <span className="clip__tag clip__tag--time" title="Speed ramp">
-          RAMP
+        <span className="clip__tag clip__tag--time" title={t('Speed ramp')}>
+          {t('RAMP')}
         </span>
       ) : (
         Math.abs(clip.speed - 1) > 0.001 && <span className="clip__tag mono">{formatSpeed(clip.speed)}</span>
       )}
       {clip.reverse && (
-        <span className="clip__tag" title="Reversed">
+        <span className="clip__tag" title={t('Reversed')}>
           ◀◀
         </span>
       )}

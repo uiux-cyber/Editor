@@ -22,6 +22,7 @@ import { api } from '@/platform/api';
 import type { FrameImage } from '../compositor';
 import { readDotLottie } from './dotlottie';
 import { MotionAnimation } from './motion';
+import { motionValuesKey } from '@shared/motion';
 
 export type AnimationFormat = NonNullable<MediaAsset['format']>;
 
@@ -454,6 +455,22 @@ type AnimationSource = RasterAnimation | LottieAnimation | MotionAnimation;
 
 const sources = new Map<ID, AnimationSource>();
 
+/**
+ * Motion clips run one version per set of settings in use, so the preview, an export of an older
+ * snapshot and a thumbnail can ask for different settings at once without restarting each other.
+ * A version nobody has asked for in a while is closed (the latest one per clip always stays).
+ */
+interface MotionEntry {
+  src: MotionAnimation;
+  key: string;
+  used: number;
+}
+const motionSources = new Map<ID, MotionEntry[]>();
+/** Settings still being edited (typing, dragging a slider): the latest version stays until they settle. */
+const SETTLE_MS = 250;
+const IDLE_MS = 15000;
+const settling = new Map<ID, { key: string; since: number }>();
+
 const extOfPath = (p: string): string => {
   const i = p.lastIndexOf('.');
   return i < 0 ? '' : p.slice(i + 1).toLowerCase();
@@ -470,9 +487,64 @@ export function setAnimationAvailability(fn: (assetId: ID) => boolean): void {
   usable = fn;
 }
 
-function sourceFor(asset: MediaAsset): AnimationSource | null {
+const motionKey = (path: string, values: Record<string, unknown> | undefined): string => `${path}|${motionValuesKey(values)}`;
+
+const newest = (list: MotionEntry[], except?: MotionEntry): MotionEntry | undefined =>
+  list.filter((e) => e !== except && !e.src.failed).sort((a, b) => b.used - a.used)[0];
+
+/** Close the versions of a clip nobody has used for a while. */
+function pruneMotion(assetId: ID): void {
+  const list = motionSources.get(assetId);
+  if (!list || list.length < 2) return;
+  const now = performance.now();
+  const latest = list.reduce((a, b) => (b.used > a.used ? b : a));
+  const keep = list.filter((e) => e === latest || e.src.busy || now - e.used < IDLE_MS);
+  for (const e of list) if (!keep.includes(e)) e.src.dispose();
+  motionSources.set(assetId, keep);
+}
+
+/**
+ * The running version of a Motion clip with this asset's settings. `exact` (export, posters):
+ * always those settings. Otherwise, while the settings are still being edited, the latest
+ * running version is returned until the edit settles.
+ */
+function motionSourceFor(asset: MediaAsset, exact: boolean): MotionAnimation | null {
+  if (asset.source.type !== 'file') return null;
+  const path = asset.source.path;
+  const key = motionKey(path, asset.motionValues);
+  const list = motionSources.get(asset.id) ?? [];
+  if (!list.length && !usable(asset.id)) return null;
+  const now = performance.now();
+  let entry = list.find((e) => e.key === key);
+  if (!entry) {
+    const latest = newest(list);
+    if (!exact && latest) {
+      let s = settling.get(asset.id);
+      if (!s || s.key !== key) settling.set(asset.id, (s = { key, since: now }));
+      const wait = SETTLE_MS - (now - s.since);
+      if (wait > 0) {
+        setTimeout(notify, wait + 5);
+        latest.used = now;
+        return latest.src;
+      }
+    }
+    settling.delete(asset.id);
+    const src = new MotionAnimation(path, notify, undefined, asset.motionValues);
+    src.ready.catch(() => undefined).finally(notify);
+    entry = { src, key, used: now };
+    list.push(entry);
+    motionSources.set(asset.id, list);
+  }
+  entry.used = now;
+  pruneMotion(asset.id);
+  return entry.src;
+}
+
+function sourceFor(asset: MediaAsset, exact = false): AnimationSource | null {
   if (asset.kind !== 'animation' || asset.source.type !== 'file') return null;
   const filePath = asset.source.path;
+  const ext = asset.format === 'lottie' ? extOfPath(filePath) || 'json' : extOfPath(filePath) || asset.format || 'gif';
+  if (ext === 'kmotion' || asset.format === 'motion') return motionSourceFor(asset, exact);
   let src = sources.get(asset.id);
   if (!src && !usable(asset.id)) return null;
   if (src && src.path !== filePath) {
@@ -480,11 +552,21 @@ function sourceFor(asset: MediaAsset): AnimationSource | null {
     src = undefined;
   }
   if (!src) {
-    src = createSource(filePath, asset.format === 'lottie' ? extOfPath(asset.source.path) || 'json' : extOfPath(asset.source.path) || asset.format || 'gif');
+    src = createSource(filePath, ext);
     sources.set(asset.id, src);
     src.ready.catch(() => undefined).finally(notify);
   }
   return src;
+}
+
+/** Frame of a Motion clip; while a new version starts, the frame of another running version. */
+function motionFrame(assetId: ID, src: MotionAnimation, time: number): FrameImage | null {
+  const frame = src.frameAt(time);
+  if (frame || src.failed) return frame;
+  const list = motionSources.get(assetId) ?? [];
+  const self = list.find((e) => e.src === src);
+  const other = newest(list, self);
+  return other ? other.src.frameAt(time) : null;
 }
 
 export interface ProbedAnimation {
@@ -581,6 +663,11 @@ export async function probeAnimation(path: string, ext: string): Promise<ProbedA
 /** Keep the source opened by `probeAnimation` for the imported asset (no second decode). */
 export function adoptAnimation(assetId: ID, probed: ProbedAnimation): void {
   const src = probed.handle as AnimationSource;
+  if (src.kind === 'motion') {
+    for (const e of motionSources.get(assetId) ?? []) e.src.dispose();
+    motionSources.set(assetId, [{ src, key: motionKey(src.path, src.values), used: performance.now() }]);
+    return;
+  }
   sources.get(assetId)?.dispose();
   sources.set(assetId, src);
 }
@@ -595,13 +682,13 @@ export function animationFrame(asset: MediaAsset, time: number, hint?: SizeHint)
   const src = sourceFor(asset);
   if (!src || src.failed) return null;
   if (src.kind === 'raster') return src.frameAt(time, asset.duration);
-  if (src.kind === 'motion') return src.frameAt(time);
+  if (src.kind === 'motion') return motionFrame(asset.id, src, time);
   return src.frameAt(time, hint);
 }
 
 /** Wait until the exact frame at `time` is available (export). */
 export async function ensureAnimationFrame(asset: MediaAsset, time: number): Promise<void> {
-  const src = sourceFor(asset);
+  const src = sourceFor(asset, true);
   if (!src) return;
   try {
     if (src.kind === 'raster') await src.ensure(time, asset.duration);
@@ -616,12 +703,12 @@ export async function ensureAnimationFrame(asset: MediaAsset, time: number): Pro
 
 /** Open every animated asset before an export starts. */
 export async function preloadAnimations(assets: MediaAsset[]): Promise<void> {
-  await Promise.all(assets.map((a) => sourceFor(a)?.ready.catch(() => undefined)));
+  await Promise.all(assets.map((a) => sourceFor(a, true)?.ready.catch(() => undefined)));
 }
 
 /** A poster frame of an animated asset (media bin thumbnails when a project is reopened). */
 export async function animationPoster(asset: MediaAsset): Promise<{ source: CanvasImageSource; width: number; height: number } | null> {
-  const src = sourceFor(asset);
+  const src = sourceFor(asset, true);
   if (!src) return null;
   await src.ready;
   if (src.kind === 'raster') {
@@ -643,6 +730,9 @@ export async function animationPoster(asset: MediaAsset): Promise<{ source: Canv
 export function forgetAnimation(assetId: ID): void {
   sources.get(assetId)?.dispose();
   sources.delete(assetId);
+  for (const e of motionSources.get(assetId) ?? []) e.src.dispose();
+  motionSources.delete(assetId);
+  settling.delete(assetId);
 }
 
 /** Memory currently used by decoded animation frames, bytes (diagnostics). */
@@ -652,4 +742,7 @@ export const animationCacheBytes = (): number => frameBytes;
 export function resetAnimations(): void {
   for (const src of sources.values()) src.dispose();
   sources.clear();
+  for (const list of motionSources.values()) for (const e of list) e.src.dispose();
+  motionSources.clear();
+  settling.clear();
 }

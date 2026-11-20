@@ -6,6 +6,7 @@ import { ASPECT_SIZES, sortCategories, aspectIdFor, hasMorePages, isUserTemplate
 import { useProjectStore } from '@/store/project';
 import { applyTemplate } from '../actions';
 import { startDrag } from '../dnd';
+import { useT } from '../i18n';
 // Templates & branding (my templates, brand kit, music, packs) — see ui/templates/.
 import { GalleryToolbar, MusicBadge, SaveSelectionBanner, openUserTemplateMenu, useGalleryState } from '../templates/gallery';
 import { templateThumbSpec } from '../templates/apply';
@@ -13,6 +14,7 @@ import { Chips, SearchBox, labelOf, unique } from './common';
 import { LiveThumb, type ThumbSpec } from './thumbs';
 
 function TemplateTile({ variation, thumbW, thumbH, cw, ch, epoch, onShuffle }: { variation: TemplateVariation; thumbW: number; thumbH: number; cw: number; ch: number; epoch: number; onShuffle: () => void }): ReactNode {
+  const t = useT();
   const def = getTemplate(variation.templateId);
   const build = useCallback((): ThumbSpec | null => templateThumbSpec(variation, cw, ch, thumbW, thumbH), [variation, cw, ch, thumbW, thumbH]);
   if (!def) return null;
@@ -20,7 +22,7 @@ function TemplateTile({ variation, thumbW, thumbH, cw, ch, epoch, onShuffle }: {
   return (
     <div
       className={`tile tile--template ${mine ? 'tile--mine' : ''}`}
-      title={`${def.name}\nClick to add at the playhead, or drag to the timeline`}
+      title={`${def.name}\n${t('Click to add at the playhead, or drag to the timeline')}`}
       data-template={def.id}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
@@ -31,12 +33,12 @@ function TemplateTile({ variation, thumbW, thumbH, cw, ch, epoch, onShuffle }: {
       <div className="tile__thumb" style={{ aspectRatio: `${thumbW} / ${thumbH}` }}>
         <LiveThumb id={`tpl:${variation.key}:${epoch}:${thumbW}x${thumbH}`} width={thumbW} height={thumbH} build={build} />
         {mine ? (
-          <button type="button" data-no-drag className="tile__action" title="Rename, duplicate or delete" onClick={(e) => openUserTemplateMenu(e, def.id)}>
+          <button type="button" data-no-drag className="tile__action" title={t('Rename, duplicate or delete')} onClick={(e) => openUserTemplateMenu(e, def.id)}>
             <MoreHorizontal size={13} />
           </button>
         ) : (
           !def.fixed && (
-            <button type="button" data-no-drag className="tile__action" title="Try another colour & font combination" onClick={onShuffle}>
+            <button type="button" data-no-drag className="tile__action" title={t('Try another colour & font combination')} onClick={onShuffle}>
               <Shuffle size={12} />
             </button>
           )
@@ -50,6 +52,7 @@ function TemplateTile({ variation, thumbW, thumbH, cw, ch, epoch, onShuffle }: {
 }
 
 export function TemplatesTab(): ReactNode {
+  const t = useT();
   const settings = useProjectStore((s) => s.project.settings);
   const { cw, ch } = designSize(settings);
   const aspect = aspectIdFor(cw, ch);
@@ -97,21 +100,21 @@ export function TemplatesTab(): ReactNode {
   const thumbW = portrait ? 216 : 352;
   const thumbH = Math.round((thumbW * size.ch) / size.cw);
   const chipOptions = [
-    ...(g.mineCount > 0 ? [{ value: 'mine' as const, label: `My templates · ${g.mineCount}` }] : []),
-    { value: 'all' as const, label: 'All' },
+    ...(g.mineCount > 0 ? [{ value: 'mine' as const, label: t('My templates · {count}', { count: g.mineCount }) }] : []),
+    { value: 'all' as const, label: t('All') },
     ...categories.map((c) => ({ value: c, label: labelOf(c) })),
   ];
 
   return (
     <div className="lib">
       <header className="lib__head">
-        <h3>Templates</h3>
-        <span className="badge badge--accent" title={`${count} designs × ${looksPerDesign()} colour and type combinations, generated endlessly as you scroll`}>
-          <InfinityIcon size={12} style={{ marginRight: 4 }} /> Endless
+        <h3>{t('Templates')}</h3>
+        <span className="badge badge--accent" title={t('{count} designs × {looks} colour and type combinations, generated endlessly as you scroll', { count, looks: looksPerDesign() })}>
+          <InfinityIcon size={12} style={{ marginRight: 4 }} /> {t('Endless')}
         </span>
       </header>
       <div className="lib__search">
-        <SearchBox value={search} onChange={setSearch} placeholder="Search templates" />
+        <SearchBox value={search} onChange={setSearch} placeholder={t('Search templates')} />
       </div>
       <GalleryToolbar />
       <Chips value={category} onChange={g.setCategory} options={chipOptions} />
@@ -119,12 +122,12 @@ export function TemplatesTab(): ReactNode {
         <SaveSelectionBanner />
         {!g.thumbsReady ? (
           <div className="lib__more">
-            <span className="spinner" /> Loading your brand…
+            <span className="spinner" /> {t('Loading your brand…')}
           </div>
         ) : count === 0 ? (
           <div className="empty">
-            <div className="empty__title">{category === 'mine' ? 'No saved templates yet' : 'No templates found'}</div>
-            <p>{category === 'mine' ? 'Select layers on the timeline and choose “Save as template…” to reuse them.' : 'Try a different search or category.'}</p>
+            <div className="empty__title">{category === 'mine' ? t('No saved templates yet') : t('No templates found')}</div>
+            <p>{category === 'mine' ? t('Select layers on the timeline and choose “Save as template…” to reuse them.') : t('Try a different search or category.')}</p>
           </div>
         ) : (
           <>
@@ -148,7 +151,7 @@ export function TemplatesTab(): ReactNode {
             </div>
             {hasMorePages(query, pages) && (
               <div ref={sentinel} className="lib__more">
-                <span className="spinner" /> Generating more styles…
+                <span className="spinner" /> {t('Generating more styles…')}
               </div>
             )}
           </>

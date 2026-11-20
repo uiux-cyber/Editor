@@ -15,6 +15,7 @@ export type DragPayload =
   | { kind: 'sticker'; stickerId: string }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'generator'; generatorId: string }
+  | { kind: 'motion'; presetId: string; duration: number }
   | { kind: 'adjustment' }
   | { kind: 'sound'; soundId: string; duration: number }
   | { kind: 'transition'; type: string }

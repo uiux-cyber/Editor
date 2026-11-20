@@ -11,8 +11,10 @@ import { api } from '@/platform/api';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
 import { addAdjustment, addAsset, addGenerator, addShape, addSound, addSticker, addText, applyEffect, applyFilter, applyTemplate, fillSlotWith, jumpToEdit } from '../actions';
+import { addMotionPresetById } from '../motion/actions';
 import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
+import { useT } from '../i18n';
 import { writeProp } from '../keyframeOps';
 import { PenOverlay, PenToolButton } from './pen/PenOverlay';
 import { VisionOverlay } from '../vision/VisionOverlay';
@@ -59,6 +61,7 @@ function layersAtPlayhead(): { id: ID; box: LayerBox; clip: VisualClip }[] {
 // ---------------------------------------------------------------------------------------------
 
 function Gizmo({ clipId, k, stageW, stageH, setGuides }: { clipId: ID; k: number; stageW: number; stageH: number; setGuides: (g: Guides) => void }): ReactNode {
+  const tr = useT();
   usePlayback((s) => s.layoutVersion);
   const clip = useProjectStore((s) => s.project.clips[clipId]);
   const settings = useProjectStore((s) => s.project.settings);
@@ -231,7 +234,7 @@ function Gizmo({ clipId, k, stageW, stageH, setGuides }: { clipId: ID; k: number
       {HANDLE_IDS.filter((id) => !cornersOnly || id.length === 2).map((id) => (
         <div key={id} className={`gizmo__handle gizmo__handle--${id}`} onPointerDown={begin(id)} {...handlers} />
       ))}
-      <div className="gizmo__rotate" onPointerDown={begin('rotate')} {...handlers} title="Rotate (hold Shift for 15° steps)" />
+      <div className="gizmo__rotate" onPointerDown={begin('rotate')} {...handlers} title={tr('Rotate (hold Shift for 15° steps)')} />
     </div>
   );
 }
@@ -241,6 +244,7 @@ function Gizmo({ clipId, k, stageW, stageH, setGuides }: { clipId: ID; k: number
 // ---------------------------------------------------------------------------------------------
 
 function Timecode(): ReactNode {
+  const tr = useT();
   const ref = useRef<HTMLSpanElement>(null);
   const fps = useProjectStore((s) => s.project.settings.fps);
   const duration = useProjectStore((s) => projectDuration(s.project));
@@ -252,7 +256,7 @@ function Timecode(): ReactNode {
     return engine.onTime(paint);
   }, [fps]);
   return (
-    <div className="timecode mono" title="Current time / project duration">
+    <div className="timecode mono" title={tr('Current time / project duration')}>
       <span ref={ref} className="timecode__now" />
       <span className="timecode__sep">/</span>
       <span className="timecode__dur">{formatTimecode(duration, fps)}</span>
@@ -261,6 +265,7 @@ function Timecode(): ReactNode {
 }
 
 function Meter(): ReactNode {
+  const tr = useT();
   const ref = useRef<HTMLDivElement>(null);
   const playing = usePlayback((s) => s.playing);
   useEffect(() => {
@@ -281,13 +286,14 @@ function Meter(): ReactNode {
     return () => cancelAnimationFrame(raf);
   }, [playing]);
   return (
-    <div className="meter" title="Output level">
+    <div className="meter" title={tr('Output level')}>
       <div ref={ref} className="meter__fill" />
     </div>
   );
 }
 
 function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
+  const tr = useT();
   const playing = usePlayback((s) => s.playing);
   const loop = useUI((s) => s.loop);
   const safeZones = useUI((s) => s.safeZones);
@@ -301,13 +307,13 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
     const blob = await engine.snapshot();
     if (!blob) return;
     const project = getProject();
-    const path = await api.dialog.saveFile(`${project.name} frame.png`, [{ name: 'PNG image', extensions: ['png'] }]);
+    const path = await api.dialog.saveFile(`${project.name} frame.png`, [{ name: tr('PNG image'), extensions: ['png'] }]);
     if (!path) return;
     try {
       await api.fs.writeFile(path, new Uint8Array(await blob.arrayBuffer()));
-      useUI.getState().toast({ kind: 'success', message: 'Frame saved', action: { label: 'Show', run: () => void api.app.showItemInFolder(path) } });
+      useUI.getState().toast({ kind: 'success', message: tr('Frame saved'), action: { label: tr('Show'), run: () => void api.app.showItemInFolder(path) } });
     } catch (err) {
-      toast('error', 'Could not save the frame', (err as Error).message);
+      toast('error', tr('Could not save the frame'), (err as Error).message);
     }
   };
 
@@ -319,19 +325,19 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
         <TransportMedia />
       </div>
       <div className="transport__center">
-        <button type="button" className="icon-btn" title="Previous edit point (↑)" onClick={() => jumpToEdit(-1)}>
+        <button type="button" className="icon-btn" title={tr('Previous edit point (↑)')} onClick={() => jumpToEdit(-1)}>
           <ChevronFirst size={17} />
         </button>
-        <button type="button" className="icon-btn" title="Previous frame (←)" onClick={() => engine.stepFrames(-1)}>
+        <button type="button" className="icon-btn" title={tr('Previous frame (←)')} onClick={() => engine.stepFrames(-1)}>
           <StepBack size={15} />
         </button>
-        <button type="button" className="play-btn" title={playing ? 'Pause (Space)' : 'Play (Space)'} onClick={() => engine.toggle()}>
+        <button type="button" className="play-btn" title={playing ? tr('Pause (Space)') : tr('Play (Space)')} onClick={() => engine.toggle()}>
           {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" style={{ marginLeft: 2 }} />}
         </button>
-        <button type="button" className="icon-btn" title="Next frame (→)" onClick={() => engine.stepFrames(1)}>
+        <button type="button" className="icon-btn" title={tr('Next frame (→)')} onClick={() => engine.stepFrames(1)}>
           <StepForward size={15} />
         </button>
-        <button type="button" className="icon-btn" title="Next edit point (↓)" onClick={() => jumpToEdit(1)}>
+        <button type="button" className="icon-btn" title={tr('Next edit point (↓)')} onClick={() => jumpToEdit(1)}>
           <ChevronLast size={17} />
         </button>
       </div>
@@ -340,7 +346,7 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
         <button
           type="button"
           className="icon-btn"
-          title={volume > 0 ? 'Mute preview' : 'Unmute preview'}
+          title={volume > 0 ? tr('Mute preview') : tr('Unmute preview')}
           onClick={() => {
             if (volume > 0) {
               lastVolume.current = volume;
@@ -358,19 +364,19 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
           max={1}
           step={0.01}
           value={Math.min(1, volume)}
-          title="Preview volume (does not affect the export)"
+          title={tr('Preview volume (does not affect the export)')}
           onChange={(e) => set({ masterVolume: parseFloat(e.target.value) })}
         />
         <span className="vdivider" />
         <PenToolButton />
-        <button type="button" className={`icon-btn ${loop ? 'is-active' : ''}`} title="Loop playback" onClick={() => set({ loop: !loop })}>
+        <button type="button" className={`icon-btn ${loop ? 'is-active' : ''}`} title={tr('Loop playback')} onClick={() => set({ loop: !loop })}>
           <Repeat size={15} />
         </button>
-        <button type="button" className={`icon-btn ${safeZones ? 'is-active' : ''}`} title="Safe zones & centre guides" onClick={() => set({ safeZones: !safeZones })}>
+        <button type="button" className={`icon-btn ${safeZones ? 'is-active' : ''}`} title={tr('Safe zones & centre guides')} onClick={() => set({ safeZones: !safeZones })}>
           <Grid3x3 size={15} />
         </button>
         {/* colour-audio: video scopes dock */}
-        <button type="button" className={`icon-btn ${scopesOpen ? 'is-active' : ''}`} title="Video scopes" data-action="toggle-scopes" onClick={toggleScopes}>
+        <button type="button" className={`icon-btn ${scopesOpen ? 'is-active' : ''}`} title={tr('Video scopes')} data-action="toggle-scopes" onClick={toggleScopes}>
           <Activity size={15} />
         </button>
         <Select
@@ -378,15 +384,15 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
           onChange={(v) => set({ previewQuality: v })}
           style={{ width: 74, height: 26 }}
           options={[
-            { value: 1, label: 'Full' },
-            { value: 0.5, label: 'Half' },
-            { value: 0.25, label: 'Quarter' },
+            { value: 1, label: tr('Full') },
+            { value: 0.5, label: tr('Half') },
+            { value: 0.25, label: tr('Quarter') },
           ]}
         />
-        <button type="button" className="icon-btn" title="Save current frame as PNG" onClick={() => void snapshot()}>
+        <button type="button" className="icon-btn" title={tr('Save current frame as PNG')} onClick={() => void snapshot()}>
           <Camera size={15} />
         </button>
-        <button type="button" className="icon-btn" title="Fullscreen preview (F)" onClick={onFullscreen}>
+        <button type="button" className="icon-btn" title={tr('Fullscreen preview (F)')} onClick={onFullscreen}>
           <Maximize size={15} />
         </button>
       </div>
@@ -399,6 +405,7 @@ function Transport({ onFullscreen }: { onFullscreen: () => void }): ReactNode {
 // ---------------------------------------------------------------------------------------------
 
 export function Preview(): ReactNode {
+  const tr = useT();
   const settings = useProjectStore((s) => s.project.settings);
   const selection = useUI((s) => s.selection);
   const safeZones = useUI((s) => s.safeZones);
@@ -469,6 +476,9 @@ export function Preview(): ReactNode {
             return;
           case 'generator':
             addGenerator(p.generatorId, { time: engine.time });
+            return;
+          case 'motion':
+            void addMotionPresetById(p.presetId, { time: engine.time });
             return;
           case 'adjustment':
             addAdjustment();
@@ -551,8 +561,8 @@ export function Preview(): ReactNode {
             <VisionOverlay stageW={stage.w} stageH={stage.h} k={stage.k} />
             {!hasContent && (
               <div className="stage__hint">
-                <strong>Your canvas is ready</strong>
-                <span>Add media, a template or text from the library on the left.</span>
+                <strong>{tr('Your canvas is ready')}</strong>
+                <span>{tr('Add media, a template or text from the library on the left.')}</span>
               </div>
             )}
           </div>

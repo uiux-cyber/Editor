@@ -7,15 +7,17 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { MediaAsset } from '@/core/types';
 import { animationFrame, onAnimationUpdate } from '@/engine/media/animated';
+import { useT } from '../i18n';
 import './animated.css';
 
 export const ANIMATION_BADGE: Record<string, string> = { gif: 'GIF', webp: 'WEBP', apng: 'APNG', lottie: 'LOTTIE', motion: 'MOTION' };
 
 /** "GIF" / "LOTTIE" badge for a media tile. */
 export function AnimationBadge({ asset }: { asset: MediaAsset }): ReactNode {
+  const t = useT();
   if (asset.kind !== 'animation') return null;
   return (
-    <span className={`media-tile__badge media-tile__badge--${asset.format ?? 'gif'}`} title={asset.format === 'lottie' ? 'Lottie animation' : asset.format === 'motion' ? 'Motion clip (animation code)' : 'Animated image'}>
+    <span className={`media-tile__badge media-tile__badge--${asset.format ?? 'gif'}`} title={asset.format === 'lottie' ? t('Lottie animation') : asset.format === 'motion' ? t('Motion clip (animation code)') : t('Animated image')}>
       {ANIMATION_BADGE[asset.format ?? 'gif'] ?? 'ANIM'}
     </span>
   );

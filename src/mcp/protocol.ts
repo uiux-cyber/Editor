@@ -1,9 +1,10 @@
 /**
- * The MCP side of the bridge: JSON-RPC 2.0 over stdio (one message per line), tools only.
+ * The MCP side of the bridge: JSON-RPC 2.0 over stdio (one message per line): tools, and
+ * ready-made requests (prompts) the user can pick in Claude.
  * Kept free of I/O so it can be unit-tested; kinora-mcp.ts wires it to stdin/stdout and the app.
  */
 
-import { MCP_PROTOCOL_VERSIONS, SERVER_INSTRUCTIONS, TOOLS, TOOL_NAMES, textResult, type ToolResult } from '../shared/claude';
+import { MCP_PROTOCOL_VERSIONS, PROMPTS, SERVER_INSTRUCTIONS, TOOLS, TOOL_NAMES, textResult, type ToolResult } from '../shared/claude';
 
 type Json = Record<string, unknown>;
 
@@ -43,7 +44,7 @@ export function createMcpServer(opts: McpServerOptions): { handle: (message: unk
           const requested = params?.protocolVersion;
           reply(id, {
             protocolVersion: typeof requested === 'string' && MCP_PROTOCOL_VERSIONS.includes(requested) ? requested : MCP_PROTOCOL_VERSIONS[0],
-            capabilities: { tools: { listChanged: false } },
+            capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
             serverInfo: { name: 'kinora', title: 'Kinora', version: opts.version },
             instructions: SERVER_INSTRUCTIONS,
           });
@@ -55,6 +56,26 @@ export function createMcpServer(opts: McpServerOptions): { handle: (message: unk
         case 'tools/list':
           reply(id, { tools: TOOLS });
           return;
+        case 'prompts/list':
+          reply(id, { prompts: PROMPTS.map(({ name, title, description, arguments: args }) => ({ name, title, description, arguments: args })) });
+          return;
+        case 'prompts/get': {
+          const prompt = PROMPTS.find((p) => p.name === params?.name);
+          if (!prompt) {
+            fail(id, -32602, `Unknown prompt: ${String(params?.name)}`);
+            return;
+          }
+          const raw = params?.arguments;
+          const args: Record<string, string> = {};
+          if (raw && typeof raw === 'object' && !Array.isArray(raw)) for (const [k, v] of Object.entries(raw as Json)) if (typeof v === 'string') args[k] = v;
+          const missing = prompt.arguments.filter((a) => a.required && !args[a.name]?.trim()).map((a) => a.name);
+          if (missing.length) {
+            fail(id, -32602, `Missing argument${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`);
+            return;
+          }
+          reply(id, { description: prompt.description, messages: [{ role: 'user', content: { type: 'text', text: prompt.text(args) } }] });
+          return;
+        }
         case 'tools/call': {
           const name = params?.name;
           const args = params?.arguments;

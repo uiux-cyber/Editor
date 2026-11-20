@@ -7,6 +7,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { ID, Project } from '@/core/types';
 import { engine, usePlayback } from '@/engine/engine';
+import { useT } from '../i18n';
 
 const FLOOR_DB = -60;
 const HOLD_MS = 1500;
@@ -89,6 +90,7 @@ export function soundTrackIds(project: Project): Set<ID> {
 }
 
 export function TrackMeter({ trackId, muted }: { trackId: ID; muted: boolean }): ReactNode {
+  const tr = useT();
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = root.current;
@@ -113,7 +115,7 @@ export function TrackMeter({ trackId, muted }: { trackId: ID; muted: boolean }):
     };
   }, [trackId]);
   return (
-    <div ref={root} className={`track-meter ${muted ? 'is-muted' : ''}`} data-track-meter={trackId} title={muted ? 'Track muted' : 'Track level (peak, dBFS)'} data-level="-120" data-peak="-120">
+    <div ref={root} className={`track-meter ${muted ? 'is-muted' : ''}`} data-track-meter={trackId} title={muted ? tr('Track muted') : tr('Track level (peak, dBFS)')} data-level="-120" data-peak="-120">
       {[0, 1].map((c) => (
         <span key={c} className="track-meter__ch">
           <span className="track-meter__fill" />

@@ -10,6 +10,7 @@ import { Component, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { create } from 'zustand';
 import { toast, useUI } from '@/store/ui';
+import { t } from '../i18n';
 import { BrandKitWindow } from './BrandKit';
 import { ConfirmDeleteDialog, RenameTemplateDialog } from './ManageDialogs';
 import { PacksWindow } from './Packs';
@@ -29,7 +30,7 @@ class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   }
   override componentDidCatch(error: Error): void {
     console.error('[templates] window crashed', error);
-    toast('error', 'The window closed unexpectedly', error.message);
+    toast('error', t('The window closed unexpectedly'), error.message);
     useWindow.setState({ open: null });
     this.setState({ failed: false });
   }

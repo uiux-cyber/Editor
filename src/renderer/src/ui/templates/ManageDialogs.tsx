@@ -5,10 +5,12 @@ import { api } from '@/platform/api';
 import { toast } from '@/store/ui';
 import { Field, Select } from '../common/controls';
 import { Modal } from '../common/overlays';
+import { useT } from '../i18n';
 import { labelOf } from '../library/common';
 import { deleteUserTemplate, renameUserTemplate, useTemplates } from './store';
 
 export function RenameTemplateDialog({ id, onClose }: { id: string; onClose: () => void }): ReactNode {
+  const tr = useT();
   const entry = useTemplates((s) => s.templates.find((t) => t.id === id));
   const [name, setName] = useState(entry?.file.name ?? '');
   const [category, setCategory] = useState<TemplateCategory>(entry?.file.category ?? 'title');
@@ -21,17 +23,17 @@ export function RenameTemplateDialog({ id, onClose }: { id: string; onClose: () 
   };
   return (
     <Modal
-      title="Edit template details"
+      title={tr('Edit template details')}
       onClose={onClose}
       width={460}
       footer={
         <>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn--outline" onClick={onClose}>
-            Cancel
+            {tr('Cancel')}
           </button>
           <button type="button" className="btn btn--primary" disabled={!name.trim()} onClick={() => void save()} data-testid="rename-save">
-            Save
+            {tr('Save')}
           </button>
         </>
       }
@@ -39,7 +41,7 @@ export function RenameTemplateDialog({ id, onClose }: { id: string; onClose: () 
       <div className="tpl-manage">
         {entry.poster && <img className="tpl-manage__poster" src={api.media.toUrl(entry.poster)} alt="" draggable={false} />}
         <div className="tpl-manage__form">
-          <Field label="Name" labelWidth={72}>
+          <Field label={tr('Name')} labelWidth={72}>
             <input
               className="input"
               autoFocus
@@ -55,10 +57,10 @@ export function RenameTemplateDialog({ id, onClose }: { id: string; onClose: () 
               data-testid="rename-input"
             />
           </Field>
-          <Field label="Category" labelWidth={72}>
+          <Field label={tr('Category')} labelWidth={72}>
             <Select value={category} options={TEMPLATE_CATEGORIES.map((c) => ({ value: c, label: labelOf(c) }))} onChange={setCategory} />
           </Field>
-          <Field label="Tags" labelWidth={72}>
+          <Field label={tr('Tags')} labelWidth={72}>
             <input className="input" value={tags} spellCheck={false} onChange={(e) => setTags(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           </Field>
         </div>
@@ -68,19 +70,20 @@ export function RenameTemplateDialog({ id, onClose }: { id: string; onClose: () 
 }
 
 export function ConfirmDeleteDialog({ id, onClose }: { id: string; onClose: () => void }): ReactNode {
+  const tr = useT();
   const entry = useTemplates((s) => s.templates.find((t) => t.id === id));
   if (!entry) return null;
   return (
     <Modal
-      title={`Delete “${entry.file.name}”?`}
-      subtitle="The template is moved to the Recycle Bin. Projects that already use it keep their layers."
+      title={tr('Delete “{name}”?', { name: entry.file.name })}
+      subtitle={tr('The template is moved to the Recycle Bin. Projects that already use it keep their layers.')}
       onClose={onClose}
       width={460}
       footer={
         <>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn--outline" onClick={onClose} autoFocus>
-            Cancel
+            {tr('Cancel')}
           </button>
           <button
             type="button"
@@ -88,10 +91,10 @@ export function ConfirmDeleteDialog({ id, onClose }: { id: string; onClose: () =
             data-testid="confirm-delete"
             onClick={() => {
               onClose();
-              void deleteUserTemplate(id).then(() => toast('info', `Deleted “${entry.file.name}”`));
+              void deleteUserTemplate(id).then(() => toast('info', tr('Deleted “{name}”', { name: entry.file.name })));
             }}
           >
-            Delete template
+            {tr('Delete template')}
           </button>
         </>
       }

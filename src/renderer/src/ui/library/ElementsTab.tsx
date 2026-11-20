@@ -8,29 +8,30 @@ import { useUI } from '@/store/ui';
 import type { GeneratorDef } from '@/library/types';
 import { addAdjustment, addGenerator, addShape } from '../actions';
 import { startDrag } from '../dnd';
+import { tk, tMaybe, useT } from '../i18n';
 import { Chips, labelOf, unique } from './common';
 import { LiveThumb, projectFromLayers, type ThumbSpec } from './thumbs';
 
 const SHAPES: { kind: ShapeKind; name: string }[] = [
-  { kind: 'rect', name: 'Rectangle' },
-  { kind: 'ellipse', name: 'Circle' },
-  { kind: 'pill', name: 'Pill' },
-  { kind: 'triangle', name: 'Triangle' },
-  { kind: 'diamond', name: 'Diamond' },
-  { kind: 'pentagon', name: 'Pentagon' },
-  { kind: 'hexagon', name: 'Hexagon' },
-  { kind: 'octagon', name: 'Octagon' },
-  { kind: 'star', name: 'Star' },
-  { kind: 'burst', name: 'Burst' },
-  { kind: 'heart', name: 'Heart' },
-  { kind: 'arrow', name: 'Arrow' },
-  { kind: 'chevron', name: 'Chevron' },
-  { kind: 'line', name: 'Line' },
-  { kind: 'cross', name: 'Plus' },
-  { kind: 'bubble', name: 'Speech bubble' },
-  { kind: 'ring', name: 'Ring' },
-  { kind: 'frame', name: 'Frame' },
-  { kind: 'blob', name: 'Blob' },
+  { kind: 'rect', name: tk('Rectangle') },
+  { kind: 'ellipse', name: tk('Circle') },
+  { kind: 'pill', name: tk('Pill') },
+  { kind: 'triangle', name: tk('Triangle') },
+  { kind: 'diamond', name: tk('Diamond') },
+  { kind: 'pentagon', name: tk('Pentagon') },
+  { kind: 'hexagon', name: tk('Hexagon') },
+  { kind: 'octagon', name: tk('Octagon') },
+  { kind: 'star', name: tk('Star') },
+  { kind: 'burst', name: tk('Burst') },
+  { kind: 'heart', name: tk('Heart') },
+  { kind: 'arrow', name: tk('Arrow') },
+  { kind: 'chevron', name: tk('Chevron') },
+  { kind: 'line', name: tk('Line') },
+  { kind: 'cross', name: tk('Plus') },
+  { kind: 'bubble', name: tk('Speech bubble') },
+  { kind: 'ring', name: tk('Ring') },
+  { kind: 'frame', name: tk('Frame') },
+  { kind: 'blob', name: tk('Blob') },
 ];
 
 function ShapeTile({ kind, name }: { kind: ShapeKind; name: string }): ReactNode {
@@ -66,9 +67,10 @@ const GEN_W = 224;
 const GEN_H = 126;
 
 function GeneratorTile({ def }: { def: GeneratorDef }): ReactNode {
+  const t = useT();
   const build = useCallback((): ThumbSpec => ({ project: projectFromLayers([makeGenerator(def.id, { duration: 600 })], GEN_W, GEN_H), poster: 2, from: 0, to: 600 }), [def]);
   return (
-    <div className="tile" title={`${def.name}\nClick to add at the playhead, or drag to the timeline`} onPointerDown={(e) => startDrag(e, { kind: 'generator', generatorId: def.id }, def.name, () => addGenerator(def.id))}>
+    <div className="tile" title={`${def.name}\n${t('Click to add at the playhead, or drag to the timeline')}`} onPointerDown={(e) => startDrag(e, { kind: 'generator', generatorId: def.id }, def.name, () => addGenerator(def.id))}>
       <div className="tile__thumb" style={{ aspectRatio: `${GEN_W} / ${GEN_H}` }}>
         <LiveThumb id={`gen:${def.id}`} width={GEN_W} height={GEN_H} build={build} />
       </div>
@@ -78,51 +80,52 @@ function GeneratorTile({ def }: { def: GeneratorDef }): ReactNode {
 }
 
 export function ElementsTab(): ReactNode {
+  const t = useT();
   const [category, setCategory] = useState<string>('all');
   const categories = useMemo(() => unique(GENERATORS.map((g) => g.category)), []);
   const generators = useMemo(() => GENERATORS.filter((g) => category === 'all' || g.category === category), [category]);
   return (
     <div className="lib">
       <header className="lib__head">
-        <h3>Elements</h3>
+        <h3>{t('Elements')}</h3>
       </header>
       <div className="lib__scroll">
         <button
           type="button"
           className="feature-row"
-          title="Adds a layer whose colour grade, filter and effects apply to everything beneath it"
-          onPointerDown={(e) => startDrag(e, { kind: 'adjustment' }, 'Adjustment layer', () => addAdjustment())}
+          title={t('Adds a layer whose colour grade, filter and effects apply to everything beneath it')}
+          onPointerDown={(e) => startDrag(e, { kind: 'adjustment' }, t('Adjustment layer'), () => addAdjustment())}
         >
           <span className="feature-row__icon">
             <Layers size={16} />
           </span>
           <span>
-            <strong>Adjustment layer</strong>
-            <small>Grade and stylise every layer below it</small>
+            <strong>{t('Adjustment layer')}</strong>
+            <small>{t('Grade and stylise every layer below it')}</small>
           </span>
         </button>
-        <button type="button" className="feature-row" title="Draw your own shape or line on the canvas (P)" data-pen-row onClick={() => useUI.getState().setTool('pen')}>
+        <button type="button" className="feature-row" title={t('Draw your own shape or line on the canvas (P)')} data-pen-row onClick={() => useUI.getState().setTool('pen')}>
           <span className="feature-row__icon">
             <PenTool size={16} />
           </span>
           <span>
-            <strong>Draw with the pen</strong>
-            <small>Click points on the canvas, drag for curves (P)</small>
+            <strong>{t('Draw with the pen')}</strong>
+            <small>{t('Click points on the canvas, drag for curves (P)')}</small>
           </span>
         </button>
 
-        <h4 className="lib__subhead">Shapes</h4>
+        <h4 className="lib__subhead">{t('Shapes')}</h4>
         <div className="grid grid--shapes">
           {SHAPES.map((s) => (
-            <ShapeTile key={s.kind} kind={s.kind} name={s.name} />
+            <ShapeTile key={s.kind} kind={s.kind} name={tMaybe(s.name)} />
           ))}
         </div>
 
         <h4 className="lib__subhead">
-          Animated backgrounds <span className="badge">{GENERATORS.length}</span>
+          {t('Animated backgrounds')} <span className="badge">{GENERATORS.length}</span>
         </h4>
         <div style={{ margin: '0 -12px 8px' }}>
-          <Chips value={category} onChange={setCategory} options={[{ value: 'all', label: 'All' }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
+          <Chips value={category} onChange={setCategory} options={[{ value: 'all', label: t('All') }, ...categories.map((c) => ({ value: c, label: labelOf(c) }))]} />
         </div>
         <div className="grid grid--3">
           {generators.map((g) => (

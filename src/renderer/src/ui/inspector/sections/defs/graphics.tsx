@@ -13,7 +13,9 @@ import type { Clip, CounterSettings, ImageClip, ShapeClip, TextClip } from '@/co
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { editClips } from '../../../actions';
 import { Field, NumberInput, Section, Segmented, Select, Toggle } from '../../../common/controls';
+import { tk, tMaybe, useT } from '../../../i18n';
 import { editPath } from '../../../preview/pen/pathOps';
+import { rich } from '../../shared';
 import type { InspectorSectionDef, InspectorSectionProps } from '../index';
 
 // ---------------------------------------------------------------------------------------------
@@ -27,6 +29,7 @@ function TextInput({ value, onChange, placeholder, title }: { value: string; onC
 }
 
 function CounterSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   if (clip.type !== 'text') return null;
   const c = clip.counter;
   const textIds = ids.filter((id) => getProject().clips[id]?.type === 'text');
@@ -57,55 +60,57 @@ function CounterSection({ clip, ids }: InspectorSectionProps): ReactNode {
   const span = c ? counterSpan(c, clip.duration) : 0;
 
   return (
-    <Section title="Count-up" id="counter" defaultOpen={!!c} actions={<Toggle value={!!c} title="Animate the text as a counting number" onChange={toggle} />}>
+    <Section title={t('Count-up')} id="counter" defaultOpen={!!c} actions={<Toggle value={!!c} title={t('Animate the text as a counting number')} onChange={toggle} />}>
       {!c ? (
-        <p className="hint">Turn the text into a number that counts up (or down) while the clip plays.</p>
+        <p className="hint">{t('Turn the text into a number that counts up (or down) while the clip plays.')}</p>
       ) : (
         <>
-          <Field label="From">
-            <NumberInput value={c.from} onChange={(v) => set({ from: v }, `counter-from:${clip.id}`)} step={step} precision={c.decimals} title="Value at the start" />
+          <Field label={t('From')}>
+            <NumberInput value={c.from} onChange={(v) => set({ from: v }, `counter-from:${clip.id}`)} step={step} precision={c.decimals} title={t('Value at the start')} />
           </Field>
-          <Field label="To">
-            <NumberInput value={c.to} onChange={(v) => set({ to: v }, `counter-to:${clip.id}`)} step={step} precision={c.decimals} title="Value at the end" />
+          <Field label={t('To')}>
+            <NumberInput value={c.to} onChange={(v) => set({ to: v }, `counter-to:${clip.id}`)} step={step} precision={c.decimals} title={t('Value at the end')} />
           </Field>
-          <Field label="Decimals">
+          <Field label={t('Decimals')}>
             <Segmented
               value={Math.min(c.decimals, 3)}
               style={{ flex: 1 }}
-              options={[0, 1, 2, 3].map((d) => ({ value: d, label: d === 0 ? '0' : `0.${'0'.repeat(d)}`, title: `${d} decimal place${d === 1 ? '' : 's'}` }))}
+              options={[0, 1, 2, 3].map((d) => ({ value: d, label: d === 0 ? '0' : `0.${'0'.repeat(d)}`, title: t('{count, plural, one {# decimal place} other {# decimal places}}', { count: d }) }))}
               onChange={(d) => set({ decimals: Math.min(MAX_COUNTER_DECIMALS, d) })}
             />
           </Field>
-          <Field label="Prefix">
-            <TextInput value={c.prefix} placeholder="e.g. $" onChange={(v) => set({ prefix: v }, `counter-prefix:${clip.id}`)} />
+          <Field label={t('Prefix')}>
+            <TextInput value={c.prefix} placeholder={t('e.g. $')} onChange={(v) => set({ prefix: v }, `counter-prefix:${clip.id}`)} />
           </Field>
-          <Field label="Suffix">
-            <TextInput value={c.suffix} placeholder="e.g. %" onChange={(v) => set({ suffix: v }, `counter-suffix:${clip.id}`)} />
+          <Field label={t('Suffix')}>
+            <TextInput value={c.suffix} placeholder={t('e.g. %')} onChange={(v) => set({ suffix: v }, `counter-suffix:${clip.id}`)} />
           </Field>
-          <Field label="Separators" title="Group thousands with commas (1,000,000)">
+          <Field label={t('Separators')} title={t('Group thousands with commas (1,000,000)')}>
             <Toggle value={c.separator} onChange={(v) => set({ separator: v })} />
           </Field>
-          <Field label="Easing">
+          <Field label={t('Easing')}>
             <Select value={c.ease} options={EASES.map((e) => ({ value: e, label: EASE_LABELS[e] }))} onChange={(ease) => set({ ease })} />
           </Field>
-          <Field label="Count for" title="How long the number takes to reach its end value">
+          <Field label={t('Count for')} title={t('How long the number takes to reach its end value')}>
             <Segmented
               value={c.duration === undefined ? 'clip' : 'custom'}
               style={{ flex: 1 }}
               options={[
-                { value: 'clip', label: 'Whole clip' },
-                { value: 'custom', label: 'Custom' },
+                { value: 'clip', label: t('Whole clip') },
+                { value: 'custom', label: t('Custom') },
               ]}
               onChange={(mode) => set({ duration: mode === 'clip' ? undefined : Math.max(0.1, Math.round(Math.min(2, clip.duration) * 10) / 10) })}
             />
           </Field>
           {c.duration !== undefined && (
-            <Field label="Duration" title="Seconds from the start of the clip">
+            <Field label={t('Duration')} title={t('Seconds from the start of the clip')}>
               <NumberInput value={c.duration} onChange={(v) => set({ duration: Math.max(0.1, v) }, `counter-dur:${clip.id}`)} min={0.1} max={600} step={0.1} precision={1} suffix="s" />
             </Field>
           )}
           <p className="hint">
-            Counts to <b style={{ color: 'var(--text-0)' }}>{formatCounter(c, c.to)}</b> in {formatSeconds(span)}, replacing the text while it plays. Digits keep a fixed width, so the number never wobbles.
+            {rich(t('Counts to {value} in {duration}, replacing the text while it plays. Digits keep a fixed width, so the number never wobbles.', { duration: formatSeconds(span) }), {
+              value: <b style={{ color: 'var(--text-0)' }}>{formatCounter(c, c.to)}</b>,
+            })}
           </p>
         </>
       )}
@@ -118,6 +123,7 @@ function CounterSection({ clip, ids }: InspectorSectionProps): ReactNode {
 // ---------------------------------------------------------------------------------------------
 
 function PathSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   if (clip.type !== 'shape' || clip.shape.kind !== 'path' || !clip.shape.path) return null;
   const path = clip.shape.path;
   const pathIds = ids.filter((id) => {
@@ -135,28 +141,28 @@ function PathSection({ clip, ids }: InspectorSectionProps): ReactNode {
       closed,
     }));
   return (
-    <Section title="Path" id="path">
-      <Field label="Closed" title="Join the last point to the first and fill the shape">
+    <Section title={t('Path')} id="path">
+      <Field label={t('Closed')} title={t('Join the last point to the first and fill the shape')}>
         <Toggle value={path.closed} disabled={path.points.length < 3} onChange={(v) => editPath(pathIds, (pts) => ({ points: pts, closed: v && pts.length > 2 }))} />
-        <span style={{ color: 'var(--text-3)' }}>{path.closed ? 'Filled shape' : 'Open line'}</span>
+        <span style={{ color: 'var(--text-3)' }}>{path.closed ? t('Filled shape') : t('Open line')}</span>
       </Field>
-      <Field label="Points">
+      <Field label={t('Points')}>
         <span className="mono" style={{ color: 'var(--text-0)' }}>
           {path.points.length}
         </span>
-        <span style={{ color: 'var(--text-3)' }}>{smoothCount ? `${smoothCount} smooth` : 'all corners'}</span>
+        <span style={{ color: 'var(--text-3)' }}>{smoothCount ? t('{count, plural, one {# smooth} other {# smooth}}', { count: smoothCount }) : t('all corners')}</span>
       </Field>
-      <Field label="Make">
+      <Field label={t('Make')}>
         <div className="btn-row">
-          <button type="button" className="btn btn--sm btn--outline" title="Give every point smooth bezier handles" onClick={() => setAll(true)}>
-            Smooth
+          <button type="button" className="btn btn--sm btn--outline" title={t('Give every point smooth bezier handles')} onClick={() => setAll(true)}>
+            {t('Smooth')}
           </button>
-          <button type="button" className="btn btn--sm btn--outline" title="Turn every point into a sharp corner" onClick={() => setAll(false)}>
-            Corners
+          <button type="button" className="btn btn--sm btn--outline" title={t('Turn every point into a sharp corner')} onClick={() => setAll(false)}>
+            {t('Corners')}
           </button>
         </div>
       </Field>
-      <p className="hint">Drag points and handles on the canvas. Alt-click a point to switch smooth / corner, double-click the outline to add a point, press Delete to remove the selected point.</p>
+      <p className="hint">{t('Drag points and handles on the canvas. Alt-click a point to switch smooth / corner, double-click the outline to add a point, press Delete to remove the selected point.')}</p>
     </Section>
   );
 }
@@ -165,9 +171,10 @@ function PathSection({ clip, ids }: InspectorSectionProps): ReactNode {
 // Animated media
 // ---------------------------------------------------------------------------------------------
 
-const FORMAT_LABEL: Record<string, string> = { gif: 'Animated GIF', webp: 'Animated WebP', apng: 'Animated PNG', lottie: 'Lottie animation' };
+const FORMAT_LABEL: Record<string, string> = { gif: tk('Animated GIF'), webp: tk('Animated WebP'), apng: tk('Animated PNG'), lottie: tk('Lottie animation') };
 
 function AnimationSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const asset = useProjectStore((s) => (clip.type === 'image' ? s.project.assets[clip.assetId] : undefined));
   if (clip.type !== 'image' || !asset || asset.kind !== 'animation') return null;
   const loop = asset.duration;
@@ -188,29 +195,29 @@ function AnimationSection({ clip, ids }: InspectorSectionProps): ReactNode {
       }
     });
   return (
-    <Section title="Animation" id="animation">
-      <Field label="Format">
-        <span style={{ color: 'var(--text-0)' }}>{FORMAT_LABEL[asset.format ?? ''] ?? 'Animation'}</span>
+    <Section title={t('Animation')} id="animation">
+      <Field label={t('Format')}>
+        <span style={{ color: 'var(--text-0)' }}>{FORMAT_LABEL[asset.format ?? ''] ? tMaybe(FORMAT_LABEL[asset.format ?? '']) : t('Animation')}</span>
         <span className="mono" style={{ color: 'var(--text-3)' }}>
           {asset.width}×{asset.height}
         </span>
       </Field>
-      <Field label="Loop">
+      <Field label={t('Loop')}>
         <span className="mono" style={{ color: 'var(--text-0)' }}>
           {formatSeconds(loop)}
         </span>
         {asset.fps > 0 && <span style={{ color: 'var(--text-3)' }}>{Math.round(asset.fps * 10) / 10} fps</span>}
       </Field>
-      <Field label="Length" title="Make the clip last a whole number of loops">
+      <Field label={t('Length')} title={t('Make the clip last a whole number of loops')}>
         <div className="btn-row btn-row--wrap">
           {[1, 2, 3, 4].map((n) => (
-            <button key={n} type="button" className={`chip ${Math.abs(loops - n) < 0.01 ? 'is-active' : ''}`} title={`${n} loop${n === 1 ? '' : 's'}`} onClick={() => setLoops(n)}>
+            <button key={n} type="button" className={`chip ${Math.abs(loops - n) < 0.01 ? 'is-active' : ''}`} title={t('{count, plural, one {# loop} other {# loops}}', { count: n })} onClick={() => setLoops(n)}>
               {n}×
             </button>
           ))}
         </div>
       </Field>
-      <p className="hint">The animation loops for as long as the clip lasts — trim or extend it on the timeline.</p>
+      <p className="hint">{t('The animation loops for as long as the clip lasts — trim or extend it on the timeline.')}</p>
     </Section>
   );
 }

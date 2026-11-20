@@ -60,18 +60,18 @@ const SANDBOX_CLIP = `export default async function setup(k) {
 }
 `;
 
-export default async function motion({ win, run, root, sleep }) {
+export default async function motion({ win, run, root, sleep, shot }) {
   const expect = (ok, msg) => {
     if (!ok) throw new Error(`expectation failed: ${msg}`);
     console.log(`  ✓ ${msg}`);
   };
   const { MOTION_EXAMPLES } = await import(pathToFileURL(path.join(root, 'src/shared/motion.ts')).href);
   await win.waitForSelector('.home', { timeout: 20000 });
-  const meta = (duration) => ({ name: 'test', width: 960, height: 540, duration, fps: 30, seed: 7 });
-  const test = (code, duration, times) =>
+  const meta = (duration, params, size = [960, 540]) => ({ name: 'test', width: size[0], height: size[1], duration, fps: 30, seed: 7, ...(params ? { params } : {}) });
+  const test = (code, duration, times, params, values, size) =>
     run(
-      async ({ code, meta, times }) => {
-        const r = await window.__kinora.motion.testMotion(code, meta, times);
+      async ({ code, meta, times, values }) => {
+        const r = await window.__kinora.motion.testMotion(code, meta, times, values);
         // Summarise each picture: size, share of visible pixels, and a checksum.
         const frames = r.frames.map((b) => {
           const c = new OffscreenCanvas(b.width, b.height);
@@ -86,16 +86,34 @@ export default async function motion({ win, run, root, sleep }) {
         });
         return { ok: r.ok, error: r.error, logs: r.logs, ms: r.ms, frames };
       },
-      { code, meta: meta(duration), times },
+      { code, meta: meta(duration, params, size), times, values },
     );
 
   for (const ex of MOTION_EXAMPLES) {
-    const r = await test(ex.code, ex.duration, [ex.duration * 0.5, 0.1, ex.duration * 0.5]);
+    const r = await test(ex.code, ex.duration, [ex.duration * 0.5, 0.1, ex.duration * 0.5], ex.params);
     if (!r.ok) console.log('   ', r.error, r.logs);
     expect(r.ok && r.frames.length === 3 && r.frames[0].w === 960, `example "${ex.name}" loads and renders (${r.ms.join(' / ')} ms per frame)`);
     expect(r.frames[0].visible > 0.003, `example "${ex.name}" draws something (${(r.frames[0].visible * 100).toFixed(1)}% of pixels)`);
     expect(r.frames[0].sum === r.frames[2].sum, `example "${ex.name}" renders the same frame identically after jumping away and back`);
   }
+
+  // Every ready-made clip of the Motion library renders, landscape and portrait, frame-exactly.
+  const presets = await run(() => window.__kinora.motion.presets.map((p) => ({ id: p.id, name: p.name, duration: p.duration, params: p.params, code: p.code })));
+  expect(presets.length >= 12, `the Motion library has ${presets.length} ready-made clips`);
+  for (const p of presets) {
+    const at = p.duration * 0.55;
+    const r = await test(p.code, p.duration, [at, 0.2, at], p.params);
+    if (!r.ok) console.log('   ', r.error, r.logs);
+    expect(r.ok && r.frames[0].visible > 0.002 && r.frames[0].sum === r.frames[2].sum, `"${p.name}" renders, draws (${((r.frames[0]?.visible ?? 0) * 100).toFixed(1)}%) and is frame-exact (${r.ms?.join(' / ')} ms)`);
+    const tall = await test(p.code, p.duration, [at], p.params, undefined, [540, 960]);
+    if (!tall.ok) console.log('   ', tall.error, tall.logs);
+    expect(tall.ok && tall.frames[0].visible > 0.002, `"${p.name}" also works in a portrait frame`);
+  }
+  // Settings change what is drawn.
+  const kinetic = presets.find((p) => p.id === 'kinetic-title');
+  const plain = await test(kinetic.code, kinetic.duration, [2], kinetic.params);
+  const changed = await test(kinetic.code, kinetic.duration, [2], kinetic.params, { title: 'SETTINGS WORK', color: '#ff2020' });
+  expect(plain.frames[0].sum !== changed.frames[0].sum, 'a clip draws differently with other setting values');
 
   const libs = await test(LIBS_CLIP, 2, [1, 0.5, 1]);
   if (!libs.ok) console.log('   ', libs.error, libs.logs);
@@ -137,6 +155,106 @@ export default async function motion({ win, run, root, sleep }) {
     },
   );
   expect(/Motion clip “Breaks later”/.test(exportError) && /ran out of road/.test(exportError), `an export with a failing Motion clip stops with the reason ("${exportError}")`);
+
+  // Library ▸ Motion: add a ready-made clip, change its settings in the inspector, export them.
+  await run(async () => {
+    const k = window.__kinora;
+    await k.projectIO.newProject({ name: 'Motion library', width: 640, height: 360, fps: 30 });
+  });
+  await win.click('[data-tab="motion"]');
+  await win.waitForSelector('[data-motion-preset="count-up"]', { timeout: 10000 });
+  const tiles = await win.locator('[data-motion-preset]').count();
+  expect(tiles === presets.length, `the Motion tab shows every ready-made clip (${tiles})`);
+  await win.waitForFunction(() => document.querySelectorAll('.motion-tile__loading').length === 0, null, { timeout: 60000 });
+  const posterErrors = await win.locator('.motion-tile__error').count();
+  expect(posterErrors === 0, 'every tile shows a preview');
+  await shot('motion-01-library');
+  await win.click('[data-motion-preset="count-up"]');
+  await win.waitForSelector('[data-section="motion"] [data-motion-param="label"]', { timeout: 15000 });
+  const added = await run(() => {
+    const p = window.__kinora.useProjectStore.getState().project;
+    const clip = Object.values(p.clips).find((c) => c.type === 'image' && p.assets[c.assetId]?.format === 'motion');
+    return clip ? { clip: clip.id, asset: clip.assetId, duration: clip.duration, label: window.__kinora.useProjectStore.getState().pastMeta.slice(-1)[0]?.label } : null;
+  });
+  expect(added && Math.abs(added.duration - 4) < 1e-6, `clicking a tile adds the clip, one loop long (${added?.label})`);
+  await win.fill('[data-motion-param="label"]', 'tests passed');
+  await win.fill('[data-motion-param="suffix"]', '%');
+  const values = await run((id) => window.__kinora.useProjectStore.getState().project.assets[id].motionValues, added.asset);
+  expect(values?.label === 'tests passed' && values?.suffix === '%', `typing in the inspector changes the clip's settings (${JSON.stringify(values)})`);
+  await sleep(1500);
+  await shot('motion-02-inspector');
+  await run(() => window.__kinora.actions.undo?.() ?? window.__kinora.useProjectStore.getState().undo());
+  const afterUndo = await run((id) => window.__kinora.useProjectStore.getState().project.assets[id].motionValues, added.asset);
+  expect(afterUndo?.suffix === undefined, 'undo reverts a settings change');
+
+  // The export uses the chosen values: a red accent, then a green one.
+  const colourShare = async (colour, test) => {
+    await run(({ id, colour }) => {
+      const m = window.__kinora.motion;
+      const a = window.__kinora.useProjectStore.getState().project.assets[id];
+      return m.readMotionFile(a.source.path).then((f) => m.setMotionValues(id, f.meta.params, { color: colour, accent: colour }));
+    }, { id: added.asset, colour });
+    const out = path.join(root, '.e2e', `motion-values-${colour.slice(1)}.png`);
+    const err = await run(
+      async ({ out }) => {
+        const k = window.__kinora;
+        const project = k.useProjectStore.getState().project;
+        const settings = { container: 'png', videoCodec: 'avc', width: 640, height: 360, fps: 30, quality: 'medium', audio: false, start: 3, end: 3, hardware: 'no-preference', fastStart: false };
+        try {
+          await k.exporter.exportProject(project, settings, out, () => {}, new AbortController().signal);
+          return null;
+        } catch (e) {
+          return String(e?.message ?? e);
+        }
+      },
+      { out },
+    );
+    if (err) return { err };
+    return run(
+      async ({ out, test }) => {
+        const res = await fetch(window.kinora.media.toUrl(out));
+        const bmp = await createImageBitmap(await res.blob());
+        const c = new OffscreenCanvas(bmp.width, bmp.height);
+        const g = c.getContext('2d');
+        g.drawImage(bmp, 0, 0);
+        const px = g.getImageData(0, 0, bmp.width, bmp.height).data;
+        let n = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          const [r, gr, b] = [px[i], px[i + 1], px[i + 2]];
+          if (test === 'red' ? r > 180 && gr < 80 && b < 80 : gr > 180 && r < 80 && b < 80) n++;
+        }
+        return { share: n / (bmp.width * bmp.height) };
+      },
+      { out, test },
+    );
+  };
+  const dump = async () => {
+    console.log('  motion state:', JSON.stringify(await run(() => ({ now: Math.round(performance.now()), live: window.__kinora.motion.motionDebug().map((d) => ({ ...d, cached: d.cached.length })), closed: window.__kinora.motion.motionDebug().closed })), null, 0));
+    const fresh = await test('export default function setup(k) { const c = k.ctx2d(); return () => c.fillRect(0, 0, 50, 50); }', 1, [0.5]);
+    console.log('  a brand-new clip afterwards:', JSON.stringify({ ok: fresh.ok, error: fresh.error, ms: fresh.ms }));
+  };
+  const red = await colourShare('#ff0000', 'red');
+  if (!(red.share > 0.005)) await dump();
+  expect(red.share > 0.005, `the export draws the clip with its chosen colour (${red.err ?? `${(red.share * 100).toFixed(1)}% red`})`);
+  const green = await colourShare('#00ff00', 'green');
+  if (!(green.share > 0.005)) await dump();
+  expect(green.share > 0.005, `changing the colour changes the export (${green.err ?? `${(green.share * 100).toFixed(1)}% green`})`);
+
+  // Two clips sharing the clip: "Make unique" gives the selected one its own copy.
+  await run((id) => {
+    const k = window.__kinora;
+    const asset = k.useProjectStore.getState().project.assets[id];
+    k.actions.addAsset(asset, { time: 5 });
+  }, added.asset);
+  await win.waitForSelector('[data-motion-unique]', { timeout: 10000 });
+  await win.click('[data-motion-unique]');
+  const unique = await run((id) => {
+    const p = window.__kinora.useProjectStore.getState().project;
+    const ids = Object.values(p.clips).filter((c) => c.type === 'image' && p.assets[c.assetId]?.format === 'motion').map((c) => c.assetId);
+    return { distinct: new Set(ids).size, copy: ids.find((x) => x !== id) && p.assets[ids.find((x) => x !== id)].motionValues };
+  }, added.asset);
+  expect(unique.distinct === 2 && unique.copy?.accent === '#00ff00', 'Make unique gives one clip its own copy, keeping its settings');
+  await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
 
   // A clip that never returns is stopped, and the editor stays responsive meanwhile.
   const hang = run(({ meta }) => window.__kinora.motion.testMotion('export default function setup(k) { return () => { for (;;) {} }; }', meta, [0]).then((r) => r.error), { meta: meta(1) });

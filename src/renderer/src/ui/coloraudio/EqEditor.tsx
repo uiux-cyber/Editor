@@ -33,8 +33,13 @@ import { useProjectStore } from '@/store/project';
 import { editClips } from '../actions';
 import { NumberInput, Select } from '../common/controls';
 import { openContextMenu } from '../common/overlays';
+import { tk, tMaybe, useT } from '../i18n';
 
 type MediaClip = VideoClip | AudioClip;
+
+/** Band type names of EQ_TYPE_LABEL (core/audiofx/eq.ts), translated where shown. */
+const TYPE_LABELS = new Set<string>([tk('High-pass'), tk('Low shelf'), tk('Bell'), tk('High shelf'), tk('Low-pass')]);
+const typeLabel = (type: EqType): string => (TYPE_LABELS.has(EQ_TYPE_LABEL[type]) ? tMaybe(EQ_TYPE_LABEL[type]) : EQ_TYPE_LABEL[type]);
 
 export const BAND_COLORS = ['#f472b6', '#fb923c', '#fbbf24', '#34d399', '#22d3ee', '#60a5fa', '#a78bfa', '#f87171'];
 
@@ -72,6 +77,7 @@ function nodePos(b: EqBand): { x: number; y: number } {
 }
 
 export function EqEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNode {
+  const tr = useT();
   const bands = useMemo(() => sanitizeEq(clip.eq), [clip.eq]);
   const [selected, setSelected] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -160,10 +166,10 @@ export function EqEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNo
   const typeMenu = (index: number, e: React.MouseEvent): void => {
     const b = bands[index];
     openContextMenu(e, [
-      { type: 'label', label: `Band ${index + 1}` },
-      ...EQ_TYPES.map((t) => ({ label: EQ_TYPE_LABEL[t], checked: b.type === t, run: () => updateBand(index, { type: t, q: t === 'peaking' ? 1 : 0.707 }) })),
+      { type: 'label', label: tr('Band {number}', { number: index + 1 }) },
+      ...EQ_TYPES.map((t) => ({ label: typeLabel(t), checked: b.type === t, run: () => updateBand(index, { type: t, q: t === 'peaking' ? 1 : 0.707 }) })),
       { type: 'separator' as const },
-      { label: 'Remove band', danger: true, run: () => removeBand(index) },
+      { label: tr('Remove band'), danger: true, run: () => removeBand(index) },
     ]);
   };
 
@@ -173,7 +179,7 @@ export function EqEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNo
         <Select
           value=""
           style={{ flex: 1 }}
-          options={[{ value: '', label: 'Presets…' }, ...EQ_PRESETS.map((p) => ({ value: p.id, label: p.name }))]}
+          options={[{ value: '', label: tr('Presets…') }, ...EQ_PRESETS.map((p) => ({ value: p.id, label: p.name }))]}
           onChange={(id) => {
             const p = getEqPreset(id);
             if (p) {
@@ -182,10 +188,10 @@ export function EqEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNo
             }
           }}
         />
-        <button type="button" className="icon-btn icon-btn--sm" title="Add a band" disabled={bands.length >= EQ_MAX_BANDS} onClick={() => addBand(defaultBandAt(1000))}>
+        <button type="button" className="icon-btn icon-btn--sm" title={tr('Add a band')} disabled={bands.length >= EQ_MAX_BANDS} onClick={() => addBand(defaultBandAt(1000))}>
           <Plus size={13} />
         </button>
-        <button type="button" className="icon-btn icon-btn--sm" title="Remove all bands" disabled={bands.length === 0} onClick={() => setEq(ids, [])}>
+        <button type="button" className="icon-btn icon-btn--sm" title={tr('Remove all bands')} disabled={bands.length === 0} onClick={() => setEq(ids, [])}>
           <RotateCcw size={12} />
         </button>
       </div>
@@ -240,7 +246,7 @@ export function EqEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNo
             );
           })}
         </svg>
-        {bands.length === 0 && <div className="eq__empty">Double-click to add a band, or pick a preset</div>}
+        {bands.length === 0 && <div className="eq__empty">{tr('Double-click to add a band, or pick a preset')}</div>}
       </div>
       {bands.length > 0 && (
         <div className="eq__bands">
@@ -249,18 +255,18 @@ export function EqEditor({ clip, ids }: { clip: MediaClip; ids: ID[] }): ReactNo
               <span className="eq__dot" style={{ background: BAND_COLORS[i % BAND_COLORS.length] }}>
                 {i + 1}
               </span>
-              <Select<EqType> value={b.type} style={{ width: 84, flex: 'none', height: 24 }} options={EQ_TYPES.map((t) => ({ value: t, label: EQ_TYPE_LABEL[t] }))} onChange={(t) => updateBand(i, { type: t, q: t === 'peaking' ? 1 : 0.707 })} />
+              <Select<EqType> value={b.type} style={{ width: 84, flex: 'none', height: 24 }} options={EQ_TYPES.map((t) => ({ value: t, label: typeLabel(t) }))} onChange={(t) => updateBand(i, { type: t, q: t === 'peaking' ? 1 : 0.707 })} />
               <NumberInput value={b.frequency} min={EQ_MIN_FREQ} max={EQ_MAX_FREQ} step={10} suffix="Hz" onChange={(v) => updateBand(i, { frequency: Math.round(v) }, `eq-f-${clip.id}-${i}`)} title={formatFrequency(b.frequency)} />
               <NumberInput value={b.gain} min={-EQ_MAX_GAIN} max={EQ_MAX_GAIN} step={0.5} precision={1} suffix="dB" disabled={!typeHasGain(b.type)} mixed={!typeHasGain(b.type)} onChange={(v) => updateBand(i, { gain: v }, `eq-g-${clip.id}-${i}`)} />
-              <NumberInput value={b.q} min={EQ_MIN_Q} max={EQ_MAX_Q} step={0.05} precision={2} prefix="Q" disabled={!typeHasQ(b.type)} mixed={!typeHasQ(b.type)} title={typeHasQ(b.type) ? 'Bandwidth (scroll a node to change)' : 'Shelves use a fixed slope'} onChange={(v) => updateBand(i, { q: v }, `eq-q-${clip.id}-${i}`)} />
-              <button type="button" className="icon-btn icon-btn--sm" title="Remove band" onClick={() => removeBand(i)}>
+              <NumberInput value={b.q} min={EQ_MIN_Q} max={EQ_MAX_Q} step={0.05} precision={2} prefix="Q" disabled={!typeHasQ(b.type)} mixed={!typeHasQ(b.type)} title={typeHasQ(b.type) ? tr('Bandwidth (scroll a node to change)') : tr('Shelves use a fixed slope')} onChange={(v) => updateBand(i, { q: v }, `eq-q-${clip.id}-${i}`)} />
+              <button type="button" className="icon-btn icon-btn--sm" title={tr('Remove band')} onClick={() => removeBand(i)}>
                 <X size={12} />
               </button>
             </div>
           ))}
         </div>
       )}
-      <p className="hint">Drag nodes (Shift = fine) · scroll a node for Q · right-click for type</p>
+      <p className="hint">{tr('Drag nodes (Shift = fine) · scroll a node for Q · right-click for type')}</p>
     </div>
   );
 }

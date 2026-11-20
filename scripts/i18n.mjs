@@ -22,13 +22,27 @@ export const TRANSLATED = [
   'App.tsx',
   'main.tsx',
   'ui/projectIO.ts',
-  'ui/common/overlays.tsx',
+  'ui/actions.ts',
+  'ui/common',
   'ui/shell',
   'ui/settings',
   'ui/palette',
   'ui/collect',
   'ui/commands',
   'ui/claude',
+  'ui/library',
+  'ui/inspector',
+  'ui/timeline',
+  'ui/time',
+  'ui/media',
+  'ui/export',
+  'ui/templates',
+  'ui/coloraudio',
+  'ui/preview',
+  'ui/speech',
+  'ui/tools',
+  'ui/vision',
+  'ui/motion',
 ];
 
 /** Strings looked up dynamically (menu names, groups, key caps, format hints, kinds). */
@@ -93,6 +107,11 @@ export function extractFile(file) {
     const key = unquote(m[1], m[2]);
     out.add(m[3] ? `${m[3]}|${key}` : key);
   }
+  // tk('…'): marked for translation, translated where it is displayed (tMaybe).
+  for (const m of src.matchAll(/\btk\(\s*(['"`])((?:\\.|(?!\1)[^\\])*)\1\s*\)/g)) {
+    if (m[1] === '`' && m[2].includes('${')) continue;
+    out.add(unquote(m[1], m[2]));
+  }
   if (/commands[\\/]defs[\\/]|settings[\\/]defs[\\/]/.test(file)) {
     for (const m of src.matchAll(/\b(title|menuTitle|group|description|menuSection):\s*'((?:\\.|[^'\\])*)'/g)) out.add(unquote("'", m[2]));
     // Tuples like ['full', 'Preview quality: Full', 'Full', 1] (title with a colon, menu label)
@@ -104,9 +123,21 @@ export function extractFile(file) {
   return out;
 }
 
+/** Titles and descriptions of the ready-made Claude requests (src/shared/claude.ts PROMPTS), shown in Settings → Claude. */
+export function promptKeys() {
+  const src = readFileSync(join(ROOT, 'src/shared/claude.ts'), 'utf8');
+  const block = src.slice(src.indexOf('export const PROMPTS'), src.indexOf('export const PROMPT_NAMES'));
+  const out = new Set();
+  for (const m of block.matchAll(/^ {4}(?:title|description): '((?:\\.|[^'\\])*)'/gm)) {
+    out.add(unquote("'", m[1]).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))));
+  }
+  return out;
+}
+
 export function extractKeys() {
   const keys = new Set(EXTRA_KEYS);
   for (const p of TRANSLATED) for (const f of walk(p)) extractFile(f).forEach((k) => keys.add(k));
+  promptKeys().forEach((k) => keys.add(k));
   return keys;
 }
 

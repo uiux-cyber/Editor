@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import { useProjectStore } from '@/store/project';
 import { goToHistory } from '../actions';
+import { t, tMaybe, useT } from '../i18n';
 
 interface PanelState {
   open: boolean;
@@ -32,18 +33,19 @@ export const useHistoryPanel = create<PanelState>()((set, get) => ({
 /** "just now", "25 s ago", "4 min ago", "2 h ago". */
 export function relativeTime(at: number, now: number): string {
   const s = Math.max(0, Math.round((now - at) / 1000));
-  if (s < 5) return 'just now';
-  if (s < 60) return `${s} s ago`;
+  if (s < 5) return t('just now');
+  if (s < 60) return t('{count} s ago', { count: s });
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return t('{count} min ago', { count: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} h ago`;
+  if (h < 24) return t('{count} h ago', { count: h });
   return new Date(at).toLocaleDateString();
 }
 
 const WIDTH = 288;
 
 export function HistoryPanel(): ReactNode {
+  const t = useT();
   const open = useHistoryPanel((s) => s.open);
   const anchor = useHistoryPanel((s) => s.anchor);
   const close = useHistoryPanel((s) => s.close);
@@ -102,21 +104,21 @@ export function HistoryPanel(): ReactNode {
 
   if (!open || !pos) return null;
   const steps = [...pastMeta, ...futureMeta];
-  const rows = [{ label: filePath ? 'Opened project' : 'Start', at: null as number | null }, ...steps.map((m) => ({ label: m.label, at: m.at as number | null }))];
+  const rows = [{ label: filePath ? t('Opened project') : t('Start', undefined, 'history'), at: null as number | null }, ...steps.map((m) => ({ label: tMaybe(m.label), at: m.at as number | null }))];
 
   return createPortal(
-    <div ref={panelRef} className="history popover" role="dialog" aria-label="History" style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: WIDTH, maxHeight: pos.maxHeight }}>
+    <div ref={panelRef} className="history popover" role="dialog" aria-label={t('History')} style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: WIDTH, maxHeight: pos.maxHeight }}>
       <header className="history__head">
         <History size={14} />
-        <span className="history__title">History</span>
+        <span className="history__title">{t('History')}</span>
         <span className="history__count">
-          {steps.length === 0 ? 'No changes yet' : `${current} of ${steps.length} step${steps.length === 1 ? '' : 's'}`}
+          {steps.length === 0 ? t('No changes yet') : t('{current} of {count, plural, one {# step} other {# steps}}', { current, count: steps.length })}
         </span>
-        <button type="button" className="icon-btn icon-btn--sm" title="Close (Esc)" onClick={close}>
+        <button type="button" className="icon-btn icon-btn--sm" title={t('Close (Esc)')} onClick={close}>
           <X size={13} />
         </button>
       </header>
-      <div className="history__list" ref={listRef} role="listbox" aria-label="Undo steps">
+      <div className="history__list" ref={listRef} role="listbox" aria-label={t('Undo steps')}>
         {rows.map((row, i) => (
           <button
             key={i}
@@ -126,7 +128,7 @@ export function HistoryPanel(): ReactNode {
             className={`history__row ${i === current ? 'is-current' : ''} ${i > current ? 'is-undone' : ''}`}
             disabled={busy}
             data-history-index={i}
-            title={i === current ? 'Current state' : i < current ? 'Click to undo back to here' : 'Click to redo up to here'}
+            title={i === current ? t('Current state') : i < current ? t('Click to undo back to here') : t('Click to redo up to here')}
             onClick={() => goToHistory(i)}
           >
             <span className="history__dot" />
@@ -135,7 +137,7 @@ export function HistoryPanel(): ReactNode {
           </button>
         ))}
       </div>
-      <footer className="history__foot">Click a step to go back to it. New edits after an undo replace the dimmed steps.</footer>
+      <footer className="history__foot">{t('Click a step to go back to it. New edits after an undo replace the dimmed steps.')}</footer>
     </div>,
     document.body,
   );

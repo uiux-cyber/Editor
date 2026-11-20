@@ -25,7 +25,7 @@ import { useUI } from '@/store/ui';
 import { useVision } from '@/vision/store';
 import { ASPECT_IDS, LIBRARY_KINDS, textResult, type ToolContent, type ToolResult } from '@shared/claude';
 import type { FileInfo } from '@shared/ipc';
-import { motionGuide, normalizeMotionMeta, parseMotionFile, serializeMotionFile, type MotionMeta } from '@shared/motion';
+import { changedMotionValues, motionGuide, motionParamValues, normalizeMotionMeta, parseMotionFile, serializeMotionFile, type MotionMeta, type MotionParam, type MotionValue } from '@shared/motion';
 import { addAsset, addGenerator, addSound, addSticker, addText, addTransition, applyEffect, applyFilter, deleteSelection, editClips, redo, setSpeed, splitClip, undo } from '../actions';
 import { getCommand, getCommands, runCommand } from '../commands';
 import { shortcutText } from '../commands/keymapStore';
@@ -684,11 +684,41 @@ function motionImages(args: Args): Record<string, string> | undefined {
   return out;
 }
 
+/** The settings declared in a call (params), checked; undefined when not given. */
+function motionParamsArg(args: Args): MotionParam[] | undefined {
+  const raw = args.params;
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) throw new ToolError('"params" must be a list of settings like [{ "id": "title", "type": "text", "label": "Title", "default": "Hello" }].');
+  const ids = new Set<string>();
+  for (const item of raw) {
+    const id = item && typeof item === 'object' ? (item as Record<string, unknown>).id : undefined;
+    if (typeof id !== 'string' || !/^[A-Za-z_][\w]{0,40}$/.test(id)) throw new ToolError(`Setting id ${JSON.stringify(id)} is not valid (letters, digits and _, starting with a letter).`);
+    if (ids.has(id)) throw new ToolError(`Setting "${id}" is declared twice.`);
+    ids.add(id);
+  }
+  return raw as MotionParam[];
+}
+
+/** Settings values passed in a call, checked against the clip's settings. */
+function motionValuesArg(args: Args, params: MotionParam[] | undefined): Record<string, MotionValue> | undefined {
+  const raw = args.values;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new ToolError('"values" must be an object like { "title": "Hello" }.');
+  const out: Record<string, MotionValue> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const p = params?.find((x) => x.id === id);
+    if (!p) throw new ToolError(`The clip has no setting "${id}". Its settings: ${(params ?? []).map((x) => x.id).join(', ') || 'none'} (declare new ones with params).`);
+    if (motionParamValues([p], { [id]: v })[id] !== v && !(p.type === 'number' && typeof v === 'number')) throw new ToolError(`${JSON.stringify(v)} is not a valid value for "${id}" (${p.type}${p.type === 'select' ? `: ${(p.options ?? []).join(', ')}` : ''}${p.type === 'font' ? ': one of the fonts in motion_guide' : ''}).`);
+    out[id] = v as MotionValue;
+  }
+  return out;
+}
+
 /** Run the clip before it reaches the project; returns preview content or throws with the error. */
-async function checkMotion(code: string, meta: MotionMeta): Promise<{ preview: ToolContent; notes: string[]; logs: string[] }> {
+async function checkMotion(code: string, meta: MotionMeta, values?: Record<string, MotionValue>): Promise<{ preview: ToolContent; notes: string[]; logs: string[] }> {
   if (!/export\s+default/.test(code)) throw new ToolError('The code must be an ES module with `export default function setup(k) { … }` (see motion_guide).');
   const last = Math.max(0, meta.duration - 1 / meta.fps);
-  const test = await testMotion(code, meta, [meta.duration * 0.5, 0, last]);
+  const test = await testMotion(code, meta, [meta.duration * 0.5, 0, last], values);
   const logs = test.logs.slice(-12);
   if (!test.ok) {
     test.frames.forEach((f) => f.close());
@@ -720,7 +750,7 @@ async function createMotionTool(args: Args): Promise<ToolResult> {
   const name = str(args, 'name', true)!;
   const code = str(args, 'code', true)!;
   const meta = normalizeMotionMeta(
-    { name, width: num(args, 'width'), height: num(args, 'height'), duration: num(args, 'duration') ?? 5, fps: num(args, 'fps'), seed: 1, images: motionImages(args) },
+    { name, width: num(args, 'width'), height: num(args, 'height'), duration: num(args, 'duration') ?? 5, fps: num(args, 'fps'), seed: 1, images: motionImages(args), params: motionParamsArg(args) },
     { width: p.width, height: p.height, fps: p.fps, name },
   );
   const { preview, notes, logs } = await checkMotion(code, meta);
@@ -735,7 +765,8 @@ async function createMotionTool(args: Args): Promise<ToolResult> {
       if (clips.length) editClips(clips, (c) => void (c.duration = meta.duration));
     });
   }
-  const info = { media_id: asset.id, ...(clips.length ? { clip_id: clips[0] } : {}), file: file.path, width: meta.width, height: meta.height, duration: meta.duration, fps: meta.fps, ...(notes.length ? { notes } : {}), ...(logs.length ? { console: logs } : {}) };
+  if (!meta.params?.length) notes.push('No settings declared: the user can only change this clip through you. Add params (at least the visible text and main colours) with update_motion so they can edit it in the inspector.');
+  const info = { media_id: asset.id, ...(clips.length ? { clip_id: clips[0] } : {}), file: file.path, width: meta.width, height: meta.height, duration: meta.duration, fps: meta.fps, ...(meta.params?.length ? { settings: meta.params.map((x) => x.id) } : {}), ...(notes.length ? { notes } : {}), ...(logs.length ? { console: logs } : {}) };
   return { content: [preview, { type: 'text', text: `Motion clip created. Preview of the middle frame above (transparent areas shown dark grey).\n${JSON.stringify(info, null, 1)}` }] };
 }
 
@@ -744,20 +775,37 @@ async function updateMotionTool(args: Args): Promise<ToolResult> {
   const id = str(args, 'media_id', true)!;
   const current = await readMotion(id);
   const images = args.images === undefined ? current.meta.images : motionImages(args);
+  const declared = motionParamsArg(args);
   const meta = normalizeMotionMeta(
-    { ...current.meta, width: num(args, 'width') ?? current.meta.width, height: num(args, 'height') ?? current.meta.height, duration: num(args, 'duration') ?? current.meta.duration, fps: num(args, 'fps') ?? current.meta.fps, images },
+    {
+      ...current.meta,
+      width: num(args, 'width') ?? current.meta.width,
+      height: num(args, 'height') ?? current.meta.height,
+      duration: num(args, 'duration') ?? current.meta.duration,
+      fps: num(args, 'fps') ?? current.meta.fps,
+      images,
+      params: declared ?? current.meta.params,
+    },
     { width: current.meta.width, height: current.meta.height, fps: current.meta.fps, name: current.meta.name },
   );
   const code = str(args, 'code') ?? current.code;
-  const { preview, notes, logs } = await checkMotion(code, meta);
-  // A new file per version: undo goes back to the previous file.
-  const file = await api.call<FileInfo>('x:motion:save', meta.name, serializeMotionFile(meta, code));
+  const fileChanged = code !== current.code || serializeMotionFile(meta, code) !== serializeMotionFile(current.meta, current.code);
+  const patch = motionValuesArg(args, meta.params);
+  if (!fileChanged && !patch) throw new ToolError('Nothing to change: pass code, params, values, duration, fps, width, height or images.');
+  // Values chosen before (by the user or Claude) that still fit the clip's settings, plus the new ones.
+  const values = changedMotionValues(meta.params, { ...current.asset.motionValues, ...patch });
+  const { preview, notes, logs } = await checkMotion(code, meta, values);
+  const file = fileChanged ? await api.call<FileInfo>('x:motion:save', meta.name, serializeMotionFile(meta, code)) : null;
   const oldDuration = current.asset.duration;
   await asClaude(() =>
     updateProject(
       (d) => {
         const a = d.assets[id];
         if (!a) return;
+        if (Object.keys(values).length) a.motionValues = values;
+        else delete a.motionValues;
+        if (!file) return;
+        // A new file per version: undo goes back to the previous file.
         a.source = { type: 'file', path: file.path };
         a.size = file.size;
         a.duration = meta.duration;
@@ -767,10 +815,20 @@ async function updateMotionTool(args: Args): Promise<ToolResult> {
         // Clips that showed the whole animation keep doing so at its new length.
         if (meta.duration !== oldDuration) for (const c of Object.values(d.clips)) if (c.type === 'image' && c.assetId === id && Math.abs(c.duration - oldDuration) < 1e-3) c.duration = meta.duration;
       },
-      { label: 'Update motion clip' },
+      { label: file ? 'Update motion clip' : 'Change Motion clip settings' },
     ),
   );
-  const info = { media_id: id, file: file.path, width: meta.width, height: meta.height, duration: meta.duration, fps: meta.fps, ...(notes.length ? { notes } : {}), ...(logs.length ? { console: logs } : {}) };
+  const info = {
+    media_id: id,
+    ...(file ? { file: file.path } : {}),
+    width: meta.width,
+    height: meta.height,
+    duration: meta.duration,
+    fps: meta.fps,
+    ...(meta.params?.length ? { values: motionParamValues(meta.params, values) } : {}),
+    ...(notes.length ? { notes } : {}),
+    ...(logs.length ? { console: logs } : {}),
+  };
   return { content: [preview, { type: 'text', text: `Motion clip updated (undo in Kinora restores the previous version).\n${JSON.stringify(info, null, 1)}` }] };
 }
 
@@ -778,7 +836,9 @@ async function getMotionTool(args: Args): Promise<ToolResult> {
   const { asset, meta, code } = await readMotion(str(args, 'media_id', true)!);
   const p = getRootProject();
   const clips = Object.values(p.clips).filter((c) => c.type === 'image' && c.assetId === asset.id).map((c) => c.id);
-  return textResult(`media_id: ${asset.id}\nsettings: ${JSON.stringify(meta)}\ntimeline clips: ${clips.join(', ') || 'none'}\n\n${code}`);
+  const { params, ...header } = meta;
+  const values = params?.length ? `\nsetting values: ${JSON.stringify(motionParamValues(params, asset.motionValues))}` : '';
+  return textResult(`media_id: ${asset.id}\nheader: ${JSON.stringify(header)}\nsettings (params): ${JSON.stringify(params ?? [])}${values}\ntimeline clips: ${clips.join(', ') || 'none'}\n\n${code}`);
 }
 
 // ---- history ----------------------------------------------------------------------------------

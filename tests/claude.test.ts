@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { EXTENSION_LOADER, MCP_PROTOCOL_VERSIONS, TOOLS, claudeCodeCommand, extensionManifest, kinoraEntryOf, withKinoraEntry, withoutKinoraEntry, type McpServerEntry } from '@shared/claude';
+import { EXTENSION_LOADER, MCP_PROTOCOL_VERSIONS, PROMPTS, TOOLS, claudeCodeCommand, extensionManifest, kinoraEntryOf, withKinoraEntry, withoutKinoraEntry, type McpServerEntry } from '@shared/claude';
 import { crc32, readZip, writeZip } from '@shared/zip';
 import { createMcpServer } from '../src/mcp/protocol';
 
@@ -188,5 +188,47 @@ describe('zip', () => {
     expect(files.get('server/index.js')).toEqual(big);
     expect(files.get('icon.png')).toEqual(tiny);
     expect(zip.length).toBeLessThan(big.length);
+  });
+});
+
+describe('ready-made requests (MCP prompts)', () => {
+  const run = async (message: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const sent: Record<string, unknown>[] = [];
+    const s = createMcpServer({ version: '1', send: (m) => sent.push(m), call: async () => ({ content: [] }) });
+    await s.handle({ jsonrpc: '2.0', id: 1, ...message });
+    return sent[0];
+  };
+
+  it('are announced and listed with their arguments', async () => {
+    const init = await run({ method: 'initialize', params: {} });
+    expect(init).toMatchObject({ result: { capabilities: { prompts: { listChanged: false } } } });
+    const list = (await run({ method: 'prompts/list' })).result as { prompts: { name: string; arguments: { name: string }[] }[] };
+    expect(list.prompts.map((p) => p.name)).toEqual(PROMPTS.map((p) => p.name));
+    expect(list.prompts.find((p) => p.name === 'make_shorts')?.arguments.map((a) => a.name)).toEqual(['count', 'length', 'focus']);
+  });
+
+  it('build the request from the arguments the user filled in', async () => {
+    const r = (await run({ method: 'prompts/get', params: { name: 'animated_title', arguments: { text: 'Summer Sale', style: 'neon' } } })).result as { messages: { role: string; content: { type: string; text: string } }[] };
+    expect(r.messages).toHaveLength(1);
+    expect(r.messages[0].role).toBe('user');
+    expect(r.messages[0].content.text).toContain('“Summer Sale”');
+    expect(r.messages[0].content.text).toContain('Style: neon.');
+    expect(r.messages[0].content.text).toContain('create_motion');
+  });
+
+  it('refuse a missing required argument or an unknown request', async () => {
+    expect(await run({ method: 'prompts/get', params: { name: 'animated_title', arguments: {} } })).toMatchObject({ error: { code: -32602, message: 'Missing argument: text' } });
+    expect(await run({ method: 'prompts/get', params: { name: 'nope' } })).toMatchObject({ error: { code: -32602 } });
+  });
+
+  it('read sensibly with only the required arguments, and name only real tools', () => {
+    const tools = new Set(TOOLS.map((t) => t.name));
+    for (const p of PROMPTS) {
+      const args = Object.fromEntries(p.arguments.filter((a) => a.required).map((a) => [a.name, 'X']));
+      const text = p.text(args);
+      expect(text.length, p.name).toBeGreaterThan(100);
+      expect(text, p.name).not.toMatch(/undefined|null|\$\{/);
+      for (const m of text.matchAll(/\b([a-z]+_[a-z_]+)\b/g)) if (/^(get|set|create|update|capture|export|run|list|search|add|apply|import|new|open|save|select|split|delete|motion)_/.test(m[1])) expect(tools.has(m[1]), `${p.name} mentions ${m[1]}`).toBe(true);
+    }
   });
 });

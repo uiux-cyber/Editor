@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import type { ID } from '@/core/types';
 import { useProjectStore } from '@/store/project';
+import { useT } from '../i18n';
 import { frameGrabber } from './frameGrabber';
 
 export interface MonitorFrame {
@@ -49,6 +50,7 @@ function FramePane({ frame, aspect, token }: { frame: MonitorFrame; aspect: numb
 }
 
 export function TrimMonitor(): ReactNode {
+  const t = useT();
   const view = useTrimMonitor((s) => s.view);
   const settings = useProjectStore((s) => s.project.settings);
   const [rect, setRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
@@ -79,7 +81,7 @@ export function TrimMonitor(): ReactNode {
         <FramePane frame={view.left} aspect={aspect} token={tokenRef.current} />
         <FramePane frame={view.right} aspect={aspect} token={tokenRef.current} />
       </div>
-      <div className="trim-monitor__mode">{view.mode === 'roll' ? 'Roll edit' : 'Slip'}</div>
+      <div className="trim-monitor__mode">{view.mode === 'roll' ? t('Roll edit') : t('Slip')}</div>
     </div>,
     document.body,
   );

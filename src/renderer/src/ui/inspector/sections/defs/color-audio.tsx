@@ -11,6 +11,7 @@ import { isNeutralWheels } from '@/core/color/wheels';
 import type { AudioClip, Clip, VideoClip, VisualClip } from '@/core/types';
 import { useProjectStore } from '@/store/project';
 import { Section, Toggle } from '../../../common/controls';
+import { useT } from '../../../i18n';
 import { ColorWheels } from '../../../coloraudio/ColorWheels';
 import { CompressorEditor, setCompressor } from '../../../coloraudio/CompressorEditor';
 import { CurvesEditor } from '../../../coloraudio/CurvesEditor';
@@ -25,22 +26,25 @@ const isVisual = (c: Clip): boolean => c.type !== 'audio';
 const isMedia = (c: Clip): boolean => c.type === 'video' || c.type === 'audio';
 
 function Badge({ on }: { on: boolean }): ReactNode {
-  return on ? <span className="ca-badge" title="Active" /> : null;
+  const t = useT();
+  return on ? <span className="ca-badge" title={t('Active')} /> : null;
 }
 
 function WheelsSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const v = clip as VisualClip;
   return (
-    <Section title={<>Color wheels <Badge on={!isNeutralWheels(clipWheels(v))} /></>} id="color-wheels">
+    <Section title={<>{t('Color wheels')} <Badge on={!isNeutralWheels(clipWheels(v))} /></>} id="color-wheels">
       <ColorWheels clip={v} ids={ids} />
     </Section>
   );
 }
 
 function CurvesSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const v = clip as VisualClip;
   return (
-    <Section title={<>Curves <Badge on={!isIdentityCurves(clipCurves(v))} /></>} id="color-curves">
+    <Section title={<>{t('Curves')} <Badge on={!isIdentityCurves(clipCurves(v))} /></>} id="color-curves">
       <CurvesEditor clip={v} ids={ids} />
     </Section>
   );
@@ -60,27 +64,29 @@ function useHasSound(clip: Clip): boolean {
 }
 
 function EqSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const m = clip as VideoClip | AudioClip;
   const sound = useHasSound(clip);
   if (!sound) return null;
   const n = sanitizeEq(m.eq).length;
   return (
-    <Section title={<>Equalizer <Badge on={!isNeutralEq(m.eq)} /></>} id="audio-eq" actions={n > 0 ? <span className="ca-count">{n} band{n === 1 ? '' : 's'}</span> : undefined}>
+    <Section title={<>{t('Equalizer')} <Badge on={!isNeutralEq(m.eq)} /></>} id="audio-eq" actions={n > 0 ? <span className="ca-count">{t('{count, plural, one {# band} other {# bands}}', { count: n })}</span> : undefined}>
       <EqEditor clip={m} ids={ids} />
     </Section>
   );
 }
 
 function CompressorSection({ clip, ids }: InspectorSectionProps): ReactNode {
+  const t = useT();
   const m = clip as VideoClip | AudioClip;
   const sound = useHasSound(clip);
   if (!sound) return null;
   const on = !!m.compressor && m.compressor.enabled !== false;
   return (
     <Section
-      title={<>Compressor <Badge on={on} /></>}
+      title={<>{t('Compressor')} <Badge on={on} /></>}
       id="audio-compressor"
-      actions={<Toggle value={on} title={on ? 'Bypass the compressor' : 'Enable the compressor'} onChange={(v) => setCompressor(ids, { enabled: v })} />}
+      actions={<Toggle value={on} title={on ? t('Bypass the compressor') : t('Enable the compressor')} onChange={(v) => setCompressor(ids, { enabled: v })} />}
     >
       <CompressorEditor clip={m} ids={ids} />
     </Section>
