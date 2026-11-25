@@ -11,7 +11,7 @@ import { api } from '@/platform/api';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
 import { addAdjustment, addAsset, addGenerator, addShape, addSound, addSticker, addText, applyEffect, applyFilter, applyTemplate, fillSlotWith, jumpToEdit } from '../actions';
-import { addMotionPresetById } from '../motion/actions';
+import { addMotionPresetById, addMotionVariation } from '../motion/actions';
 import { Select, useElementSize } from '../common/controls';
 import { registerDropTarget, type DragPayload } from '../dnd';
 import { useT } from '../i18n';
@@ -478,7 +478,7 @@ export function Preview(): ReactNode {
             addGenerator(p.generatorId, { time: engine.time });
             return;
           case 'motion':
-            void addMotionPresetById(p.presetId, { time: engine.time });
+            void (p.variation ? addMotionVariation(p.variation, { time: engine.time }) : addMotionPresetById(p.presetId, { time: engine.time }));
             return;
           case 'adjustment':
             addAdjustment();

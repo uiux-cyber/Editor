@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { create } from 'zustand';
 import type { ID, ShapeKind } from '@/core/types';
+import type { MotionVariation } from '@/library/motionVariations';
 import type { TemplateVariation } from '@/library/templateEngine';
 
 export type DragPayload =
@@ -15,7 +16,7 @@ export type DragPayload =
   | { kind: 'sticker'; stickerId: string }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'generator'; generatorId: string }
-  | { kind: 'motion'; presetId: string; duration: number }
+  | { kind: 'motion'; presetId: string; duration: number; variation?: MotionVariation }
   | { kind: 'adjustment' }
   | { kind: 'sound'; soundId: string; duration: number }
   | { kind: 'transition'; type: string }

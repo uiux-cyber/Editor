@@ -16,7 +16,7 @@ import { getRootProject, updateProject, useProjectStore } from '@/store/project'
 import { toast } from '@/store/ui';
 import {
   changedMotionValues,
-  MOTION_FONTS,
+  motionFontFamily,
   normalizeMotionMeta,
   parseMotionFile,
   serializeMotionFile,
@@ -26,6 +26,8 @@ import {
 } from '@shared/motion';
 import type { FileInfo } from '@shared/ipc';
 import { getMotionPreset } from '@/library/motionPresets';
+import { MOTION_BRAND_ID, resolveVariation, themeValues, type MotionVariation } from '@/library/motionVariations';
+import { brandTheme, motionBrand, motionLibrary } from './library';
 import { addAsset, editClips, type Placement } from '../actions';
 import { t } from '../i18n';
 import { currentLogo, logoAsset, useTemplates } from '../templates/store';
@@ -155,11 +157,7 @@ export function makeMotionUnique(clipId: ID): ID | null {
 // ---- brand kit ---------------------------------------------------------------------------------
 
 /** A bundled Motion typeface for a brand font family (installed PC fonts cannot be used in clips). */
-export function motionFontFor(family: string): string | null {
-  if (MOTION_FONTS.includes(family)) return family;
-  const variable = `${family} Variable`;
-  return MOTION_FONTS.includes(variable) ? variable : null;
-}
+export const motionFontFor = motionFontFamily;
 
 /** True once the user saved a brand kit. */
 export const hasBrand = (): boolean => useTemplates.getState().brandSet;
@@ -170,35 +168,14 @@ export const hasBrand = (): boolean => useTemplates.getState().brandSet;
  */
 export function brandValues(params: MotionParam[]): { values: Record<string, MotionValue>; logo: MediaAsset | null } {
   const { brand } = useTemplates.getState();
-  const values: Record<string, MotionValue> = {};
+  const values = themeValues(params, brandTheme(), motionFontFamily);
   let logo: MediaAsset | null = null;
   for (const p of params) {
-    if (!p.brand) continue;
-    switch (p.brand) {
-      case 'primary':
-      case 'secondary':
-      case 'accent':
-      case 'background':
-      case 'text':
-        if (p.type === 'color') values[p.id] = brand.colors[p.brand];
-        break;
-      case 'heading':
-      case 'body': {
-        const font = p.type === 'font' ? motionFontFor(brand[p.brand].family) : null;
-        if (font) values[p.id] = font;
-        break;
-      }
-      case 'name':
-        if (p.type === 'text' && brand.name.trim()) values[p.id] = brand.name.trim();
-        break;
-      case 'logo': {
-        const l = p.type === 'image' ? currentLogo(brand) : null;
-        if (l) {
-          logo = logoAsset(l);
-          values[p.id] = logo.id;
-        }
-        break;
-      }
+    if (p.brand !== 'logo' || p.type !== 'image') continue;
+    const l = currentLogo(brand);
+    if (l) {
+      logo = logoAsset(l);
+      values[p.id] = logo.id;
     }
   }
   return { values, logo };
@@ -231,6 +208,14 @@ export function addMotionPresetById(id: string, where?: Placement): Promise<ID[]
   return addMotionPreset(preset, { brand: useBrand && brandSet, where });
 }
 
+/** Library ▸ Motion: add the version of a design shown in the gallery (its colours, fonts, look and words). */
+export function addMotionVariation(v: MotionVariation, where?: Placement): Promise<ID[]> {
+  const brand = v.paletteId === MOTION_BRAND_ID ? motionBrand() : null;
+  const r = resolveVariation(motionLibrary(), v, brand);
+  if (!r) return Promise.resolve([]);
+  return addMotionPreset(r.preset, { values: r.values, seed: r.seed, brand: !!brand, where });
+}
+
 export interface MotionPresetLike {
   name: string;
   duration: number;
@@ -242,15 +227,23 @@ export interface MotionPresetLike {
  * Add a ready-made Motion clip: written to Documents\Kinora\Motion, imported, placed on the
  * timeline (one loop long). With `brand`, settings linked to the brand kit start with its values.
  */
-export async function addMotionPreset(preset: MotionPresetLike, opts: { brand?: boolean; where?: Placement } = {}): Promise<ID[]> {
+export async function addMotionPreset(
+  preset: MotionPresetLike,
+  opts: { brand?: boolean; where?: Placement; values?: Record<string, MotionValue>; seed?: number } = {},
+): Promise<ID[]> {
   const s = getRootProject().settings;
-  const base = normalizeMotionMeta({ name: preset.name, duration: preset.duration, width: s.width, height: s.height, fps: s.fps, seed: 1, params: preset.params }, { width: s.width, height: s.height, fps: s.fps, name: preset.name });
-  let meta = base;
+  const base = normalizeMotionMeta(
+    { name: preset.name, duration: preset.duration, width: s.width, height: s.height, fps: s.fps, seed: opts.seed ?? 1, params: preset.params },
+    { width: s.width, height: s.height, fps: s.fps, name: preset.name },
+  );
+  // The version the user picked becomes the clip's defaults (Reset returns to it).
+  const chosen: Record<string, MotionValue> = { ...(opts.values ?? {}) };
   if (opts.brand && hasBrand() && base.params?.length) {
     const { values, logo } = brandValues(base.params);
     ensureLogoAsset(logo);
-    meta = { ...base, params: base.params.map((p) => (p.id in values ? { ...p, default: values[p.id] } : p)) };
+    Object.assign(chosen, values);
   }
+  const meta = { ...base, params: base.params?.map((p) => (p.id in chosen ? { ...p, default: chosen[p.id] } : p)) };
   let file: FileInfo;
   try {
     file = await api.call<FileInfo>('x:motion:save', meta.name, serializeMotionFile(meta, preset.code));

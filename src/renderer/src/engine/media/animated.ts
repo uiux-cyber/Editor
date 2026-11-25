@@ -22,6 +22,7 @@ import { api } from '@/platform/api';
 import type { FrameImage } from '../compositor';
 import { readDotLottie } from './dotlottie';
 import { MotionAnimation } from './motion';
+import { hashString } from '@shared/media';
 import { motionValuesKey } from '@shared/motion';
 
 export type AnimationFormat = NonNullable<MediaAsset['format']>;
@@ -509,11 +510,13 @@ function pruneMotion(assetId: ID): void {
  * running version is returned until the edit settles.
  */
 function motionSourceFor(asset: MediaAsset, exact: boolean): MotionAnimation | null {
-  if (asset.source.type !== 'file') return null;
-  const path = asset.source.path;
+  const source = asset.source;
+  if (source.type !== 'file' && source.type !== 'motion') return null;
+  // A clip held in memory (template layer) runs from its code; its identity is the code + header.
+  const path = source.type === 'file' ? source.path : `inline:${hashString(source.code)}:${hashString(JSON.stringify(source.meta))}`;
   const key = motionKey(path, asset.motionValues);
   const list = motionSources.get(asset.id) ?? [];
-  if (!list.length && !usable(asset.id)) return null;
+  if (!list.length && source.type === 'file' && !usable(asset.id)) return null;
   const now = performance.now();
   let entry = list.find((e) => e.key === key);
   if (!entry) {
@@ -529,7 +532,7 @@ function motionSourceFor(asset: MediaAsset, exact: boolean): MotionAnimation | n
       }
     }
     settling.delete(asset.id);
-    const src = new MotionAnimation(path, notify, undefined, asset.motionValues);
+    const src = new MotionAnimation(source.type === 'file' ? path : '', notify, source.type === 'motion' ? { code: source.code, meta: source.meta } : undefined, asset.motionValues);
     src.ready.catch(() => undefined).finally(notify);
     entry = { src, key, used: now };
     list.push(entry);
@@ -541,6 +544,7 @@ function motionSourceFor(asset: MediaAsset, exact: boolean): MotionAnimation | n
 }
 
 function sourceFor(asset: MediaAsset, exact = false): AnimationSource | null {
+  if (asset.kind === 'animation' && asset.source.type === 'motion') return motionSourceFor(asset, exact);
   if (asset.kind !== 'animation' || asset.source.type !== 'file') return null;
   const filePath = asset.source.path;
   const ext = asset.format === 'lottie' ? extOfPath(filePath) || 'json' : extOfPath(filePath) || asset.format || 'gif';

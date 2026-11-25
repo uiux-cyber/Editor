@@ -67,10 +67,10 @@ Claude Desktop, click **+** in the message box, choose **Kinora** and pick one; 
 | `get_status` | Screen, playhead, selection, background tasks and recent changes |
 | `get_project` | Settings, tracks, clips, media (with paths), markers, In / Out |
 | `list_commands` / `run_command` | Every command of the command palette (captions, silence and filler removal, noise reduction, background removal, scene detection, splitting, grouping…) |
-| `search_library` | Templates, text styles, stickers, sounds, backgrounds, transitions, effects, filters |
+| `search_library` | Templates, Motion clips, text styles, stickers, sounds, backgrounds, transitions, effects, filters |
 | `new_project` / `open_project` / `save_project` | Projects |
 | `import_media` | Import files, optionally placing them one after another |
-| `add_item` | Add media, a template, text, a sticker, a sound or a background |
+| `add_item` | Add media, a template, a ready-made Motion clip (any version), text, a sticker, a sound or a background |
 | `apply_to_clip` | Effect, filter or transition |
 | `update_clip` | Timing, text, size, colour, volume, opacity, speed, position, scale, rotation |
 | `delete_clips` / `split_clip` / `select_clips` / `set_playhead` | Editing basics |
@@ -105,7 +105,9 @@ trimmed, layered over video and exported like any clip.
   one of them its own copy.
 - **The Motion library.** Library ▸ Motion has ready-made clips (titles, lower thirds, subscribe and
   follow buttons, counters, charts, a progress ring, 3D logo reveals, confetti, particles, a colour
-  wipe) that work the same way: click or drag one onto the timeline and change it in the inspector.
+  wipe, a kinetic reel) that work the same way: click or drag one onto the timeline and change it in
+  the inspector. Every design comes in endless colour, font and style versions as you scroll. Claude
+  finds them with `search_library` (kind `motion`) and adds a version with `add_item`.
 - Clips are saved as `.kmotion` files in `Documents\Kinora\Motion`; you can also import a
   `.kmotion` file like any media.
 - **Sandboxed:** a clip runs in an isolated frame with no network, no access to your files or to

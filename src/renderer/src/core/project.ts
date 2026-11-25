@@ -628,21 +628,20 @@ export function fillSlot(p: Project, slotId: ID, asset: MediaAsset): ID | null {
   if (!slot || slot.type !== 'shape' || asset.kind === 'audio') return null;
   const shape = (slot as ShapeClip).shape;
   const { cw, ch } = designSize(p.settings);
-  const fit = fitContain(asset.width, asset.height, cw, ch);
   const slotAspect = shape.width / shape.height;
   const srcAspect = asset.width / asset.height;
   const crop = { l: 0, t: 0, r: 0, b: 0 };
-  let w = fit.w;
-  let h = fit.h;
   if (srcAspect > slotAspect) {
     const keep = slotAspect / srcAspect;
     crop.l = crop.r = (1 - keep) / 2;
-    w = fit.w * keep;
   } else {
     const keep = srcAspect / slotAspect;
     crop.t = crop.b = (1 - keep) / 2;
-    h = fit.h * keep;
   }
+  // The renderer fits the kept (cropped) part of the picture to the frame, then scales it.
+  const fit = fitContain(asset.width * (1 - crop.l - crop.r), asset.height * (1 - crop.t - crop.b), cw, ch);
+  const w = fit.w;
+  const h = fit.h;
   const base = {
     id: uid(asset.kind === 'video' ? 'vd_' : 'im_'),
     trackId: slot.trackId,

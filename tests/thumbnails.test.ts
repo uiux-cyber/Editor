@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { commitView, resolveEditPath } from '@/core/compound';
 import { makeImage, makeText } from '@/core/factory';
-import { createProject, parseProjectFile, serializeProject } from '@/core/project';
+import { createProject, fillSlot, fitContain, parseProjectFile, serializeProject } from '@/core/project';
+import { makeSlot } from '@/core/factory';
 import { createThumbnail, duplicateThumbnail, frameLayer, nextThumbnailName, thumbnailOfPath, thumbnailPathId, thumbnailProject } from '@/core/thumbnails';
 import type { MediaAsset, Project } from '@/core/types';
 
@@ -130,5 +131,25 @@ describe('thumbnails', () => {
   it('leaves projects without thumbnails unchanged', () => {
     const p = createProject({ width: 1920, height: 1080, fps: 30 });
     expect(parseProjectFile(serializeProject(p)).thumbnails).toBeUndefined();
+  });
+
+  it('fills a placeholder at exactly its size, in landscape and portrait projects', () => {
+    for (const [w, h] of [
+      [1920, 1080],
+      [1080, 1920],
+    ]) {
+      const p = createProject({ width: w, height: h, fps: 30 });
+      p.assets[frame.id] = { ...frame, width: 720, height: 720 };
+      const slot = makeSlot({ width: 390, height: 810, x: 0, y: 0 });
+      slot.trackId = p.tracks[0].id;
+      p.clips[slot.id] = slot;
+      const id = fillSlot(p, slot.id, p.assets[frame.id])!;
+      const c = p.clips[id];
+      if (c.type !== 'image') throw new Error('expected an image');
+      const crop = c.crop!;
+      const fit = fitContain(720 * (1 - crop.l - crop.r), 720 * (1 - crop.t - crop.b), w > h ? 1920 : 1080, w > h ? 1080 : 1920);
+      expect(fit.w * c.transform.scaleX).toBeCloseTo(390, 3);
+      expect(fit.h * c.transform.scaleY).toBeCloseTo(810, 3);
+    }
   });
 });

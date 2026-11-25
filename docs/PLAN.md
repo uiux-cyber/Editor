@@ -171,8 +171,12 @@ folder registers it automatically.
    sequences opened through the edit path like compound clips), frame capture, 14 thumbnail
    designs with background-removing person placeholders, A/B variants, a feed preview and JPG / PNG
    export; sample pictures in template previews.
-10. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
-11. **Content cadence**: monthly template and sticker drops through the same pack format.
+10. **1.7** — Reels: the `reel-kinetic` Motion clip (a script of beats with accent / italic markup,
+    grounds, details, picture areas) and 8 reel templates; Motion layers in templates
+    (`env.motion`, in-memory `motion` asset sources saved as .kmotion on apply); the endless
+    Motion library (palette × fonts × looks × words × seed); real serif italics.
+11. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
+12. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 

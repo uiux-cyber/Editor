@@ -12,10 +12,11 @@ import { preloadBundledFonts } from '@/engine/sources/text';
 import { NEUTRAL_GRADE } from '@/core/factory';
 import { Ease, seededRandom } from '@/core/easing';
 import { MAX_COUNTER_DECIMALS, formatCounter } from '@/core/counter';
-import type { Clip, ClipAnimations } from '@/core/types';
+import type { Clip, ClipAnimations, MediaAsset } from '@/core/types';
 import type { AnimMod, AspectId, FontPair, GlyphMod, Palette, TemplateEnv, TextPresetDef } from '@/library/types';
 import { packContent, validatePack } from '@/library/packs';
 import { registerContent } from '@/library';
+import { templateMotion } from '@/library/templateEngine';
 
 type Level = 'error' | 'warn';
 interface Issue {
@@ -586,7 +587,7 @@ function checkPaint(pack: string, id: string, paint: unknown, what: string): voi
   }
 }
 
-function checkClip(pack: string, id: string, clip: Clip, env: TemplateEnv, total: number): void {
+function checkClip(pack: string, id: string, clip: Clip, env: TemplateEnv, total: number, motionIds: ReadonlySet<string> = new Set()): void {
   const where = `[${env.aspect}] clip "${clip.name}"`;
   if (clip.trackId !== '') report(pack, id, 'error', `${where}: trackId must be empty`);
   if (!(clip.start >= 0) || !(clip.duration > 0) || !Number.isFinite(clip.start + clip.duration)) report(pack, id, 'error', `${where}: invalid timing`);
@@ -624,6 +625,8 @@ function checkClip(pack: string, id: string, clip: Clip, env: TemplateEnv, total
         if (!gen.params.some((p) => p.key === key)) report(pack, id, 'error', `${where}: generator "${gen.id}" has no param "${key}"`);
       }
     }
+  } else if (clip.type === 'image' && motionIds.has(clip.assetId)) {
+    // A Motion layer made with env.motion (an in-memory clip, saved as a file when applied).
   } else if (clip.type === 'video' || clip.type === 'image') {
     report(pack, id, 'error', `${where}: templates must not reference media assets (use makeSlot)`);
   }
@@ -659,6 +662,7 @@ function checkTemplates(): void {
     for (const aspect of aspects) {
       const [cw, ch] = ASPECTS[aspect];
       for (let v = 0; v < Math.max(palettes.length, fonts.length); v++) {
+        const motionAssets: MediaAsset[] = [];
         const env: TemplateEnv = {
           cw,
           ch,
@@ -669,6 +673,7 @@ function checkTemplates(): void {
           fonts: fonts[v % fonts.length],
           rng: seededRandom(1234 + v * 77),
           duration: def.duration,
+          motion: templateMotion({ cw, ch, palette: palettes[v % palettes.length], fonts: fonts[v % fonts.length], duration: def.duration, seed: 1234 + v, assets: motionAssets }),
         };
         try {
           const clips = def.build(env);
@@ -680,7 +685,7 @@ function checkTemplates(): void {
           for (const clip of clips) {
             if (ids.has(clip.id)) report('templates', def.id, 'error', `[${aspect}] duplicate clip id`);
             ids.add(clip.id);
-            checkClip('templates', def.id, clip, env, def.duration);
+            checkClip('templates', def.id, clip, env, def.duration, new Set(motionAssets.map((a) => a.id)));
             // Brand logo placeholders: a slot named "Logo", not too elongated, inside the frame.
             if (clip.name.trim().toLowerCase() === 'logo' && clip.type === 'shape') {
               const s = clip.shape;

@@ -4,7 +4,7 @@ const presets: MotionPresetDef[] = [
   {
     id: 'confetti',
     name: 'Confetti',
-    category: 'effects',
+    category: 'particles',
     about: 'Confetti bursts from the corners (or rains from the top) and flutters down.',
     duration: 4,
     params: [
@@ -81,7 +81,7 @@ const presets: MotionPresetDef[] = [
   {
     id: 'flow-particles',
     name: 'Flow particles',
-    category: 'effects',
+    category: 'particles',
     about: 'Thousands of glowing particles drift along a smooth noise field.',
     duration: 8,
     params: [
@@ -184,7 +184,7 @@ export default function setup(k) {
   {
     id: 'shape-wipe',
     name: 'Colour wipe',
-    category: 'effects',
+    category: 'transitions',
     about: 'Three colour bands sweep across and cover the frame: put it over a cut as a transition.',
     duration: 1.4,
     params: [

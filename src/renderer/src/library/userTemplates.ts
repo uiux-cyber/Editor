@@ -157,6 +157,8 @@ export function serializeSelection(project: Project, ids: ID[], opts: SaveOption
       assets[asset.id] = { ...asset, source: { type: 'generated', soundId: asset.source.soundId } };
       return true;
     }
+    // A Motion clip still held in memory (only for a moment after applying a template) is left out.
+    if (asset.source.type === 'motion') return false;
     if (!opts.embedMedia) return false;
     const file = mediaFileName(asset.source.path, usedNames);
     embed.push({ assetId: asset.id, from: asset.source.path, file });

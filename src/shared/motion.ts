@@ -39,7 +39,19 @@ export type MotionParamType = 'text' | 'color' | 'number' | 'font' | 'toggle' | 
 export type MotionValue = string | number | boolean;
 
 /** Brand kit roles a setting can follow (Motion library, "Use my brand"). */
-export type MotionBrandRole = 'primary' | 'secondary' | 'accent' | 'background' | 'text' | 'heading' | 'body' | 'logo' | 'name';
+export type MotionBrandRole =
+  | 'primary'
+  | 'secondary'
+  | 'accent'
+  | 'background'
+  | 'surface'
+  | 'text'
+  | 'muted'
+  | 'on-primary'
+  | 'heading'
+  | 'body'
+  | 'logo'
+  | 'name';
 
 export interface MotionParam {
   /** Name in k.params (letters, digits, _). */
@@ -64,7 +76,7 @@ export interface MotionParam {
 }
 
 export const MOTION_PARAM_TYPES: MotionParamType[] = ['text', 'color', 'number', 'font', 'toggle', 'select', 'image'];
-const BRAND_ROLES: MotionBrandRole[] = ['primary', 'secondary', 'accent', 'background', 'text', 'heading', 'body', 'logo', 'name'];
+export const MOTION_BRAND_ROLES: MotionBrandRole[] = ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'muted', 'on-primary', 'heading', 'body', 'logo', 'name'];
 const PARAM_ID = /^[A-Za-z_][\w]{0,40}$/;
 const COLOR = /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([^()]{1,60}\)|transparent)$/i;
 /** Most settings a clip can declare. */
@@ -121,7 +133,7 @@ export function normalizeMotionParams(raw: unknown): MotionParam[] {
       if (!p.options.length) continue;
     }
     if (type === 'text' && r.multiline === true) p.multiline = true;
-    if (typeof r.brand === 'string' && BRAND_ROLES.includes(r.brand as MotionBrandRole)) p.brand = r.brand as MotionBrandRole;
+    if (typeof r.brand === 'string' && MOTION_BRAND_ROLES.includes(r.brand as MotionBrandRole)) p.brand = r.brand as MotionBrandRole;
     p.default = validValue(p, r.default) ? (r.default as MotionValue) : fallbackValue(p);
     if (type === 'number') p.default = Math.min(p.max!, Math.max(p.min!, p.default as number));
     out.push(p);
@@ -157,6 +169,13 @@ export function motionParamValues(params: MotionParam[] | undefined, chosen: Rec
     else out[p.id] = p.default;
   }
   return out;
+}
+
+/** The Motion font for a Kinora font family ("Inter" → "Inter Variable"), or null when the sandbox does not have it. */
+export function motionFontFamily(family: string): string | null {
+  if (MOTION_FONTS.includes(family)) return family;
+  const variable = `${family} Variable`;
+  return MOTION_FONTS.includes(variable) ? variable : null;
 }
 
 /** Chosen values that differ from the defaults (what a project stores). */
@@ -470,7 +489,7 @@ Each setting: \`{ "id": "title", "type": "text", "label": "Title", "default": "S
 - \`select\` (\`options\`: list of strings)
 - \`image\` (a picture the user picks from the project: \`k.params.<id>\` is an ImageBitmap, or null when none is chosen)
 
-Optional \`"brand"\` links a setting to the user's brand kit: "primary", "secondary", "accent", "background", "text" (colours), "heading", "body" (fonts), "logo" (image), "name" (text). Speed: multiply time, e.g. \`const s = k.params.speed; return (t) => draw(Math.min(t * s, k.duration))\`.
+Optional \`"brand"\` links a setting to the user's brand kit: "primary", "secondary", "accent", "background", "surface" (panels and cards), "text", "muted" (secondary text), "on-primary" (text on the primary colour) (colours), "heading", "body" (fonts), "logo" (image), "name" (text). Speed: multiply time, e.g. \`const s = k.params.speed; return (t) => draw(Math.min(t * s, k.duration))\`.
 
 ## Libraries (import by name; all bundled, offline)
 
@@ -482,7 +501,7 @@ GSAP plugins (named imports from \`gsap/<Plugin>\`): SplitText, MorphSVGPlugin, 
 
 ## Fonts
 
-${MOTION_FONTS.map((f) => `"${f}"`).join(', ')}. Variable fonts accept any weight 100–900.
+${MOTION_FONTS.map((f) => `"${f}"`).join(', ')}. Variable fonts accept any weight 100–900. "Playfair Display Variable" and "DM Serif Display" also have real italics (\`'italic 500 80px "Playfair Display Variable"'\`).
 
 ## Examples
 

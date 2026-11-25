@@ -74,6 +74,7 @@ export function openInput(asset: MediaAsset): Input {
     if (!blob) throw new Error(`Sound "${asset.name}" is not ready yet.`);
     return new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
   }
+  if (asset.source.type === 'motion') throw new Error(`"${asset.name}" is a Motion clip, not a media file.`);
   const url = api.media.toUrl(asset.source.path);
   return new Input({ source: new UrlSource(url, { maxCacheSize: 32 * 1024 * 1024 }), formats: ALL_FORMATS });
 }
@@ -400,6 +401,11 @@ async function prepareAsset(asset: MediaAsset): Promise<void> {
     } catch {
       rt.patch(asset.id, { status: 'missing', url: null, note: 'This built-in sound is no longer available.' });
     }
+    return;
+  }
+  if (asset.source.type === 'motion') {
+    // Held in memory (a template layer being added): drawn by the Motion runtime, no file yet.
+    rt.patch(asset.id, { status: 'ready', url: null, thumb: current?.thumb ?? null });
     return;
   }
   const [info] = await api.fs.stat([asset.source.path]);

@@ -9,6 +9,24 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.7
+
+- **Reels:** Templates ▸ Reel has kinetic-typography reels and ads in the editorial style of
+  today's social motion design: a short script revealed beat by beat in a bold sans with serif
+  italics and a coloured, glowing accent word, on paper, grid, glow or dark grounds, with
+  editorial details, crossing arcs and stars, orbits or a ribbon, and a picture placeholder on
+  some beats (an object in a dotted ring, a cut-out person, a phone or a framed photo).
+- **Write your own:** the words are the clip's **Script** setting in the inspector: one line per
+  beat, `*accent*`, `_italic_`, and `/` for a line break. The same engine is in Library ▸ Motion
+  as **Kinetic reel**.
+- **Endless Motion library:** every Motion design now comes in endless colour, font and style
+  versions as you scroll, with search, categories and a shuffle button; Claude can search the
+  library and add any version.
+- **Motion layers in templates:** templates can include Motion clips; applying one saves them as
+  `.kmotion` files you can edit in the inspector.
+- **Fixed:** media dropped on a placeholder in a portrait project came out larger than the
+  placeholder.
+
 ## What's new in 1.6
 
 - **Thumbnails:** click **Thumbnail** in the title bar to design the video's cover picture. The
@@ -116,6 +134,7 @@ npm run typecheck                         # strict TypeScript for main, preload 
 npm run check                             # validate every content pack in real Chromium
 npm run check -- templates sounds         # validate selected packs
 npm run sheets -- --aspects=16:9,9:16     # template contact sheets → .sheets/
+node scripts/render-motion.mjs --files=reels --aspects=9:16,16:9   # Motion library contact sheets → .motion-sheets/
 node scripts/e2e.mjs export               # build, export every format, re-import and verify
 node scripts/e2e.mjs ui                   # drive the UI with real mouse and keyboard input
 node scripts/e2e.mjs ui --packaged        # same, against release/win-unpacked

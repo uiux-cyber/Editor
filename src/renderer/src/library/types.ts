@@ -17,7 +17,8 @@
  *     mat2 rot2(float radians), const float PI, const float TAU
  */
 
-import type { ClipAnimations, Clip, CounterSettings, Grade, MediaAsset, ParamValue, TextStyle } from '@/core/types';
+import type { CommonOpts } from '@/core/factory';
+import type { ClipAnimations, Clip, CounterSettings, Grade, ImageClip, MediaAsset, ParamValue, TextStyle } from '@/core/types';
 import type { BundledFontFamily } from './fonts';
 
 // ---------------------------------------------------------------------------------------------
@@ -400,7 +401,9 @@ export type TemplateCategory =
   | 'gaming'
   | 'news'
   /** Still cover pictures (Thumbnails): shown on their own, not in "All". */
-  | 'thumbnail';
+  | 'thumbnail'
+  /** Kinetic-typography reels and ads (a script revealed word by word). */
+  | 'reel';
 
 export type AspectId = '16:9' | '9:16' | '1:1' | '4:5';
 
@@ -417,6 +420,25 @@ export interface TemplateEnv {
   rng: () => number;
   /** Requested total duration in seconds. */
   duration: number;
+  /**
+   * A layer playing a design from the Motion library (`library/motion/`), styled with this
+   * template's palette and fonts (settings linked to palette roles), as a full-frame image layer.
+   * `values` set other settings (words, looks). Null when there is no such design.
+   */
+  motion: (presetId: string, opts?: TemplateMotionOptions) => ImageClip | null;
+}
+
+export interface TemplateMotionOptions {
+  /** Layer name (default: the design's name). */
+  name?: string;
+  /** Seconds from the template start (default 0). */
+  start?: number;
+  /** Seconds (default: to the end of the template). The clip's own timing stretches to it. */
+  duration?: number;
+  /** Settings (id → value), on top of the palette and fonts. */
+  values?: Record<string, string | number | boolean>;
+  /** Layer placement, animation and look (position, scale, opacity, blend, anim…). */
+  layer?: Omit<CommonOpts, 'name' | 'start' | 'duration'>;
 }
 
 /**

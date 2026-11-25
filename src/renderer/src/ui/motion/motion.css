@@ -24,7 +24,7 @@
   font: inherit;
   text-align: left;
 }
-.motion-tile:disabled {
+.motion-tile.is-busy {
   cursor: progress;
   opacity: 0.6;
 }

@@ -9,6 +9,8 @@
  *   composition centre (y grows downwards). This keeps projects resolution independent.
  */
 
+import type { MotionMeta } from '@shared/motion';
+
 export type ID = string;
 
 export const DESIGN_SHORT_SIDE = 1080;
@@ -23,7 +25,12 @@ export type AssetKind = 'video' | 'audio' | 'image' | 'animation';
 export type AssetSource =
   | { type: 'file'; path: string }
   /** A sound synthesised by the built-in sound library; regenerated on load from its id. */
-  | { type: 'generated'; soundId: string };
+  | { type: 'generated'; soundId: string }
+  /**
+   * A Motion clip held in memory (a template layer in a library thumbnail, or one being added):
+   * applying a template saves it as a .kmotion file and switches the asset to `file`.
+   */
+  | { type: 'motion'; code: string; meta: MotionMeta };
 
 export interface MediaAsset {
   id: ID;

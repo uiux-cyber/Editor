@@ -62,7 +62,8 @@ export function stableStringify(value: unknown): string {
 /** Facts of a media file that change its pixels (not the proxy, which only feeds the preview). */
 function assetFacts(asset: MediaAsset | undefined): string {
   if (!asset) return 'missing';
-  const src = asset.source.type === 'file' ? asset.source.path.toLowerCase() : `gen:${asset.source.soundId}`;
+  const s = asset.source;
+  const src = s.type === 'file' ? s.path.toLowerCase() : s.type === 'generated' ? `gen:${s.soundId}` : `motion:${hashString(s.code)}:${hashString(JSON.stringify(s.meta))}`;
   return `${asset.id}|${src}|${asset.size}|${asset.width}x${asset.height}|${asset.duration}|${asset.fps}|${asset.hdr ? 'hdr' : 'sdr'}`;
 }
 

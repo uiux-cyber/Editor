@@ -80,7 +80,7 @@ import {
   unlinkSelection,
   type Placement,
 } from '../actions';
-import { addMotionPresetById } from '../motion/actions';
+import { addMotionPresetById, addMotionVariation } from '../motion/actions';
 import { useElementSize } from '../common/controls';
 import { openContextMenu, type MenuItem } from '../common/overlays';
 import { registerDropTarget, type DragPayload } from '../dnd';
@@ -1132,7 +1132,7 @@ export function Timeline(): ReactNode {
             addGenerator(payload.generatorId, where);
             break;
           case 'motion':
-            void addMotionPresetById(payload.presetId, where);
+            void (payload.variation ? addMotionVariation(payload.variation, where) : addMotionPresetById(payload.presetId, where));
             break;
           case 'adjustment':
             addAdjustment(where);

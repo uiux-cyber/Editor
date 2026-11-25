@@ -164,11 +164,48 @@ export default async function motion({ win, run, root, sleep, shot }) {
   await win.click('[data-tab="motion"]');
   await win.waitForSelector('[data-motion-preset="count-up"]', { timeout: 10000 });
   const tiles = await win.locator('[data-motion-preset]').count();
-  expect(tiles === presets.length, `the Motion tab shows every ready-made clip (${tiles})`);
-  await win.waitForFunction(() => document.querySelectorAll('.motion-tile__loading').length === 0, null, { timeout: 60000 });
-  const posterErrors = await win.locator('.motion-tile__error').count();
-  expect(posterErrors === 0, 'every tile shows a preview');
+  expect(tiles >= presets.length, `the Motion tab shows every ready-made clip on its first page (${tiles} tiles)`);
+  // Posters render for the tiles on screen (the rest render as they scroll into view).
+  const onScreen = () =>
+    run(() => {
+      // Visible inside the library panel (which scrolls and ends above the timeline).
+      const box = document.querySelector('.lib__scroll').getBoundingClientRect();
+      const list = [...document.querySelectorAll('.motion-tile')].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return r.bottom > box.top && r.top < box.bottom && r.width > 0;
+      });
+      return {
+        total: list.length,
+        loading: list.filter((el) => el.querySelector('.motion-tile__loading')).length,
+        failed: list.filter((el) => el.querySelector('.motion-tile__error')).map((el) => el.dataset.motionPreset),
+      };
+    });
+  const t0 = Date.now();
+  let seen = await onScreen();
+  while (seen.loading > 0 && Date.now() - t0 < 60000) {
+    await sleep(300);
+    seen = await onScreen();
+  }
+  expect(seen.total > 0 && seen.loading === 0 && seen.failed.length === 0, `every tile on screen shows a preview (${JSON.stringify(seen)})`);
   await shot('motion-01-library');
+  // Endless: scrolling to the end adds restyled versions; search narrows the designs.
+  await run(() => {
+    const el = document.querySelector('.lib__scroll');
+    el.scrollTop = el.scrollHeight;
+  });
+  await sleep(1200);
+  const more = await run(() => ({ tiles: document.querySelectorAll('[data-motion-preset]').length, restyled: [...document.querySelectorAll('[data-motion-version]')].filter((el) => !/:own:/.test(el.dataset.motionVersion)).length }));
+  expect(more.tiles > tiles && more.restyled > 0, `scrolling adds restyled versions (${more.tiles} tiles, ${more.restyled} restyled)`);
+  await win.fill('.lib__search input', 'kinetic');
+  await sleep(500);
+  const found = await run(() => [...new Set([...document.querySelectorAll('[data-motion-preset]')].map((el) => el.dataset.motionPreset))]);
+  expect(found.includes('reel-kinetic') && found.includes('kinetic-title') && !found.includes('count-up'), `search finds the kinetic designs (${found.join(', ')})`);
+  await win.fill('.lib__search input', '');
+  await sleep(500);
+  await run(() => {
+    document.querySelector('.lib__scroll').scrollTop = 0;
+  });
+  await sleep(300);
   await win.click('[data-motion-preset="count-up"]');
   await win.waitForSelector('[data-section="motion"] [data-motion-param="label"]', { timeout: 15000 });
   const added = await run(() => {

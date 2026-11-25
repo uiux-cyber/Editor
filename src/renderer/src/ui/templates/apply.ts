@@ -17,7 +17,7 @@ import {
 import { snapToFrame } from "@/core/time";
 import type { AudioClip, Clip, ID, MediaAsset, Project } from "@/core/types";
 import { engine } from "@/engine/engine";
-import { addSoundAsset, useAssetRuntime } from "@/engine/media/assets";
+import { addSoundAsset, prepareAddedAsset, refreshAnimationPoster, useAssetRuntime } from "@/engine/media/assets";
 import { getSound, getTemplate } from "@/library";
 import { brandFontPair, brandPalette } from "@/library/brand";
 import { applyBrandStyle, isBrandStylable } from "@/library/brandStyle";
@@ -27,11 +27,13 @@ import {
 } from "@/library/templateEngine";
 import type { TemplateDef, TemplateMusic } from "@/library/types";
 import { api } from "@/platform/api";
+import type { FileInfo } from "@shared/ipc";
+import { serializeMotionFile } from "@shared/motion";
 import { getProject, updateProject, useProjectStore } from "@/store/project";
 import { toast, useUI } from "@/store/ui";
 import { t, tk } from "../i18n";
 import { newProject } from "../projectIO";
-import { templateThumbProject, type ThumbSpec } from "../library/thumbs";
+import { templateThumbProject, type ThumbMotion, type ThumbSpec } from "../library/thumbs";
 import { useTemplates } from "./store";
 
 /** Defaults for template music beds. */
@@ -61,6 +63,42 @@ function prepareFileAssets(assets: MediaAsset[]): void {
           ? api.media.toUrl(a.source.path)
           : (current?.thumb ?? null),
     });
+  }
+}
+
+/** A template's in-memory Motion layer, sized for the project (real pixels and frame rate). */
+function motionForProject(a: MediaAsset, settings: Project["settings"]): MediaAsset {
+  if (a.source.type !== "motion") return a;
+  const meta = { ...a.source.meta, width: settings.width, height: settings.height, fps: settings.fps };
+  return { ...a, width: settings.width, height: settings.height, fps: settings.fps, source: { ...a.source, meta } };
+}
+
+/**
+ * Save a template's Motion layers as .kmotion files (Documents\Kinora\Motion) and point their
+ * assets at them, so they behave like any Motion clip (settings in the inspector, Claude…).
+ * Inside the template's transaction: one undo step.
+ */
+async function saveMotionLayers(assets: MediaAsset[]): Promise<void> {
+  for (const a of assets) {
+    if (a.source.type !== "motion") continue;
+    try {
+      const file = await api.call<FileInfo>("x:motion:save", a.name, serializeMotionFile(a.source.meta, a.source.code));
+      updateProject((p) => {
+        const cur = p.assets[a.id];
+        if (cur?.source.type === "motion") {
+          cur.source = { type: "file", path: file.path };
+          cur.size = file.size;
+        }
+      });
+      const saved = getProject().assets[a.id];
+      if (saved) {
+        await prepareAddedAsset(saved);
+        void refreshAnimationPoster(saved);
+      }
+    } catch (err) {
+      // The layer keeps working from memory; only its settings panel needs the file.
+      console.warn("[templates] could not save a Motion layer", err);
+    }
   }
 }
 
@@ -113,9 +151,10 @@ export function applyTemplateVariation(
   if (music) pending.push({ soundId: music.soundId, music });
   const fileAssets = built.assets.filter((a) => a.source.type === "file");
   prepareFileAssets(fileAssets);
+  const motionAssets = built.assets.filter((a) => a.source.type === "motion").map((a) => motionForProject(a, project.settings));
 
   const store = useProjectStore.getState();
-  const transaction = pending.length > 0;
+  const transaction = pending.length > 0 || motionAssets.length > 0;
   // History labels stay English (tk marks them for the History panel, which translates them).
   if (transaction) store.begin(tk("Apply template"));
   let ids: ID[] = [];
@@ -123,6 +162,7 @@ export function applyTemplateVariation(
   updateProject(
     (p) => {
       addAssets(p, fileAssets);
+      addAssets(p, motionAssets);
       ids = layers.length
         ? insertTemplateLayers(p, layers, at, p.settings.fps)
         : [];
@@ -131,11 +171,13 @@ export function applyTemplateVariation(
     { label: tk("Apply template") },
   );
   if (ids.length) useUI.getState().select(ids);
+  for (const a of motionAssets) void prepareAddedAsset(a);
   if (!transaction) return { ids, done: Promise.resolve(ids) };
 
   const done = (async (): Promise<ID[]> => {
     const added: ID[] = [];
     try {
+      await saveMotionLayers(motionAssets);
       for (const s of pending) {
         const asset = await addSoundAsset(s.soundId);
         updateProject((p) => {
@@ -278,12 +320,22 @@ export function templateThumbSpec(
   const built = buildTemplate(v, cw, ch);
   if (!built) return null;
   const project = templateThumbProject(built.clips, w, h, cw, ch, v.seed);
-  for (const a of built.assets)
+  const motion: ThumbMotion[] = [];
+  for (const raw of built.assets) {
+    let a = raw;
+    if (a.source.type === "motion") {
+      // Thumbnails render Motion layers at the thumbnail's own size (layout uses the asset size).
+      a = { ...a, source: { ...a.source, meta: { ...a.source.meta, width: w, height: h, fps: 24 } } };
+      const clip = built.clips.find((c) => "assetId" in c && c.assetId === a.id);
+      motion.push({ asset: a, start: clip?.start ?? 0 });
+    }
     if (!project.assets[a.id]) project.assets[a.id] = a;
+  }
   return {
     project,
     poster: built.duration * (built.def.poster ?? 0.6),
     from: 0,
     to: built.duration,
+    ...(motion.length ? { motion } : {}),
   };
 }

@@ -522,5 +522,38 @@ export default async function templates(ctx) {
   console.log(`  music RMS ${rms.toFixed(4)}`);
   expect(rms > 0.01, 'the exported sound contains the music bed');
 
+    // =============================================================================================
+  // 4. Motion layers: modern templates play Motion clips, saved as .kmotion files when applied
+  // =============================================================================================
+  await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
+  const motionRes = await run(async (out) => {
+    const k = window.__kinora;
+    await k.projectIO.newProject({ name: 'Motion template', width: 1280, height: 720, fps: 30 });
+    const def = k.templates.getTemplate('reel-ideas');
+    if (!def) return { error: 'no reel-ideas' };
+    const { done } = k.templates.apply(k.templates.variationFor(def, 2), { time: 0 });
+    const ids = await done;
+    const st = k.useProjectStore.getState();
+    const p = st.project;
+    const motion = ids.map((id) => p.clips[id]).filter((c) => c && c.type === 'image' && p.assets[c.assetId]?.format === 'motion');
+    const a = motion[0] && p.assets[motion[0].assetId];
+    const file = a?.source.type === 'file' ? await k.motion.readMotionFile(a.source.path).catch(() => null) : null;
+    const settings = { container: 'png', videoCodec: 'avc', width: 640, height: 360, fps: 30, quality: 'medium', audio: false, start: 3, end: 3, hardware: 'no-preference', fastStart: false };
+    let exported = 'ok';
+    try {
+      await k.exporter.exportProject(p, settings, out, () => {}, new AbortController().signal);
+    } catch (err) {
+      exported = String(err?.message ?? err);
+    }
+    return { n: motion.length, source: a?.source, size: [a?.width, a?.height], meta: file?.meta, past: st.past.length, exported };
+  }, path.join(outDir, 'templates-motion.png'));
+  console.log(`  motion layer: ${JSON.stringify({ ...motionRes, meta: motionRes.meta && { w: motionRes.meta.width, h: motionRes.meta.height, d: motionRes.meta.duration, params: motionRes.meta.params?.length } })}`);
+  expect(motionRes.n >= 1, 'applying a modern template adds its Motion layer');
+  expect(motionRes.source?.type === 'file' && /\.kmotion$/i.test(motionRes.source.path) && existsSync(motionRes.source.path), 'the Motion layer is saved as a .kmotion file');
+  expect(motionRes.meta?.width === 1280 && motionRes.meta?.height === 720 && motionRes.size[0] === 1280, 'it is made at the project size');
+  expect((motionRes.meta?.params?.length ?? 0) > 0, 'its settings (words, colours, fonts) are editable in the inspector');
+  expect(motionRes.past === 1, 'the template and its Motion layer are one undo step');
+  expect(motionRes.exported === 'ok' && existsSync(path.join(outDir, 'templates-motion.png')), `a frame with the Motion layer exports (${motionRes.exported})`);
+
   await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
 }

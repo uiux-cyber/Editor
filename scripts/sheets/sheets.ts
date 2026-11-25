@@ -12,7 +12,7 @@ import { ensureFont, preloadBundledFonts } from '@/engine/sources/text';
 import { FONT_PAIRS, PALETTES, TEMPLATES } from '@/library';
 import { ASPECT_SIZES, buildTemplate, supportsAspect, type TemplateVariation } from '@/library/templateEngine';
 import type { AspectId } from '@/library/types';
-import { demoProvider, templateThumbProject } from '@/ui/library/thumbs';
+import { demoProvider, prepareMotion, releaseMotion, templateThumbProject, type ThumbMotion } from '@/ui/library/thumbs';
 
 declare global {
   interface Window {
@@ -71,17 +71,30 @@ async function main(): Promise<void> {
           continue;
         }
         const project = templateThumbProject(built.clips, cellW, cellH, cw, ch, v.seed);
+        // Motion layers (in-memory clips) render at twice the cell size, like a sharp thumbnail.
+        const motion: ThumbMotion[] = [];
+        for (const raw of built.assets) {
+          let a = raw;
+          if (a.source.type === 'motion') {
+            a = { ...a, source: { ...a.source, meta: { ...a.source.meta, width: cellW * 2, height: cellH * 2, fps: 30 } } };
+            const clip = built.clips.find((c) => 'assetId' in c && c.assetId === a.id);
+            motion.push({ asset: a, start: clip?.start ?? 0 });
+          }
+          if (!project.assets[a.id]) project.assets[a.id] = a;
+        }
         await Promise.all(built.clips.map((c) => (c.type === 'text' ? ensureFont(c.text) : Promise.resolve())));
         compositor.setSize(cellW, cellH);
         for (let f = 0; f < FRAMES.length; f++) {
           const frac = FRAMES[f] < 0 ? (def.poster ?? 0.6) : FRAMES[f];
           try {
+            if (motion.length) await prepareMotion(motion, built.duration * frac);
             compositor.render(project, built.duration * frac, provider);
             ctx.drawImage(compositor.canvas as CanvasImageSource, 6 + f * (cellW + 6), y + label, cellW, cellH);
           } catch (err) {
             problems.push(`${def.id} [${aspect}] render failed: ${(err as Error).message}`);
           }
         }
+        if (motion.length) releaseMotion(motion);
       }
       const name = `${category || 'templates'}-${aspect.replace(':', 'x')}-${String(++sheetCount).padStart(2, '0')}.png`;
       await window.sheets.save(name, sheet.toDataURL('image/png'));

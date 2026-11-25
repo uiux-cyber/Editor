@@ -5,11 +5,15 @@
  */
 
 import { hashString, seededRandom } from '@/core/easing';
+import { makeImage, uid } from '@/core/factory';
 import { fitContain } from '@/core/project';
+import { motionFontFamily, normalizeMotionMeta, type MotionValue } from '@shared/motion';
+import { getMotionPreset } from './motionPresets';
+import { themeValues } from './motionVariations';
 import type { Clip, ImageClip, Keyframe, MediaAsset, ShapeClip } from '@/core/types';
 import { BRAND_FONTS_ID, BRAND_PALETTE_ID } from './brand';
 import { FONT_PAIRS, PALETTES, TEMPLATES, getFontPair, getPalette, getTemplate } from './index';
-import type { AspectId, FontPair, Palette, TemplateCategory, TemplateDef } from './types';
+import type { AspectId, FontPair, Palette, TemplateCategory, TemplateDef, TemplateEnv, TemplateMotionOptions } from './types';
 
 export interface TemplateVariation {
   /** Unique, stable key. */
@@ -124,6 +128,43 @@ export function fillLogoSlots(clips: Clip[], logo: MediaAsset, cw: number, ch: n
   });
 }
 
+/**
+ * `env.motion` for a build: Motion library designs as full-frame layers, styled with the palette
+ * and fonts. The in-memory clips are collected in `assets` (applying a template saves them as
+ * .kmotion files).
+ */
+export function templateMotion(o: { cw: number; ch: number; palette: Palette; fonts: FontPair; duration: number; seed: number; assets: MediaAsset[] }): TemplateEnv['motion'] {
+  let n = 0;
+  return (presetId: string, opts: TemplateMotionOptions = {}) => {
+    const preset = getMotionPreset(presetId);
+    if (!preset) return null;
+    const start = Math.max(0, opts.start ?? 0);
+    const duration = Math.max(0.2, opts.duration ?? o.duration - start);
+    const chosen: Record<string, MotionValue> = { ...themeValues(preset.params, { palette: o.palette, fonts: o.fonts }, motionFontFamily), ...(opts.values ?? {}) };
+    const params = preset.params.map((p) => (p.id in chosen ? { ...p, default: chosen[p.id] } : p));
+    const name = opts.name ?? preset.name;
+    const seed = ((o.seed ^ Math.imul(++n, 0x9e3779b1)) >>> 0) || 1;
+    const meta = normalizeMotionMeta({ name, width: o.cw, height: o.ch, duration, fps: 30, seed, params }, { width: o.cw, height: o.ch, fps: 30, name });
+    const asset: MediaAsset = {
+      id: uid('tm_'),
+      kind: 'animation',
+      format: 'motion',
+      name,
+      source: { type: 'motion', code: preset.code, meta },
+      duration: meta.duration,
+      width: o.cw,
+      height: o.ch,
+      fps: meta.fps,
+      hasVideo: true,
+      hasAudio: false,
+      size: 0,
+      addedAt: 0,
+    };
+    o.assets.push(asset);
+    return makeImage(asset, { ...(opts.layer ?? {}), name, start, duration });
+  };
+}
+
 export interface BuiltTemplate {
   clips: Clip[];
   duration: number;
@@ -138,6 +179,9 @@ export function buildTemplate(v: TemplateVariation, cw: number, ch: number, dura
   if (!def) return null;
   const total = duration ?? def.duration;
   const branded = isBrandVariation(v) ? brand : null;
+  const palette = branded?.palette ?? getPalette(v.paletteId) ?? PALETTES[0] ?? FALLBACK_PALETTE;
+  const fonts = branded?.fonts ?? getFontPair(v.fontPairId) ?? FONT_PAIRS[0] ?? FALLBACK_FONTS;
+  const motionAssets: MediaAsset[] = [];
   try {
     let clips = def.build({
       cw,
@@ -145,13 +189,15 @@ export function buildTemplate(v: TemplateVariation, cw: number, ch: number, dura
       aspect: aspectIdFor(cw, ch),
       portrait: ch > cw * 1.05,
       square: Math.abs(cw - ch) < cw * 0.05,
-      palette: branded?.palette ?? getPalette(v.paletteId) ?? PALETTES[0] ?? FALLBACK_PALETTE,
-      fonts: branded?.fonts ?? getFontPair(v.fontPairId) ?? FONT_PAIRS[0] ?? FALLBACK_FONTS,
+      palette,
+      fonts,
       rng: seededRandom(v.seed),
       duration: total,
+      motion: templateMotion({ cw, ch, palette, fonts, duration: total, seed: v.seed, assets: motionAssets }),
     });
     clips = clips.filter((c) => c.duration > 0 && c.start >= 0);
-    const assets: MediaAsset[] = [...(def.assets ?? [])];
+    const used = new Set(clips.map((c) => ('assetId' in c ? c.assetId : '')));
+    const assets: MediaAsset[] = [...(def.assets ?? []), ...motionAssets.filter((a) => used.has(a.id))];
     if (branded?.logo && clips.some(isLogoSlot)) {
       clips = fillLogoSlots(clips, branded.logo, cw, ch);
       assets.push(branded.logo);
@@ -201,7 +247,7 @@ export function variationFor(def: TemplateDef, n: number, useBrand = false): Tem
 }
 
 /** Display order of template categories (most used first). */
-export const TEMPLATE_CATEGORY_ORDER: TemplateCategory[] = ['thumbnail', 'intro', 'title', 'social', 'promo', 'youtube', 'slideshow', 'lower-third', 'outro', 'quote', 'business', 'event', 'vlog', 'news', 'gaming', 'countdown'];
+export const TEMPLATE_CATEGORY_ORDER: TemplateCategory[] = ['reel', 'thumbnail', 'intro', 'title', 'social', 'promo', 'youtube', 'slideshow', 'lower-third', 'outro', 'quote', 'business', 'event', 'vlog', 'news', 'gaming', 'countdown'];
 
 const categoryRank = (c: TemplateCategory): number => {
   const i = TEMPLATE_CATEGORY_ORDER.indexOf(c);

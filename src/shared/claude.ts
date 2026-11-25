@@ -70,7 +70,7 @@ const MOTION_PARAMS: Schema = {
       suffix: { type: 'string', description: 'number: unit shown after the value, e.g. " s" or "%".' },
       options: { type: 'array', items: { type: 'string' }, description: 'select: the choices.' },
       multiline: { type: 'boolean', description: 'text: several lines.' },
-      brand: { type: 'string', enum: ['primary', 'secondary', 'accent', 'background', 'text', 'heading', 'body', 'logo', 'name'], description: 'Link to the user’s brand kit.' },
+      brand: { type: 'string', enum: ['primary', 'secondary', 'accent', 'background', 'surface', 'text', 'muted', 'on-primary', 'heading', 'body', 'logo', 'name'], description: 'Link to the user’s brand kit.' },
     },
     required: ['id', 'type', 'label', 'default'],
     additionalProperties: false,
@@ -101,7 +101,7 @@ const tool = (name: string, title: string, description: string, inputSchema: Sch
   },
 });
 
-export const LIBRARY_KINDS = ['templates', 'text_styles', 'stickers', 'sounds', 'backgrounds', 'transitions', 'effects', 'filters'] as const;
+export const LIBRARY_KINDS = ['templates', 'motion', 'text_styles', 'stickers', 'sounds', 'backgrounds', 'transitions', 'effects', 'filters'] as const;
 export const ASPECT_IDS = ['16:9', '9:16', '1:1', '4:5', '21:9'] as const;
 
 export const TOOLS: ToolDef[] = [
@@ -151,17 +151,17 @@ export const TOOLS: ToolDef[] = [
   tool(
     'add_item',
     'Add to the timeline',
-    'Add something to the timeline: imported media (id from get_project), a template, text (with an optional text style), a sticker, a sound or an animated background (ids from search_library). Placed at `time` (default: the playhead) on a free track.',
+    'Add something to the timeline: imported media (id from get_project), a template, a ready-made Motion clip (animated titles, lower thirds, callouts, charts, transitions, particles, 3D…), text (with an optional text style), a sticker, a sound or an animated background (ids from search_library). Placed at `time` (default: the playhead) on a free track. A Motion clip’s words, colours and fonts can then be changed with update_motion (values).',
     obj(
       {
-        kind: { type: 'string', enum: ['media', 'template', 'text', 'sticker', 'sound', 'background'] },
+        kind: { type: 'string', enum: ['media', 'template', 'motion', 'text', 'sticker', 'sound', 'background'] },
         id: str('Media id or library id (optional for text).'),
         text: str('Text to show (kind "text"; replaces the style\'s sample text).'),
         time: num('Start time in seconds.', { minimum: 0 }),
         duration: num('Length in seconds (text, stickers, backgrounds, images).', { exclusiveMinimum: 0 }),
         track_id: str('Preferred track id.'),
-        variant: num('Template look: 0 is the first variation, other numbers give other colours / fonts / layouts.', { minimum: 0 }),
-        use_brand: bool("Style the template with the user's brand kit (when set up)."),
+        variant: num('Template or Motion clip look: 0 is the design as made, other numbers give other colours / fonts / layouts.', { minimum: 0 }),
+        use_brand: bool("Style the template or Motion clip with the user's brand kit (when set up)."),
       },
       ['kind'],
     ),
@@ -283,7 +283,8 @@ export const SERVER_INSTRUCTIONS = [
   'Every change is one undo step in Kinora\'s History panel, labelled "Claude: …", so the user can review or revert it.',
   'Captions, silence/filler detection, vision features and exports run in the background: poll get_status until they finish before relying on the result.',
   'Use capture_frame to check how things look. Replacing or deleting files on disk always asks the user in Kinora first.',
-  'For custom animation (kinetic type, 3D, charts, physics, generative art), write a Motion clip: read motion_guide, then create_motion.',
+  'Kinora has a library of 100+ ready-made Motion clips (titles, lower thirds, callouts, social, charts, countdowns, transitions, particles, 3D, overlays…): search_library with kind "motion", add one with add_item (kind "motion"), then set its words and colours with update_motion (values).',
+  'For custom animation beyond that (kinetic type, 3D, charts, physics, generative art), write a Motion clip: read motion_guide, then create_motion.',
 ].join(' ');
 
 // ---------------------------------------------------------------------------------------------

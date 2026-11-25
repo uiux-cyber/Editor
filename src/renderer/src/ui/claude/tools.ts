@@ -19,6 +19,8 @@ import { defaultRangeMode, resolveRange, type RangeMode } from '@/engine/export/
 import { defaultCustom, outputName, planTarget, type CustomSettings, type ExportOptions, type PlannedTarget } from '@/engine/export/targets';
 import { EFFECTS, FILTERS, GENERATORS, SOUNDS, STICKERS, TEMPLATES, TEXT_PRESETS, TRANSITIONS, getEffect, getFilter, getGenerator, getSound, getSticker, getTemplate, getTextPreset, getTransition } from '@/library';
 import { variationFor } from '@/library/templateEngine';
+import { MOTION_PRESETS, getMotionPreset } from '@/library/motionPresets';
+import { variationOf } from '@/library/motionVariations';
 import { api } from '@/platform/api';
 import { testMotion } from '@/engine/media/motion';
 import { getProject, getRootProject, updateProject, useProjectStore } from '@/store/project';
@@ -36,6 +38,9 @@ import { t } from '../i18n';
 import { getSetting } from '../settings/store';
 import { useSpeech } from '../speech/store';
 import { applyTemplateVariation } from '../templates/apply';
+import { addMotionVariation } from '../motion/actions';
+import { brandTheme, motionLibrary } from '../motion/library';
+import { useTemplates } from '../templates/store';
 import { requestApproval } from './store';
 
 type Args = Record<string, unknown>;
@@ -238,6 +243,15 @@ function libraryItems(kind: (typeof LIBRARY_KINDS)[number]): LibItem[] {
   switch (kind) {
     case 'templates':
       return TEMPLATES.map((d) => item(d, d.tags, { duration: d.duration, ...(d.aspects ? { aspects: d.aspects } : {}), ...(d.music ? { music: true } : {}) }));
+    case 'motion':
+      return MOTION_PRESETS.map((d) =>
+        item(d, [...(d.tags ?? []), d.about], {
+          about: d.about,
+          duration: d.duration,
+          ...(d.fullFrame ? { full_frame: true } : {}),
+          settings: d.params.map((p) => `${p.id} (${p.type}${p.type === 'select' && p.options ? `: ${p.options.join(' | ')}` : ''})`),
+        }),
+      );
     case 'text_styles':
       return TEXT_PRESETS.map((d) => item(d));
     case 'stickers':
@@ -402,6 +416,15 @@ async function addItemTool(args: Args): Promise<ToolResult> {
         ids = await applyTemplateVariation(v, { time: where.time }).done;
         break;
       }
+      case 'motion': {
+        const preset = getMotionPreset(need('motion'));
+        if (!preset) throw new ToolError(`No Motion clip "${id}". Use search_library with kind "motion".`);
+        const { brandSet } = useTemplates.getState();
+        const brand = bool(args, 'use_brand') === true && brandSet ? { theme: brandTheme(), revision: useTemplates.getState().brand.revision } : null;
+        const v = variationOf(motionLibrary(), preset, Math.max(0, Math.round(num(args, 'variant') ?? 0)), brand);
+        ids = await addMotionVariation(v, where);
+        break;
+      }
       case 'text': {
         if (id && !getTextPreset(id)) throw new ToolError(`No text style "${id}". Use search_library with kind "text_styles".`);
         ids = addText(id ?? null, where);
@@ -428,9 +451,9 @@ async function addItemTool(args: Args): Promise<ToolResult> {
         ids = addGenerator(id!, where);
         break;
       default:
-        throw new ToolError('"kind" must be media, template, text, sticker, sound or background.');
+        throw new ToolError('"kind" must be media, template, motion, text, sticker, sound or background.');
     }
-    if (duration && ids.length && kind !== 'template' && kind !== 'media' && kind !== 'sound') {
+    if (duration && ids.length && kind !== 'template' && kind !== 'media' && kind !== 'sound' && kind !== 'motion') {
       editClips(ids, (c) => {
         c.duration = duration;
       });

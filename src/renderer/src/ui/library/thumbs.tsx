@@ -11,6 +11,7 @@ import { fillLogoSlots, isLogoSlot } from '@/library/templateEngine';
 import { SAMPLE_COUNT, SAMPLE_LOGO_ID, SAMPLE_SIZE, sampleAsset, sampleIndex, sampleLogoPicture, samplePersonAsset, samplePersonIndex, samplePersonPicture, samplePicture } from './samples';
 import type { Clip, ID, MediaAsset, Project, ShapeClip } from '@/core/types';
 import { Compositor, type FrameImage, type MediaProvider } from '@/engine/compositor';
+import { animationFrame, ensureAnimationFrame, forgetAnimation } from '@/engine/media/animated';
 
 // ---------------------------------------------------------------------------------------------
 // Demo pictures (drawn once, used to preview filters, effects and transitions)
@@ -180,11 +181,16 @@ export function setExtraThumbImages(fn: ((assetId: ID) => FrameImage | null) | n
   extraImages = fn;
 }
 
+// Motion clips held in memory (template layers) that thumbnails are showing right now.
+const motionAssets = new Map<ID, MediaAsset>();
+
 export const demoProvider: MediaProvider = {
   videoFrame: (clip) => extraImages?.(clip.assetId) ?? null,
-  image: (assetId) => {
+  image: (assetId, time, hint) => {
     if (assetId === 'demo-a') return { source: (demoA ??= demoCanvas(drawDemoA)), width: DEMO_W, height: DEMO_H, version: 1 };
     if (assetId === 'demo-b') return { source: (demoB ??= demoCanvas(drawDemoB)), width: DEMO_W, height: DEMO_H, version: 2 };
+    const motion = motionAssets.get(assetId);
+    if (motion) return animationFrame(motion, time ?? 0, hint);
     if (assetId === SAMPLE_LOGO_ID) return { source: sampleLogoPicture(), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 99 };
     const person = samplePersonIndex(assetId);
     if (person !== null) return { source: samplePersonPicture(person), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 90 + person };
@@ -193,6 +199,51 @@ export const demoProvider: MediaProvider = {
     return extraImages?.(assetId) ?? null;
   },
 };
+
+/** A Motion layer of a thumbnail project and when its clip starts. */
+export interface ThumbMotion {
+  asset: MediaAsset;
+  start: number;
+}
+
+const clipTime = (m: ThumbMotion, t: number): number => Math.min(Math.max(0, t - m.start), Math.max(0, m.asset.duration - 1 / 60));
+
+/** Start the Motion layers of a thumbnail and wait (bounded) for their frames at `time`. */
+export async function prepareMotion(list: ThumbMotion[], time: number): Promise<void> {
+  for (const m of list) motionAssets.set(m.asset.id, m.asset);
+  const wait = Promise.all(list.map((m) => ensureAnimationFrame(m.asset, clipTime(m, time)).catch(() => undefined)));
+  await Promise.race([wait, new Promise((r) => setTimeout(r, 12000))]);
+}
+
+/** Close the Motion layers of a thumbnail (their sandboxes are heavy). */
+export function releaseMotion(list: ThumbMotion[]): void {
+  for (const m of list) {
+    motionAssets.delete(m.asset.id);
+    forgetAnimation(m.asset.id);
+  }
+}
+
+// Posters with Motion layers start sandboxes: a couple at a time, newest request first.
+const motionJobs: Array<() => Promise<void>> = [];
+let motionRunning = 0;
+function pumpMotion(): void {
+  while (motionRunning < 2 && motionJobs.length) {
+    const job = motionJobs.pop()!;
+    motionRunning++;
+    void job().finally(() => {
+      motionRunning--;
+      pumpMotion();
+    });
+  }
+}
+function enqueueMotion(job: () => Promise<void>): () => void {
+  motionJobs.push(job);
+  pumpMotion();
+  return () => {
+    const i = motionJobs.indexOf(job);
+    if (i >= 0) motionJobs.splice(i, 1);
+  };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Demo projects
@@ -254,7 +305,7 @@ export function isOverlayDesign(clips: Clip[], cw: number, ch: number): boolean 
 }
 
 /** Placeholders that ask for background removal (or are named for a person) show a cut-out person. */
-const isPersonSlot = (c: ShapeClip): boolean => !!c.cutout?.enabled || /(person|face|host|guest|you|me)/i.test(c.name);
+const isPersonSlot = (c: ShapeClip): boolean => !!c.cutout?.enabled || /\b(person|face|host|guest|you|me)\b/i.test(c.name);
 
 /**
  * Media placeholders of a thumbnail show sample pictures (and a sample logo), so the gallery shows
@@ -373,6 +424,8 @@ export interface ThumbSpec {
   /** Hover playback range (seconds). */
   from: number;
   to: number;
+  /** Motion layers (in-memory clips) the project shows: started on demand, closed afterwards. */
+  motion?: ThumbMotion[];
 }
 
 interface LiveThumbProps {
@@ -408,25 +461,43 @@ export const LiveThumb = memo(function LiveThumb({ id, width, height, build, ani
     let disposed = false;
     const getSpec = (): ThumbSpec | null => (spec === undefined ? (spec = buildRef.current()) : spec);
 
+    const keep = (): void => {
+      if (posterCache.size < POSTER_CACHE_LIMIT) {
+        void createImageBitmap(canvas).then((bmp) => {
+          if (!posterCache.has(id)) posterCache.set(id, bmp);
+          else bmp.close();
+        });
+      }
+    };
+
     const drawPoster = (): void => {
       const cached = posterCache.get(id);
       const ctx = canvas.getContext('2d');
       if (cached && ctx) {
         ctx.drawImage(cached, 0, 0, canvas.width, canvas.height);
+        if (!hovering && spec?.motion?.length) releaseMotion(spec.motion);
         return;
       }
       cancelJob?.();
+      const withMotion = getSpec()?.motion;
+      if (withMotion?.length) {
+        // Motion layers render in their own sandboxes: wait for their frames, then draw.
+        cancelJob = enqueueMotion(async () => {
+          cancelJob = null;
+          const s = getSpec();
+          if (disposed || !s) return;
+          await prepareMotion(withMotion, s.poster);
+          if (!disposed && renderInto(canvas, s.project, s.poster)) keep();
+          if (disposed || !hovering) releaseMotion(withMotion);
+        });
+        return;
+      }
       cancelJob = enqueue(() => {
         cancelJob = null;
         if (disposed) return;
         const s = getSpec();
         if (!s || !renderInto(canvas, s.project, s.poster)) return;
-        if (posterCache.size < POSTER_CACHE_LIMIT) {
-          void createImageBitmap(canvas).then((bmp) => {
-            if (!posterCache.has(id)) posterCache.set(id, bmp);
-            else bmp.close();
-          });
-        }
+        keep();
       });
     };
 
@@ -434,6 +505,7 @@ export const LiveThumb = memo(function LiveThumb({ id, width, height, build, ani
       if (raf) return;
       const s = getSpec();
       if (!s) return;
+      if (s.motion?.length) for (const m of s.motion) motionAssets.set(m.asset.id, m.asset);
       const t0 = performance.now();
       const span = Math.max(0.1, s.to - s.from);
       const step = (): void => {
@@ -480,6 +552,7 @@ export const LiveThumb = memo(function LiveThumb({ id, width, height, build, ani
       disposed = true;
       io.disconnect();
       cancelJob?.();
+      if (spec?.motion?.length) releaseMotion(spec.motion);
       cancelAnimationFrame(raf);
       host.removeEventListener('pointerenter', onEnter);
       host.removeEventListener('pointerleave', onLeave);
