@@ -87,6 +87,7 @@ import { registerDropTarget, type DragPayload } from '../dnd';
 import { InOutMarks } from '../export/InOutMarks';
 import { tk, tMaybe, useT } from '../i18n';
 import { CompoundBar, onTimelineDoubleClick, timeMenuItems } from '../time/CompoundBar';
+import { ThumbnailBar } from '../thumbnails/ThumbnailBar';
 import { cachedThemeColor, useTheme } from '../theme';
 import { SpeechTimelineOverlay } from '../speech/TimelineOverlay';
 import { soundTrackIds, TrackMeter } from '../coloraudio/TrackMeter';
@@ -1183,6 +1184,7 @@ export function Timeline(): ReactNode {
     <section ref={sectionRef} className={`timeline ${tool === 'blade' ? 'is-blade' : ''} tool-${tool}`} data-timeline>
       <Toolbar onZoom={(v) => setZoom(v)} onFit={fitZoom} />
       <CompoundBar />
+      <ThumbnailBar />
       <div className="tl-body" ref={bodyRef}>
         <div className="tl-headers" style={{ width: HEADER_W }}>
           <div className="tl-headers__corner" style={{ height: RULER_H }}>

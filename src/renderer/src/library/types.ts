@@ -398,7 +398,9 @@ export type TemplateCategory =
   | 'event'
   | 'vlog'
   | 'gaming'
-  | 'news';
+  | 'news'
+  /** Still cover pictures (Thumbnails): shown on their own, not in "All". */
+  | 'thumbnail';
 
 export type AspectId = '16:9' | '9:16' | '1:1' | '4:5';
 

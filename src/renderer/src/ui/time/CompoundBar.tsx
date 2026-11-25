@@ -6,6 +6,7 @@
 import { ChevronRight, CornerLeftUp, Film, Layers } from 'lucide-react';
 import { Fragment, type MouseEvent, type ReactNode } from 'react';
 import { compoundsOnPath } from '@/core/compound';
+import { thumbnailOfPath } from '@/core/thumbnails';
 import { getProject } from '@/store/project';
 import { useProjectStore } from '@/store/project';
 import type { MenuItem } from '../common/overlays';
@@ -19,7 +20,8 @@ export function CompoundBar(): ReactNode {
   const t = useT();
   const path = useProjectStore((s) => s.editPath);
   const root = useProjectStore((s) => s.root);
-  if (path.length === 0) return null;
+  // Thumbnails have their own bar (ui/thumbnails/ThumbnailBar).
+  if (path.length === 0 || thumbnailOfPath(path) !== null) return null;
   const chain = compoundsOnPath(root, path);
   const current = chain[chain.length - 1];
   return (

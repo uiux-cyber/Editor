@@ -6,8 +6,10 @@
 
 import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { makeImage, makeTrack, uid } from '@/core/factory';
-import { createProject } from '@/core/project';
-import type { Clip, ID, MediaAsset, Project } from '@/core/types';
+import { createProject, fillSlot } from '@/core/project';
+import { fillLogoSlots, isLogoSlot } from '@/library/templateEngine';
+import { SAMPLE_COUNT, SAMPLE_LOGO_ID, SAMPLE_SIZE, sampleAsset, sampleIndex, sampleLogoPicture, samplePersonAsset, samplePersonIndex, samplePersonPicture, samplePicture } from './samples';
+import type { Clip, ID, MediaAsset, Project, ShapeClip } from '@/core/types';
 import { Compositor, type FrameImage, type MediaProvider } from '@/engine/compositor';
 
 // ---------------------------------------------------------------------------------------------
@@ -183,6 +185,11 @@ export const demoProvider: MediaProvider = {
   image: (assetId) => {
     if (assetId === 'demo-a') return { source: (demoA ??= demoCanvas(drawDemoA)), width: DEMO_W, height: DEMO_H, version: 1 };
     if (assetId === 'demo-b') return { source: (demoB ??= demoCanvas(drawDemoB)), width: DEMO_W, height: DEMO_H, version: 2 };
+    if (assetId === SAMPLE_LOGO_ID) return { source: sampleLogoPicture(), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 99 };
+    const person = samplePersonIndex(assetId);
+    if (person !== null) return { source: samplePersonPicture(person), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 90 + person };
+    const sample = sampleIndex(assetId);
+    if (sample !== null) return { source: samplePicture(sample), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 100 + sample };
     return extraImages?.(assetId) ?? null;
   },
 };
@@ -246,13 +253,49 @@ export function isOverlayDesign(clips: Clip[], cw: number, ch: number): boolean 
   return true;
 }
 
-/** Thumbnail project for a built template; overlays are shown on a dimmed demo picture. */
-export function templateThumbProject(clips: Clip[], width: number, height: number, cw: number, ch: number): Project {
-  if (!isOverlayDesign(clips, cw, ch)) return projectFromLayers(clips, width, height, '#0d0f13');
-  const frame = cw / ch;
-  const img = DEMO_W / DEMO_H;
-  const backdrop = makeImage(DEMO_A, { duration: Math.max(1, ...clips.map((c) => c.start + c.duration)), scale: Math.max(img / frame, frame / img), adjust: { brightness: -0.12, saturation: -0.25 } });
-  return projectFromLayers([backdrop, ...clips], width, height, '#0d0f13', true);
+/** Placeholders that ask for background removal (or are named for a person) show a cut-out person. */
+const isPersonSlot = (c: ShapeClip): boolean => !!c.cutout?.enabled || /(person|face|host|guest|you|me)/i.test(c.name);
+
+/**
+ * Media placeholders of a thumbnail show sample pictures (and a sample logo), so the gallery shows
+ * finished designs; the placeholders stay in the template the user applies.
+ */
+function withSamples(project: Project, seed: number): Project {
+  const slots = Object.values(project.clips).filter((c): c is ShapeClip => c.type === 'shape' && !!c.shape.slot && !isLogoSlot(c));
+  slots.sort((a, b) => a.start - b.start || a.transform.x - b.transform.x);
+  let people = 0;
+  slots.forEach((slot, i) => {
+    const person = isPersonSlot(slot);
+    const asset = person ? samplePersonAsset(seed + people++) : sampleAsset((seed + i * 3) % SAMPLE_COUNT);
+    project.assets[asset.id] = asset;
+    const id = fillSlot(project, slot.id, asset);
+    // The sample person is already cut out.
+    const filled = id ? project.clips[id] : null;
+    if (filled && 'cutout' in filled) delete filled.cutout;
+  });
+  return project;
+}
+
+/** Thumbnail project for a built template; overlays are shown on a sample picture. */
+export function templateThumbProject(clips: Clip[], width: number, height: number, cw: number, ch: number, seed = 0): Project {
+  let layers = clips;
+  let logo: MediaAsset | null = null;
+  if (layers.some(isLogoSlot)) {
+    logo = sampleAsset(-1);
+    layers = fillLogoSlots(layers, logo, cw, ch);
+  }
+  let project: Project;
+  if (!isOverlayDesign(layers, cw, ch)) project = projectFromLayers(layers, width, height, '#0d0f13');
+  else {
+    // Overlays sit on footage: show them over one of the sample pictures.
+    const frame = cw / ch;
+    const picture = sampleAsset(Math.abs(seed) % SAMPLE_COUNT);
+    const backdrop = makeImage(picture, { duration: Math.max(1, ...layers.map((c) => c.start + c.duration)), scale: Math.max(frame, 1 / frame), adjust: { brightness: -0.1, saturation: -0.15 } });
+    project = projectFromLayers([backdrop, ...layers], width, height, '#0d0f13', true);
+    project.assets[picture.id] = picture;
+  }
+  if (logo) project.assets[logo.id] = logo;
+  return withSamples(project, Math.abs(seed));
 }
 
 /** The demo picture as a single full-frame layer. */

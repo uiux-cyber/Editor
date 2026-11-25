@@ -20,6 +20,7 @@ import { splitKeyframes, baseProp } from './keyframes';
 import { addTrack, cleanupTransitions, ensureBaseTracks, isFree, isMagneticTrack, maxTransitionDuration, pruneEmptyTracks, trackWithRoom } from './project';
 import { EPS, clipEnd, snapToFrame } from './time';
 import { retimeClip, sequenceEnd } from './timemap';
+import { getThumbnail, thumbnailOfPath, thumbnailProject } from './thumbnails';
 import type { Clip, CompoundClip, ID, KeyframeProp, Marker, Project, Sequence, Track, Transition } from './types';
 
 /** Nesting deeper than this is not rendered (guards against malformed files). */
@@ -107,6 +108,12 @@ interface Container {
  * the root. Invalid trailing path entries are dropped (e.g. after an undo removed the compound).
  */
 export function resolveEditPath(root: Project, path: readonly ID[]): { view: Project; path: ID[] } {
+  // A thumbnail opened for editing: its layers are the timeline (compound clips inside it are not opened).
+  const thumbId = thumbnailOfPath(path);
+  if (thumbId !== null) {
+    const thumb = getThumbnail(root, thumbId);
+    return thumb ? { view: thumbnailProject(root, thumb), path: [path[0]] } : { view: root, path: [] };
+  }
   let container: Container = root;
   const valid: ID[] = [];
   for (const id of path) {
@@ -126,6 +133,7 @@ export function resolveEditPath(root: Project, path: readonly ID[]): { view: Pro
 /** Compound clips along an edit path, outermost first. */
 export function compoundsOnPath(root: Project, path: readonly ID[]): CompoundClip[] {
   const out: CompoundClip[] = [];
+  if (thumbnailOfPath(path) !== null) return out;
   let container: Container = root;
   for (const id of path) {
     const c = container.clips[id];
@@ -142,6 +150,12 @@ export function compoundsOnPath(root: Project, path: readonly ID[]): CompoundCli
  * clip on their track); shared document fields (name, settings, assets) are taken from the view.
  */
 export function commitView(root: Project, path: readonly ID[], view: Project): Project {
+  const thumbId = thumbnailOfPath(path);
+  if (thumbId !== null) {
+    if (!getThumbnail(root, thumbId)) return root;
+    const sequence: Sequence = { tracks: view.tracks, clips: view.clips, transitions: view.transitions, ...(view.markers?.length ? { markers: view.markers } : {}) };
+    return { ...root, name: view.name, settings: view.settings, assets: view.assets, thumbnails: (root.thumbnails ?? []).map((t) => (t.id === thumbId ? { ...t, sequence } : t)) };
+  }
   const chain: { container: Container; clip: CompoundClip }[] = [];
   let container: Container = root;
   for (const id of path) {

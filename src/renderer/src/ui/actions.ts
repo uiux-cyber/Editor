@@ -36,13 +36,14 @@ import type { Clip, ID, MediaAsset, Project, ShapeKind, Track, VisualClip } from
 import { engine } from '@/engine/engine';
 import { addSoundAsset } from '@/engine/media/assets';
 import { stickerAspect } from '@/engine/sources/sticker';
-import { getEffect, getFilter, getGenerator, getSticker, getTextPreset, getTransition } from '@/library';
+import { getEffect, getFilter, getGenerator, getSticker, getTemplate, getTextPreset, getTransition } from '@/library';
 import type { TemplateVariation } from '@/library/templateEngine';
 import { getProject, updateProject, useProjectStore } from '@/store/project';
 import { toast, useUI } from '@/store/ui';
 import { t } from './i18n';
 import { TRACK_SIZES, clampTrackHeight, type TrackSize } from './timeline/geometry';
 import { applyTemplateVariation } from './templates/apply';
+import { applyThumbnailDesign, inThumbnail } from './thumbnails/actions';
 
 const DEFAULT_STILL_DURATION = 5;
 
@@ -269,6 +270,8 @@ export async function addSound(soundId: string, where: Placement = {}): Promise<
  * ui/templates/apply.ts. Returns the ids of the inserted layers.
  */
 export function applyTemplate(v: TemplateVariation, time?: number): ID[] {
+  // While a thumbnail is open, a thumbnail design replaces its layers (try designs one after another).
+  if (inThumbnail() && getTemplate(v.templateId)?.category === 'thumbnail') return applyThumbnailDesign(v);
   return applyTemplateVariation(v, { time }).ids;
 }
 

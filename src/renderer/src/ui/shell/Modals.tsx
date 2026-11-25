@@ -8,6 +8,7 @@ import { allBindings, useKeymapVersion } from '../commands/keymapStore';
 import { Field, NumberInput, Select } from '../common/controls';
 import { Modal } from '../common/overlays';
 import { ExportDialog } from '../export/ExportDialog';
+import { FeedPreviewDialog, FramePickerDialog, ThumbnailExportDialog } from '../thumbnails/dialogs';
 import { useT } from '../i18n';
 import { foldText } from '../palette/fuzzy';
 import { newProject } from '../projectIO';
@@ -199,5 +200,8 @@ export function Modals(): ReactNode {
   if (modal === 'settings') return <SettingsWindow onClose={close} />;
   if (modal === 'collect') return <CollectDialog onClose={close} />;
   if (modal === 'update') return <UpdateModal onClose={close} />;
+  if (modal === 'thumbnailFrame') return <FramePickerDialog onClose={close} />;
+  if (modal === 'thumbnailFeed') return <FeedPreviewDialog onClose={close} />;
+  if (modal === 'thumbnailExport') return <ThumbnailExportDialog onClose={close} />;
   return null;
 }

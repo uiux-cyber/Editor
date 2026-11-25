@@ -66,6 +66,11 @@ interface ProjectState {
   load: (project: Project, filePath: string | null, saved?: boolean) => void;
   update: (recipe: (draft: Project) => void, opts?: UpdateOptions) => void;
   /**
+   * Change the document itself (not the edited view), e.g. its list of thumbnails while one of
+   * them is open. One undo step unless `history: false` (inside a gesture: part of it).
+   */
+  updateRoot: (recipe: (draft: Project) => void, opts?: UpdateOptions) => void;
+  /**
    * During a gesture, rebuild the live project from the gesture's starting snapshot instead of
    * the current state (outside a gesture this is a plain `update`). Edits that are easier to
    * express as "base + delta" (ripple, roll, magnetic inserts) use this on every pointer move.
@@ -175,6 +180,26 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       future: [],
       futureMeta: [],
       lastCoalesce: opts.coalesce ? { key: opts.coalesce, at: now } : null,
+    });
+  },
+
+  updateRoot: (recipe, opts = {}) => {
+    const s = get();
+    const root = apply(s.root, recipe, false);
+    if (root === s.root) return;
+    // Inside a gesture the change joins it (one undo step on commit).
+    if (s.txnBase || opts.history === false) {
+      set({ root, ...viewOf(root, s.editPath) });
+      return;
+    }
+    set({
+      root,
+      ...viewOf(root, s.editPath),
+      past: [...s.past, s.root].slice(-HISTORY_LIMIT),
+      pastMeta: [...s.pastMeta, entry(opts.label ?? 'Edit')].slice(-HISTORY_LIMIT),
+      future: [],
+      futureMeta: [],
+      lastCoalesce: null,
     });
   },
 

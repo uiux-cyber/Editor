@@ -9,6 +9,22 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.6
+
+- **Thumbnails:** click **Thumbnail** in the title bar to design the video's cover picture. The
+  frame under the playhead becomes the background; pick another moment any time (**Change frame**).
+  It is edited with all the usual tools and saved in the project.
+- **Thumbnail designs:** Templates ▸ Thumbnail has 14 creator-style designs (reaction face, versus,
+  big number list, before / after, how-to panel, circle and arrow, words behind the subject,
+  podcast, product review, question, recipe, gaming, cinematic, breaking news), in endless colour
+  and font combinations. Drop a photo of yourself on a **Person** placeholder: Kinora removes the
+  background and outlines it.
+- **A/B variants, feed preview, export:** keep up to six thumbnails per project (Thumbnail A, B,
+  C…), see them next to other videos at real feed sizes in dark and light mode, and export a
+  1280 × 720 JPG kept under YouTube's 2 MB limit, or a PNG.
+- **Template previews look finished:** media placeholders in the gallery show sample pictures
+  instead of grey boxes, and placeholders in the editor have a lighter look.
+
 ## What's new in 1.5
 
 - **Motion library:** Library ▸ Motion has 16 ready-made animated clips (titles, lower thirds,
@@ -106,7 +122,7 @@ node scripts/e2e.mjs ui --packaged        # same, against release/win-unpacked
 ```
 
 Scenarios: `smoke ui export export-queue graphics editing time workflow speech vision
-color-audio media templates updates claude motion`. `node scripts/e2e.mjs motion-sheet` renders a
+color-audio media templates thumbnails updates claude motion`. `node scripts/e2e.mjs motion-sheet` renders a
 contact sheet of the Motion library to `.e2e/motion-sheet.png` for visual review. Test windows run off-screen without taking focus; set
 `KINORA_E2E_SHOW=1` to watch a run. Run `npm run models` once before the speech / vision
 scenarios (it downloads the bundled AI models into `resources/models/`).

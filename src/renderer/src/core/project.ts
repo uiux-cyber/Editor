@@ -21,6 +21,7 @@ import {
   type ProjectSettings,
   type ShapeClip,
   type Sequence,
+  type Thumbnail,
   type Track,
   type TrackKind,
   type Transition,
@@ -653,8 +654,11 @@ export function fillSlot(p: Project, slotId: ID, asset: MediaAsset): ID | null {
     transform: { ...slot.transform, scaleX: (shape.width / w) * slot.transform.scaleX, scaleY: (shape.height / h) * slot.transform.scaleY },
     blendMode: slot.blendMode,
     crop,
-    cornerRadius: shape.radius > 0 ? Math.min(1, shape.radius / (Math.min(shape.width, shape.height) / 2)) : slot.cornerRadius,
+    // Round placeholders stay round (a full corner radius on the placeholder's box).
+    cornerRadius: shape.kind === 'ellipse' ? 1 : shape.radius > 0 ? Math.min(1, shape.radius / (Math.min(shape.width, shape.height) / 2)) : slot.cornerRadius,
     mask: slot.mask,
+    // A placeholder can ask for background removal (thumbnail "Person" placeholders).
+    ...(slot.cutout ? { cutout: slot.cutout } : {}),
     adjust: slot.adjust,
     filter: slot.filter,
     effects: slot.effects,
@@ -768,6 +772,25 @@ export function parseProjectFile(text: string, opts: ProjectPathOptions = {}): P
   project.transitions = seq.transitions;
   cleanupTransitions(project);
   cleanupRelations(project);
+  // Thumbnails: each a nested sequence like a compound clip's.
+  if (Array.isArray(src.thumbnails)) {
+    const list: Thumbnail[] = [];
+    for (const raw of src.thumbnails as unknown[]) {
+      if (!isObj(raw) || typeof raw.id !== 'string' || !isObj(raw.sequence) || list.some((t) => t.id === raw.id)) continue;
+      const rs = raw.sequence as Record<string, unknown>;
+      let tracks = (Array.isArray(rs.tracks) ? rs.tracks : []).filter((t): t is Track => isObj(t) && typeof t.id === 'string' && (t.kind === 'visual' || t.kind === 'audio'));
+      tracks = [...tracks.filter((t) => t.kind === 'visual'), ...tracks.filter((t) => t.kind === 'audio')];
+      const holder = { tracks } as Project;
+      ensureBaseTracks(holder);
+      const sequence = sanitizeSequence({ tracks: holder.tracks, clips: rs.clips, transitions: rs.transitions }, project.assets, 1);
+      const thumb: Thumbnail = { id: raw.id, name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 80) : 'Thumbnail', sequence, time: Math.max(0, num(raw.time, 0)) };
+      if (typeof raw.frameAssetId === 'string' && project.assets[raw.frameAssetId]) thumb.frameAssetId = raw.frameAssetId;
+      if (typeof raw.frameTime === 'number' && Number.isFinite(raw.frameTime)) thumb.frameTime = Math.max(0, raw.frameTime);
+      list.push(thumb);
+      if (list.length >= 12) break;
+    }
+    if (list.length) project.thumbnails = list;
+  }
   return project;
 }
 

@@ -37,6 +37,7 @@ export const TRANSLATED = [
   'ui/media',
   'ui/export',
   'ui/templates',
+  'ui/thumbnails',
   'ui/coloraudio',
   'ui/preview',
   'ui/speech',

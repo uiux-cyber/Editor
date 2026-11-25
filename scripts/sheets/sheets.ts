@@ -70,7 +70,7 @@ async function main(): Promise<void> {
           problems.push(`${def.id} [${aspect}] failed to build`);
           continue;
         }
-        const project = templateThumbProject(built.clips, cellW, cellH, cw, ch);
+        const project = templateThumbProject(built.clips, cellW, cellH, cw, ch, v.seed);
         await Promise.all(built.clips.map((c) => (c.type === 'text' ? ensureFont(c.text) : Promise.resolve())));
         compositor.setSize(cellW, cellH);
         for (let f = 0; f < FRAMES.length; f++) {

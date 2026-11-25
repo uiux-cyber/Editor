@@ -277,7 +277,7 @@ export function templateThumbSpec(
 ): ThumbSpec | null {
   const built = buildTemplate(v, cw, ch);
   if (!built) return null;
-  const project = templateThumbProject(built.clips, w, h, cw, ch);
+  const project = templateThumbProject(built.clips, w, h, cw, ch, v.seed);
   for (const a of built.assets)
     if (!project.assets[a.id]) project.assets[a.id] = a;
   return {

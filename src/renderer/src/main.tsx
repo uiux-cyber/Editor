@@ -16,6 +16,7 @@ import * as assets from './engine/media/assets';
 import * as motionEngine from './engine/media/motion';
 import { MOTION_PRESETS } from './library/motionPresets';
 import * as motionActions from './ui/motion/actions';
+import * as thumbnails from './ui/thumbnails/actions';
 import * as actions from './ui/actions';
 import * as projectIO from './ui/projectIO';
 import * as time from './ui/time/probe';
@@ -85,6 +86,7 @@ if (!hasBridge) {
     usePlayback,
     LIBRARY_COUNTS,
     motion: { ...motionEngine, ...motionActions, presets: MOTION_PRESETS },
+    thumbnails,
     time: { ...time, ...timeActions },
     workflow: { commands, keymap: keymapStore, i18n, theme, palette: paletteStore, collect },
   };

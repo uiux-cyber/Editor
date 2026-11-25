@@ -705,6 +705,26 @@ export interface Project {
    * projects saved before it existed (off); new projects turn it on.
    */
   magneticMain?: boolean;
+  /**
+   * Thumbnails: still cover pictures for the video (YouTube thumbnail, social cover), several
+   * for A/B tests. Each is a short nested sequence of layers, edited like a compound clip and
+   * exported as a picture of the frame at `time`. Not part of the video.
+   */
+  thumbnails?: Thumbnail[];
+}
+
+/** A still cover picture for the video, designed with layers (see `Project.thumbnails`). */
+export interface Thumbnail {
+  id: ID;
+  /** "Thumbnail A", "Thumbnail B"… */
+  name: string;
+  sequence: Sequence;
+  /** Seconds into the sequence of the picture that is exported (the playhead when last edited). */
+  time: number;
+  /** The video frame captured for it (a picture asset), used as the background of designs. */
+  frameAssetId?: ID;
+  /** Video time the frame was captured at. */
+  frameTime?: number;
 }
 
 export interface ProjectFile {

@@ -1,4 +1,4 @@
-import { Download, Home as HomeIcon, Search, Settings } from 'lucide-react';
+import { Download, Home as HomeIcon, Image as ImageIcon, Search, Settings } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { engine } from '@/engine/engine';
 import { updateProject, useProjectStore } from '@/store/project';
@@ -14,6 +14,8 @@ import { openSettings } from '../settings/store';
 import { closeProject } from './commands';
 import { ExportQueueButton } from '../export/QueueButton';
 import { UpdateButton } from './UpdateButton';
+import { closeThumbnails, openThumbnails } from '../thumbnails/actions';
+import { thumbnailOfPath } from '@/core/thumbnails';
 import { ClaudeIndicator } from './Claude';
 
 export function Logo({ size = 20 }: { size?: number }): ReactNode {
@@ -108,6 +110,7 @@ export function TitleBar(): ReactNode {
   const dirty = useProjectStore((s) => s.root !== s.savedRef);
   const filePath = useProjectStore((s) => s.filePath);
   const hasContent = useProjectStore((s) => Object.keys(s.project.clips).length > 0);
+  const inThumb = useProjectStore((s) => thumbnailOfPath(s.editPath) !== null);
   const [editing, setEditing] = useState(false);
   const editor = screen === 'editor';
   const paletteKey = bindingsFor('view.palette')[0];
@@ -179,6 +182,19 @@ export function TitleBar(): ReactNode {
         <button type="button" className="icon-btn" title={withShortcut(t('Settings'), 'app.settings')} aria-label={t('Settings')} onClick={() => openSettings()} data-action="settings">
           <Settings size={16} />
         </button>
+        {editor && (
+          // Thumbnails (ui/thumbnails): design the video's cover picture; again to go back to the video.
+          <button
+            type="button"
+            className={`btn btn--outline ${inThumb ? 'is-active' : ''}`}
+            title={inThumb ? t('Back to the video timeline') : t('Design the video’s thumbnail (cover picture)')}
+            aria-pressed={inThumb}
+            data-action="thumbnail"
+            onClick={() => (inThumb ? closeThumbnails() : void openThumbnails())}
+          >
+            <ImageIcon size={14} /> {t('Thumbnail')}
+          </button>
+        )}
         {editor && (
           <button
             type="button"

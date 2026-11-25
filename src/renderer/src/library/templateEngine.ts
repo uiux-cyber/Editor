@@ -201,7 +201,7 @@ export function variationFor(def: TemplateDef, n: number, useBrand = false): Tem
 }
 
 /** Display order of template categories (most used first). */
-export const TEMPLATE_CATEGORY_ORDER: TemplateCategory[] = ['intro', 'title', 'social', 'promo', 'youtube', 'slideshow', 'lower-third', 'outro', 'quote', 'business', 'event', 'vlog', 'news', 'gaming', 'countdown'];
+export const TEMPLATE_CATEGORY_ORDER: TemplateCategory[] = ['thumbnail', 'intro', 'title', 'social', 'promo', 'youtube', 'slideshow', 'lower-third', 'outro', 'quote', 'business', 'event', 'vlog', 'news', 'gaming', 'countdown'];
 
 const categoryRank = (c: TemplateCategory): number => {
   const i = TEMPLATE_CATEGORY_ORDER.indexOf(c);
@@ -231,6 +231,8 @@ function matching(q: VariationQuery): TemplateDef[] {
     if (q.category === 'mine') {
       if (!isUserTemplate(def)) return false;
     } else if (q.category && q.category !== 'all' && def.category !== q.category) return false;
+    // Thumbnail designs are still pictures: they have their own chip, not a place among the video templates.
+    if ((!q.category || q.category === 'all') && def.category === 'thumbnail' && !term) return false;
     if (term && !(def.name.toLowerCase().includes(term) || def.category.includes(term) || def.tags.some((t) => t.toLowerCase().includes(term)))) return false;
     return true;
   });

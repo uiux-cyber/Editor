@@ -167,8 +167,12 @@ folder registers it automatically.
 8. **1.5** — the Motion library (16 ready-made Motion clips), Motion clip settings in the
    inspector (k.params, brand kit, Make unique), ready-made Claude requests (MCP prompts), and the
    whole interface translated.
-9. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
-10. **Content cadence**: monthly template and sticker drops through the same pack format.
+9. **1.6** — Thumbnails: cover pictures stored in the project (`Project.thumbnails`, nested
+   sequences opened through the edit path like compound clips), frame capture, 14 thumbnail
+   designs with background-removing person placeholders, A/B variants, a feed preview and JPG / PNG
+   export; sample pictures in template previews.
+10. **Still to do before wide distribution**: code signing, opt-in crash reports, GPU / low-RAM beta.
+11. **Content cadence**: monthly template and sticker drops through the same pack format.
 
 ---
 

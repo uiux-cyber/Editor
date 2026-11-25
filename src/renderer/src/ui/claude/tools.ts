@@ -9,6 +9,7 @@
 
 import { captionTracks } from '@/core/captions';
 import { projectDuration } from '@/core/project';
+import { getThumbnail, thumbnailOfPath } from '@/core/thumbnails';
 import { getAudioClips } from '@/core/scene';
 import { maxDurationFor } from '@/core/timemap';
 import type { Clip, ID, MediaAsset, Project } from '@/core/types';
@@ -167,7 +168,11 @@ function getProjectInfo(args: Args): ToolResult {
     name: p.name,
     file: store.filePath,
     unsaved: store.root !== store.savedRef,
-    ...(store.editPath.length ? { editing_compound_clip: store.editPath[store.editPath.length - 1] } : {}),
+    ...(thumbnailOfPath(store.editPath)
+      ? { editing_thumbnail: getThumbnail(store.root, thumbnailOfPath(store.editPath))?.name ?? true, note: 'A thumbnail (still cover picture) is open: these clips are its layers, not the video. Changes apply to the thumbnail.' }
+      : store.editPath.length
+        ? { editing_compound_clip: store.editPath[store.editPath.length - 1] }
+        : {}),
     settings: { width: p.settings.width, height: p.settings.height, fps: p.settings.fps, background: p.settings.background },
     duration: r3(projectDuration(p)),
     tracks_top_to_bottom: p.tracks.map((t) => ({ id: t.id, kind: t.kind, name: t.name, ...(t.role ? { role: t.role } : {}), ...(t.muted ? { muted: true } : {}), ...(t.hidden ? { hidden: true } : {}), ...(t.locked ? { locked: true } : {}) })),
