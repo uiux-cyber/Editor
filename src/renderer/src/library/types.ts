@@ -485,6 +485,8 @@ export interface TemplateDef {
   poster?: number;
   /** Optional music bed (a `music` sound) added when the template is applied. */
   music?: TemplateMusic;
+  /** Font pairs (ids) and palettes that suit the design: its colour / type variations use them. */
+  style?: { fonts?: string[]; palettes?: (p: Palette) => boolean };
   build: (env: TemplateEnv) => Clip[];
   // --- Runtime-registered designs (user templates, content packs) ---------------------------
   /** Set for designs registered at runtime. */

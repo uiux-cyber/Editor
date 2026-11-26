@@ -15,7 +15,7 @@ This document covers the product scope, the architecture, how quality is enforce
 | Goal | How Kinora meets it |
 |---|---|
 | Fast to start | Home screen with one-click formats (16:9, 9:16, 1:1, 4:5, 21:9) and a template gallery. |
-| Endless ready-to-use content | Templates are parametric designs: each one is rebuilt for any aspect ratio and recoloured / re-typeset with every palette × font pairing × seed, so the gallery never runs out. |
+| Endless ready-to-use content | Templates are parametric designs rebuilt for any aspect ratio. After the library designs, the gallery continues with generated layouts: 17 composition styles (film title cards, Swiss posters, editorial spreads, cut-out collages, product heroes, word stacks, polaroid diaries…) whose structure, content and motion change with every design — never the same design recoloured. |
 | Pro editing where it matters | Multi-track timeline, snapping, ripple delete, split / trim / slip-free trimming, keyframes with easing, blend modes, masks, chroma key, adjustment layers, speed, audio fades. |
 | What you see is what you export | Preview and export run the same WebGL2 compositor and the same scene evaluation. |
 | Safe with your work | Autosave every 15 s with crash recovery, unsaved-changes prompts, relinking of moved media, atomic file writes. |
@@ -86,7 +86,7 @@ folder registers it automatically.
 | Text styles | 139 | 11 categories, half of them animated |
 | Stickers | 1,514 | 1,396 emoji + 118 original vector stickers (92 animated, recolourable) |
 | Sounds | 94 | Synthesised SFX and seamless music beds — royalty free by construction |
-| Templates | 78 designs | 15 categories, every design in 16:9 / 9:16 / 1:1 / 4:5, × 37 palettes × 28 font pairings × seeded layout variants = endless variations |
+| Templates | 78 designs + endless generated layouts | 15 categories, every design in 16:9 / 9:16 / 1:1 / 4:5; then generated designs from 17 composition styles (`library/templates/_gen`) across 11 categories, each a different layout, content and motion |
 
 ---
 

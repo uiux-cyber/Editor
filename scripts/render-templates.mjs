@@ -5,6 +5,7 @@
  *   node scripts/render-templates.mjs                          # every template, 16:9
  *   node scripts/render-templates.mjs --ids=a,b --aspects=16:9,9:16 --variants=2
  *   node scripts/render-templates.mjs --category=intro --out=some/dir
+ *   node scripts/render-templates.mjs --feed=2 --grid=1          # generated designs: gallery pages 1–2, posters only
  *
  * Each row shows one template at 12%, 35%, its poster time and 92% of its duration.
  * Output defaults to .sheets/ in the project root.
@@ -20,7 +21,14 @@ import { build } from 'vite';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const arg = (name, fallback = '') => (process.argv.find((a) => a.startsWith(`--${name}=`)) ?? `--${name}=${fallback}`).split('=').slice(1).join('=');
 const outDir = path.resolve(arg('out', path.join(root, '.sheets')));
-const query = new URLSearchParams({ ids: arg('ids'), aspects: arg('aspects', '16:9'), variants: arg('variants', '1'), category: arg('category') }).toString();
+const query = new URLSearchParams({
+  ids: arg('ids'),
+  aspects: arg('aspects', '16:9'),
+  variants: arg('variants', '1'),
+  category: arg('category'),
+  feed: arg('feed', '0'),
+  grid: arg('grid', '0'),
+}).toString();
 const buildDir = path.join(os.tmpdir(), `kinora-sheets-${process.pid}`);
 
 try {

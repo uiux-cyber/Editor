@@ -224,6 +224,22 @@ export default async function motion({ win, run, root, sleep, shot }) {
   const afterUndo = await run((id) => window.__kinora.useProjectStore.getState().project.assets[id].motionValues, added.asset);
   expect(afterUndo?.suffix === undefined, 'undo reverts a settings change');
 
+  // No flicker: while the clip plays in a hovered media bin tile, the paused preview is not
+  // redrawn (the tile renders in the background) and keeps its frames.
+  await run(() => window.__kinora.engine.seek(1));
+  await win.click('[data-tab="media"]');
+  await win.locator('.media-tile').first().hover();
+  await sleep(1200);
+  const still = await run(async () => {
+    const k = window.__kinora;
+    const before = k.engine.framesRendered;
+    await new Promise((r) => setTimeout(r, 2000));
+    const d = k.motion.motionDebug().find((m) => m.channels?.thumb);
+    return { redraws: k.engine.framesRendered - before, hoverPlays: !!d, previewAt: d?.channels.preview?.latest };
+  });
+  expect(still.hoverPlays && still.redraws <= 2 && still.previewAt === 30, `a hovered Motion tile does not repaint the preview (${JSON.stringify(still)})`);
+  await win.mouse.move(5, 5);
+
   // The export uses the chosen values: a red accent, then a green one.
   const colourShare = async (colour, test) => {
     await run(({ id, colour }) => {

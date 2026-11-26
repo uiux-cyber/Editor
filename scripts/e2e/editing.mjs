@@ -129,6 +129,38 @@ export default async function editing(ctx) {
   expect(near(clip(s, A).duration, 6) && near(clip(s, B).start, 6) && near(clip(s, C).start, 14), 'trimming a Main clip pulls the later clips left (no gap)');
   expect(s.labels.at(-1) === 'Ripple trim', `the undo step is labelled "${s.labels.at(-1)}"`);
 
+  // ---- No flicker: the preview follows a dragged edge without flashing black -------------------
+  // Trimming C (not on screen yet) moves the preview to C's edge, a picture it has never shown:
+  // it keeps the previous frame until C's video has one, instead of drawing black meanwhile.
+  await press('Home');
+  await sleep(400);
+  await run(() => {
+    window.__holes = { frames: 0, black: 0 };
+    const small = document.createElement('canvas');
+    small.width = 16;
+    small.height = 9;
+    const g = small.getContext('2d', { willReadFrequently: true });
+    window.__offHoles = window.__kinora.engine.onRendered((comp) => {
+      window.__holes.frames++;
+      g.drawImage(comp.canvas, 0, 0, 16, 9);
+      const d = g.getImageData(0, 0, 16, 9).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2];
+      if (sum / (16 * 9 * 3) < 6) window.__holes.black++;
+    });
+  });
+  const c0 = await clipBox(C);
+  await drag({ x: c0.right - 3, y: c0.cy }, { x: c0.right - 3 - PPS, y: c0.cy });
+  await sleep(800);
+  const holes = await run(() => {
+    window.__offHoles();
+    return window.__holes;
+  });
+  expect(holes.frames > 0 && holes.black === 0, `the preview never flashes black while trimming (${JSON.stringify(holes)})`);
+  await run(() => window.__kinora.useProjectStore.getState().undo());
+  s = await state();
+  expect(near(clip(s, C).duration, 8), 'undo restores C');
+
   // ---- Magnetic toggle, normal trim leaves a gap, Shift-drag ripples ----------------------------
   await click('[data-magnetic-toggle]');
   s = await state();

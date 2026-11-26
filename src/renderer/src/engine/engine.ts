@@ -20,6 +20,9 @@ import { MediaPool } from './preview/mediaPool';
 import { onFontsChanged } from './sources/text';
 import { previewMatte } from '@/vision/cutout';
 
+/** Longest a paused redraw waits for a video that has no picture yet (see holdPicture). */
+const HOLD_PICTURE_MS = 600;
+
 interface PlaybackState {
   playing: boolean;
   /** Playhead time, updated a few times per second while playing and exactly on seeks. */
@@ -333,9 +336,13 @@ class Engine {
       return;
     }
     if (this.dirty) {
-      this.dirty = false;
       // Elements that just finished loading still need to be moved to the playhead.
       this.syncMedia();
+      if (this.holdPicture()) {
+        this.schedule();
+        return;
+      }
+      this.dirty = false;
       this.renderFrame(project);
       // While a paused seek is still decoding, keep polling so the final frame appears.
       if (this.pool?.isSettling()) {
@@ -347,6 +354,27 @@ class Engine {
 
   /** Number of frames rendered so far (for performance diagnostics). */
   framesRendered = 0;
+
+  /** Since when a paused redraw has been held back (0: not holding). */
+  private holdSince = 0;
+  /** Canvas size when a frame was last drawn (resizing clears the canvas). */
+  private presentedSize = '';
+
+  /**
+   * While paused, a video that has no picture yet (it just appeared under the playhead, or
+   * seeked far: dragging a trim edge, extending a clip) would draw as a black hole for a few
+   * frames. Keep the previous frame on screen instead, for a short while at most.
+   */
+  private holdPicture(): boolean {
+    const c = this.canvas;
+    if (!c || this.presentedSize !== `${c.width}x${c.height}` || !this.pool?.awaitingPicture()) {
+      this.holdSince = 0;
+      return false;
+    }
+    const now = performance.now();
+    if (!this.holdSince) this.holdSince = now;
+    return now - this.holdSince < HOLD_PICTURE_MS;
+  }
 
   private renderFrame(project: Project): void {
     if (!this.compositor) return;
@@ -366,6 +394,7 @@ class Engine {
       console.error('[engine] render failed', err);
       return;
     }
+    if (this.canvas) this.presentedSize = `${this.canvas.width}x${this.canvas.height}`;
     // colour-audio: scopes / histograms read the frame back from here.
     for (const cb of this.renderedListeners) {
       try {

@@ -51,7 +51,8 @@ export function AnimatedThumb({ asset }: { asset: MediaAsset }): ReactNode {
       }
       const t = (performance.now() - started) / 1000;
       const k = Math.max(w / Math.max(1, asset.width), h / Math.max(1, asset.height));
-      const frame = animationFrame(asset, t, { width: Math.ceil(asset.width * k), height: Math.ceil(asset.height * k) });
+      // In the background: a hovered tile must not slow down or repaint the preview.
+      const frame = animationFrame(asset, t, { width: Math.ceil(asset.width * k), height: Math.ceil(asset.height * k) }, 'thumb');
       const ctx = canvas.getContext('2d');
       if (frame && ctx) {
         ctx.clearRect(0, 0, w, h);

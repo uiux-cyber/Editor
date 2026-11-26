@@ -17,6 +17,7 @@ import type { AnimMod, AspectId, FontPair, GlyphMod, Palette, TemplateEnv, TextP
 import { packContent, validatePack } from '@/library/packs';
 import { registerContent } from '@/library';
 import { templateMotion } from '@/library/templateEngine';
+import { ARCHETYPES, generatedId, generatedTemplate } from '@/library/templates/_gen';
 
 type Level = 'error' | 'warn';
 interface Issue {
@@ -644,7 +645,9 @@ function checkTemplates(): void {
     checkFont('fontPairs', fp.id, fp.heading.family, fp.heading.weight);
     checkFont('fontPairs', fp.id, fp.body.family, fp.body.weight);
   }
-  for (const def of L.TEMPLATES) {
+  // Generated designs: every archetype in every category it serves, with a few content sets / seeds.
+  const generated = ARCHETYPES.flatMap((a) => a.categories.flatMap((c) => [0, 1, 2].map((n) => generatedTemplate(generatedId(a, c, n * 37 + 5)))));
+  for (const def of [...L.TEMPLATES, ...generated.filter((d): d is NonNullable<typeof d> => !!d)]) {
     if (!(def.duration >= 1 && def.duration <= 120)) report('templates', def.id, 'error', 'duration out of range (1..120 s)');
     // Music bed: a looping `music` sound, sensible level and fades that fit the template.
     if (def.music) {

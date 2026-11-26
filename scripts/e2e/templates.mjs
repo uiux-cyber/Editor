@@ -555,5 +555,41 @@ export default async function templates(ctx) {
   expect(motionRes.past === 1, 'the template and its Motion layer are one undo step');
   expect(motionRes.exported === 'ok' && existsSync(path.join(outDir, 'templates-motion.png')), `a frame with the Motion layer exports (${motionRes.exported})`);
 
+  // Endless gallery: scrolling past the library designs brings new, generated layouts (not the
+  // same designs recoloured), each with a thumbnail; one of them applies like any template.
+  await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
+  await run(async () => {
+    const k = window.__kinora;
+    await k.projectIO.newProject({ name: 'Endless', width: 1920, height: 1080, fps: 30 });
+  });
+  await win.click('[data-tab="templates"]');
+  await win.waitForSelector('.tile--template', { timeout: 15000 });
+  const libraryTiles = await win.locator('.tile--template').count();
+  for (let i = 0; i < 4; i++) {
+    await run(() => {
+      const el = document.querySelector('.lib__scroll');
+      el.scrollTop = el.scrollHeight;
+    });
+    await sleep(700);
+  }
+  const feed = await run(() => {
+    const ids = [...document.querySelectorAll('.tile--template')].map((el) => el.dataset.template);
+    const gen = ids.filter((id) => id.startsWith('gen-'));
+    return { total: ids.length, gen: gen.length, distinct: new Set(gen).size, styles: new Set(gen.map((id) => id.split('-')[1])).size, libraryRepeats: ids.length - gen.length - new Set(ids.filter((id) => !id.startsWith('gen-'))).size };
+  });
+  expect(feed.gen >= 24 && feed.distinct === feed.gen && feed.libraryRepeats === 0, `scrolling adds new generated layouts, never library repeats (${JSON.stringify({ libraryTiles, ...feed })})`);
+  expect(feed.styles >= 10, `the new layouts span many styles (${feed.styles})`);
+  const genTile = win.locator('.tile--template[data-template^="gen-"]').first();
+  await genTile.scrollIntoViewIfNeeded();
+  await sleep(2500);
+  await shot('t06-endless-gallery');
+  const genId = await genTile.getAttribute('data-template');
+  const applied = await run(async (id) => {
+    const k = window.__kinora;
+    const def = k.templates.getTemplate(id);
+    const ids = await k.templates.apply(k.templates.variationFor(def, 1), { time: 0 }).done;
+    return { n: ids.length, past: k.useProjectStore.getState().past.length };
+  }, genId);
+  expect(applied.n > 3 && applied.past >= 1, `a generated design applies as one undo step (${genId}: ${applied.n} layers)`);
   await run(() => window.__kinora.useProjectStore.getState().markSaved(null));
 }

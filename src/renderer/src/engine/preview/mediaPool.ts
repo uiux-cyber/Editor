@@ -24,6 +24,12 @@ interface Slot {
   /** Bumped whenever a new picture becomes available while paused. */
   frameVersion: number;
   pendingSeek: number | null;
+  /**
+   * A seek finished while the playhead had already moved on (dragging a trim edge, scrubbing):
+   * the next seek waits until this frame has been drawn (or until this time, ms), so the preview
+   * shows each decoded frame instead of an element that is always seeking and never has one.
+   */
+  presentBy: number;
   lastUsed: number;
   cleanup: () => void;
   /** Per-clip processing chain between the element source and its gain (engine/audio). */
@@ -67,6 +73,8 @@ function topTrackOf(project: Project, instanceId: ID, trackId: ID): ID {
 const PRELOAD_AHEAD = 2.0;
 const MAX_IDLE_SLOTS = 4;
 const HARD_RESYNC = 0.28;
+/** Longest a seek waits for the previous frame to be drawn (see Slot.presentBy). */
+const PRESENT_WAIT_MS = 150;
 
 export class MediaPool {
   private slots = new Map<ID, Slot>();
@@ -76,6 +84,8 @@ export class MediaPool {
   private analyser: AnalyserNode | null = null;
   private meterBuf: Float32Array<ArrayBuffer> | null = null;
   private tick = 0;
+  /** Clips whose picture is on screen at the last sync. */
+  private onScreen = new Set<ID>();
   private masterVolume = 1;
   private buses = new Map<ID, TrackBus>();
   /** Called when a paused element has decoded a new frame and the preview should repaint. */
@@ -130,7 +140,7 @@ export class MediaPool {
     el.src = url;
     this.host.appendChild(el);
 
-    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, lastUsed: this.tick, cleanup: () => undefined, chain: null, bus: null, rev: null, busTrack: null };
+    const slot: Slot = { clipId: clip.id, url, el, isVideo, gain: null, node: null, frameVersion: 1, pendingSeek: null, presentBy: 0, lastUsed: this.tick, cleanup: () => undefined, chain: null, bus: null, rev: null, busTrack: null };
 
     try {
       const ctx = this.ensureAudio();
@@ -151,13 +161,18 @@ export class MediaPool {
       this.onFrame();
     };
     const onSeeked = (): void => {
-      if (slot.pendingSeek !== null) {
-        const target = slot.pendingSeek;
-        slot.pendingSeek = null;
-        if (Math.abs(el.currentTime - target) > 0.001) {
+      if (slot.pendingSeek !== null && Math.abs(el.currentTime - slot.pendingSeek) > 0.001) {
+        if (!this.onScreen.has(slot.clipId)) {
+          // Not on screen: go straight on to where it is wanted now.
+          const target = slot.pendingSeek;
+          slot.pendingSeek = null;
           el.currentTime = target;
           return;
         }
+        // Show this frame first, then go on (see presentBy).
+        slot.presentBy = performance.now() + PRESENT_WAIT_MS;
+      } else {
+        slot.pendingSeek = null;
       }
       bump();
     };
@@ -306,10 +321,11 @@ export class MediaPool {
 
   private seek(slot: Slot, target: number): void {
     const el = slot.el;
-    if (el.seeking) {
+    if (el.seeking || (slot.presentBy && performance.now() < slot.presentBy)) {
       slot.pendingSeek = target;
       return;
     }
+    slot.presentBy = 0;
     slot.pendingSeek = null;
     try {
       el.currentTime = target;
@@ -329,8 +345,10 @@ export class MediaPool {
 
     // Pictures on screen (including the handles used by transitions and clips inside compound
     // clips, which come as instance clips with their own ids).
+    this.onScreen = new Set();
     for (const ref of pictureRefsAt(project, time)) {
       wanted.set(ref.clip.id, { clip: ref.clip, localTime: ref.localTime, gain: 0, active: true });
+      this.onScreen.add(ref.clip.id);
     }
     // Sound.
     for (const a of soundsAt(project, time)) {
@@ -400,7 +418,8 @@ export class MediaPool {
         if (!el.paused) el.pause();
         if (el.readyState >= 1) {
           const target = slot.pendingSeek ?? el.currentTime;
-          if (Math.abs(target - desired) > 0.5 / fps) this.seek(slot, desired);
+          // A seek still waiting (for its previous frame to be drawn) is started once it may.
+          if (Math.abs(target - desired) > 0.5 / fps || (slot.pendingSeek !== null && !el.seeking)) this.seek(slot, desired);
         }
       }
     }
@@ -482,12 +501,34 @@ export class MediaPool {
     }
     const el = slot.el as HTMLVideoElement;
     if (el.readyState < 2 || el.videoWidth === 0) return null;
+    if (slot.presentBy) {
+      // This frame is being drawn now: the waiting seek can start once the render is done.
+      slot.presentBy = 0;
+      queueMicrotask(() => {
+        if (this.slots.get(slot.clipId) === slot && slot.pendingSeek !== null && !slot.presentBy) this.seek(slot, slot.pendingSeek);
+      });
+    }
     return {
       source: el,
       width: el.videoWidth,
       height: el.videoHeight,
       version: slot.frameVersion * 100003 + (Math.round(el.currentTime * 600) % 100003),
     };
+  }
+
+  /**
+   * True when a video on screen has no picture at all yet (its element was just created, or it
+   * seeked somewhere it has not decoded): drawing now would show a hole where it belongs.
+   */
+  awaitingPicture(): boolean {
+    for (const id of this.onScreen) {
+      const slot = this.slots.get(id);
+      if (!slot || !slot.isVideo || slot.rev) continue;
+      const el = slot.el as HTMLVideoElement;
+      if (el.error) continue;
+      if (el.readyState < 2 || el.videoWidth === 0) return true;
+    }
+    return false;
   }
 
   /** True while any needed element is still seeking / buffering (the picture may be stale). */

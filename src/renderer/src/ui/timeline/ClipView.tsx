@@ -89,8 +89,9 @@ const ClipCanvas = memo(function ClipCanvas({ clip, asset, pps, viewLeft, viewWi
             if (frame) ctx.drawImage(frame as CanvasImageSource, x - from, 0, tileW, filmH);
           }
         }
-      } else if (clip.type === 'image' && asset.kind === 'animation' && filmH > 4) {
-        // Animated GIF / Lottie: every tile shows the frame at its own time.
+      } else if (clip.type === 'image' && asset.kind === 'animation' && asset.format !== 'motion' && filmH > 4) {
+        // Animated GIF / Lottie: every tile shows the frame at its own time. (Motion clips show their
+        // poster instead: asking their renderer for a frame per tile would compete with the preview.)
         paintAnimationStrip(ctx, asset, from, width, filmH, pps, dpr);
       } else if (clip.type === 'image' && filmH > 4) {
         const img = imgRef.current;
@@ -147,7 +148,7 @@ const ClipCanvas = memo(function ClipCanvas({ clip, asset, pps, viewLeft, viewWi
     }
     request();
     const off = onAssetVisuals(asset.id, request);
-    const offAnim = asset.kind === 'animation' ? onAnimationFrames(request) : () => undefined;
+    const offAnim = asset.kind === 'animation' && asset.format !== 'motion' ? onAnimationFrames(request) : () => undefined;
     return () => {
       off();
       offAnim();

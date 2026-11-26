@@ -8,7 +8,8 @@ import { BRAND_PALETTE_ID, DEFAULT_BRAND, brandContrastChecks, brandFontPair, br
 import { applyBrandStyle } from '@/library/brandStyle';
 import { MAX_LOOP_ITERATIONS, glslSafetyProblems, packContent, validatePack } from '@/library/packs';
 import { adaptClips, resolveTokens, sanitizeClips, Problems } from '@/library/staticTemplates';
-import { buildTemplate, fillLogoSlots, isLogoSlot, setTemplateBrand, variationFor, variationPage } from '@/library/templateEngine';
+import { buildTemplate, fillLogoSlots, hasMorePages, isLogoSlot, setTemplateBrand, variationFor, variationPage } from '@/library/templateEngine';
+import { ARCHETYPES, generatedId } from '@/library/templates/_gen';
 import { contrast } from '@/library/templates/_lib/kit';
 import { parseUserTemplate, serializeSelection, userTemplateDef } from '@/library/userTemplates';
 
@@ -482,5 +483,64 @@ describe('template music', () => {
       return !!built?.clips.some(isLogoSlot);
     });
     expect(withLogo.length).toBeGreaterThanOrEqual(13);
+  });
+});
+
+describe('generated designs', () => {
+  const archetypeOf = (id: string): string => id.split('-')[1];
+
+  it('resolve from their id and build in every aspect ratio', () => {
+    for (const a of ARCHETYPES) {
+      for (const c of a.categories) {
+        const def = getTemplate(generatedId(a, c, 7));
+        expect(def, `${a.id} / ${c}`).toBeTruthy();
+        expect(def!.category).toBe(c);
+        for (const [w, h] of [
+          [1920, 1080],
+          [1080, 1920],
+          [1080, 1080],
+          [1080, 1350],
+        ]) {
+          const built = buildTemplate(variationFor(def!, 1), w, h);
+          expect(built, `${def!.id} ${w}x${h}`).toBeTruthy();
+          expect(built!.clips.length).toBeGreaterThan(3);
+          expect(built!.clips.every((cl) => !('transform' in cl) || (Number.isFinite(cl.transform.x) && Number.isFinite(cl.transform.y)))).toBe(true);
+        }
+      }
+    }
+    expect(getTemplate('gen-nope-title-1')).toBeUndefined();
+    // An archetype only serves its own categories.
+    expect(getTemplate('gen-endcard-quote-1')).toBeUndefined();
+  });
+
+  it('fill later gallery pages with new layouts, never recoloured copies', () => {
+    const q = { aspect: '16:9' as const, category: 'all' as const };
+    const p1 = variationPage(q, 1);
+    const p2 = variationPage(q, 2);
+    expect(p1.length).toBe(24);
+    expect([...p1, ...p2].every((v) => v.templateId.startsWith('gen-'))).toBe(true);
+    const ids = [...p1, ...p2].map((v) => v.templateId);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Neighbours are different compositions, and every archetype shows up within two pages.
+    for (let i = 1; i < p1.length; i++) expect(archetypeOf(p1[i].templateId)).not.toBe(archetypeOf(p1[i - 1].templateId));
+    expect(new Set(ids.map(archetypeOf)).size).toBe(ARCHETYPES.length);
+    // Stable across calls (and sessions).
+    expect(variationPage(q, 1)).toEqual(p1);
+  });
+
+  it('respect the category filter and stop where there is nothing new', () => {
+    const quotes = variationPage({ aspect: '9:16', category: 'quote' }, 1);
+    expect(quotes.length).toBeGreaterThan(0);
+    expect(quotes.every((v) => getTemplate(v.templateId)!.category === 'quote')).toBe(true);
+    expect(hasMorePages({ aspect: '16:9', category: 'lower-third' }, 1)).toBe(false);
+    expect(variationPage({ aspect: '16:9', category: 'lower-third' }, 1)).toEqual([]);
+    expect(hasMorePages({ aspect: '16:9', category: 'mine' }, 1)).toBe(false);
+  });
+
+  it('use the fonts and palettes that suit each design', () => {
+    for (const v of variationPage({ aspect: '16:9', category: 'all' }, 3)) {
+      const def = getTemplate(v.templateId)!;
+      if (def.style?.fonts) expect(def.style.fonts).toContain(v.fontPairId);
+    }
   });
 });

@@ -4,6 +4,7 @@
  * Content packs and user templates join the same registries at runtime (`registerContent`).
  */
 
+import { generatedTemplate } from './templates/_gen';
 import type {
   AnimationDef,
   EffectDef,
@@ -76,7 +77,8 @@ export const getTextAnimation = (id: string): TextAnimDef | undefined => textAni
 export const getTextPreset = (id: string): TextPresetDef | undefined => textPresets.map.get(id);
 export const getSticker = (id: string): StickerDef | undefined => stickers.map.get(id);
 export const getSound = (id: string): SoundDef | undefined => sounds.map.get(id);
-export const getTemplate = (id: string): TemplateDef | undefined => templates.map.get(id);
+/** A template by id: a library design, a runtime-registered one, or a generated design (`gen-…`). */
+export const getTemplate = (id: string): TemplateDef | undefined => templates.map.get(id) ?? generatedTemplate(id);
 export const getPalette = (id: string): Palette | undefined => palettes.map.get(id);
 export const getFontPair = (id: string): FontPair | undefined => fontPairs.map.get(id);
 

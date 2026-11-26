@@ -21,7 +21,7 @@ import type { ID, MediaAsset } from '@/core/types';
 import { api } from '@/platform/api';
 import type { FrameImage } from '../compositor';
 import { readDotLottie } from './dotlottie';
-import { MotionAnimation } from './motion';
+import { MotionAnimation, type MotionChannel } from './motion';
 import { hashString } from '@shared/media';
 import { motionValuesKey } from '@shared/motion';
 
@@ -564,13 +564,13 @@ function sourceFor(asset: MediaAsset, exact = false): AnimationSource | null {
 }
 
 /** Frame of a Motion clip; while a new version starts, the frame of another running version. */
-function motionFrame(assetId: ID, src: MotionAnimation, time: number): FrameImage | null {
-  const frame = src.frameAt(time);
+function motionFrame(assetId: ID, src: MotionAnimation, time: number, channel: MotionChannel): FrameImage | null {
+  const frame = src.frameAt(time, channel);
   if (frame || src.failed) return frame;
   const list = motionSources.get(assetId) ?? [];
   const self = list.find((e) => e.src === src);
   const other = newest(list, self);
-  return other ? other.src.frameAt(time) : null;
+  return other ? other.src.frameAt(time, channel) : null;
 }
 
 export interface ProbedAnimation {
@@ -633,7 +633,7 @@ export async function probeAnimation(path: string, ext: string): Promise<ProbedA
       src.dispose();
       throw new AnimationError(`The Motion clip could not run: ${err instanceof Error ? err.message : String(err)}`);
     }
-    const frame = src.frameAt(meta.duration * 0.4);
+    const frame = src.frameAt(meta.duration * 0.4, 'export');
     return {
       format: 'motion',
       name: meta.name,
@@ -681,12 +681,15 @@ export function discardProbe(probed: ProbedAnimation): void {
   (probed.handle as AnimationSource).dispose();
 }
 
-/** Frame of an animated asset at `time` seconds (loops). Null while it is still loading. */
-export function animationFrame(asset: MediaAsset, time: number, hint?: SizeHint): FrameImage | null {
+/**
+ * Frame of an animated asset at `time` seconds (loops). Null while it is still loading.
+ * `channel` says who is asking (Motion clips serve the preview first; see MotionChannel).
+ */
+export function animationFrame(asset: MediaAsset, time: number, hint?: SizeHint, channel: MotionChannel = 'preview'): FrameImage | null {
   const src = sourceFor(asset);
   if (!src || src.failed) return null;
   if (src.kind === 'raster') return src.frameAt(time, asset.duration);
-  if (src.kind === 'motion') return motionFrame(asset.id, src, time);
+  if (src.kind === 'motion') return motionFrame(asset.id, src, time, channel);
   return src.frameAt(time, hint);
 }
 
@@ -723,7 +726,7 @@ export async function animationPoster(asset: MediaAsset): Promise<{ source: Canv
   if (src.kind === 'motion') {
     // A clip that fails shows no poster (it is not a missing file).
     const ok = await src.ensure(asset.duration * 0.4).then(() => true, () => false);
-    const m = ok ? src.frameAt(asset.duration * 0.4) : null;
+    const m = ok ? src.frameAt(asset.duration * 0.4, 'export') : null;
     return m ? { source: m.source as CanvasImageSource, width: m.width, height: m.height } : null;
   }
   const f = src.frameAt(asset.duration * 0.4, { width: 640, height: 640 });

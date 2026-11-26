@@ -24,6 +24,16 @@ const CACHE_FRAMES = 18;
 /** Frames rendered ahead of the playhead. */
 const PREFETCH = 3;
 
+/**
+ * Who asks for frames. One clip can be on screen in several places at once (the preview, a
+ * media bin tile being hovered, an export): each keeps its own position, so they do not evict
+ * each other's frames, and the preview is served first.
+ */
+export type MotionChannel = 'preview' | 'thumb' | 'export';
+
+/** Render order: awaited exactly, the preview's frame, the preview's next frames, background. */
+const PRIO = { urgent: 0, preview: 1, prefetch: 2, background: 3 } as const;
+
 type Reply = { id: number; type: string; ok?: boolean; error?: string; bitmap?: ImageBitmap };
 
 const runtimes = new Map<MessageEventSource, MotionRuntime>();
@@ -195,7 +205,10 @@ export class MotionAnimation {
   private readonly rendering = new Set<number>();
   /** Frames something awaits exactly (export, previews): never dropped from the queue. */
   private readonly urgent = new Set<number>();
-  private latest = 0;
+  /** Priority of each queued / rendering frame (lower renders first, see PRIO). */
+  private readonly prio = new Map<number, number>();
+  /** Where each consumer is (the frame it wants now, the one it showed last). */
+  private readonly channels = new Map<MotionChannel, { latest: number; shown: number }>();
 
   /**
    * From a .kmotion file, or (validation) from code and meta directly. `values` are the settings
@@ -220,7 +233,7 @@ export class MotionAnimation {
 
   private readonly born = Math.round(performance.now());
 
-  debug(): { path: string; failed: boolean; error: string | null; cached: number[]; ready: boolean; values: string; born: number; queue: number[]; rendering: number[]; waiting: number; latest: number; logs?: string[] } {
+  debug(): { path: string; failed: boolean; error: string | null; cached: number[]; ready: boolean; values: string; born: number; queue: number[]; rendering: number[]; waiting: number; latest: number; channels: Record<string, { latest: number; shown: number }>; logs?: string[] } {
     return {
       path: this.path,
       failed: this.failed,
@@ -232,9 +245,23 @@ export class MotionAnimation {
       queue: this.queue.slice(),
       rendering: [...this.rendering],
       waiting: this.waiters.size,
-      latest: this.latest,
+      latest: this.channels.get('preview')?.latest ?? -1,
+      channels: Object.fromEntries([...this.channels].map(([k, v]) => [k, { ...v }])),
       logs: this.logs.slice(-10),
     } as ReturnType<MotionAnimation['debug']>;
+  }
+
+  private channel(name: MotionChannel): { latest: number; shown: number } {
+    let c = this.channels.get(name);
+    if (!c) this.channels.set(name, (c = { latest: 0, shown: -1 }));
+    return c;
+  }
+
+  /** A frame some consumer is looking at, or about to: kept in the cache and the queue. */
+  private wanted(idx: number, slack: number): boolean {
+    if (this.urgent.has(idx)) return true;
+    for (const c of this.channels.values()) if (idx === c.shown || (idx >= c.latest - slack && idx <= c.latest + PREFETCH + slack)) return true;
+    return false;
   }
 
   get logs(): string[] {
@@ -287,21 +314,32 @@ export class MotionAnimation {
     return { source: hit.bitmap, width: hit.bitmap.width, height: hit.bitmap.height, version: hit.version, animated: true };
   }
 
-  private request(idx: number, urgent = false): Promise<void> {
+  /** Queue frame `idx` (unless cached) at priority `prio`; a more important request moves it up. */
+  private want(idx: number, prio: number): void {
+    if (this.cache.has(idx)) return;
+    const old = this.prio.get(idx);
+    if (old === undefined || prio < old) {
+      this.prio.set(idx, prio);
+      if (!this.rendering.has(idx)) {
+        const at = this.queue.indexOf(idx);
+        if (at >= 0) this.queue.splice(at, 1);
+        // After everything at least as important, before anything less.
+        let pos = this.queue.length;
+        while (pos > 0 && (this.prio.get(this.queue[pos - 1]) ?? PRIO.background) > prio) pos--;
+        this.queue.splice(pos, 0, idx);
+      }
+    }
+    this.pump();
+  }
+
+  /** Queue frame `idx` and wait until it is rendered (or dropped). */
+  private request(idx: number, prio: number): Promise<void> {
     if (this.cache.has(idx)) return Promise.resolve();
     return new Promise<void>((resolve) => {
       const list = this.waiters.get(idx);
       if (list) list.push(resolve);
       else this.waiters.set(idx, [resolve]);
-      if (!this.rendering.has(idx)) {
-        const at = this.queue.indexOf(idx);
-        if (at >= 0 && urgent) this.queue.splice(at, 1);
-        if (at < 0 || urgent) {
-          if (urgent) this.queue.unshift(idx);
-          else this.queue.push(idx);
-        }
-      }
-      this.pump();
+      this.want(idx, prio);
     });
   }
 
@@ -312,9 +350,11 @@ export class MotionAnimation {
   }
 
   private pump(): void {
-    // Frames far from the playhead (it moved on) are dropped; whoever waited for them is released.
+    // Frames far from where every consumer is now (they moved on) are dropped; whoever waited
+    // for them is released.
     this.queue = this.queue.filter((i) => {
-      if (Math.abs(i - this.latest) <= PREFETCH + 4 || this.urgent.has(i)) return true;
+      if (this.wanted(i, 4)) return true;
+      this.prio.delete(i);
       this.settle(i);
       return false;
     });
@@ -329,9 +369,12 @@ export class MotionAnimation {
           if (this.rt?.disposed) this.failed = true;
         })
         .finally(() => {
+          // Frames only a background consumer wanted do not repaint the preview.
+          const quiet = (this.prio.get(idx) ?? PRIO.preview) >= PRIO.background && !this.failed;
+          this.prio.delete(idx);
           this.rendering.delete(idx);
           this.settle(idx);
-          this.onFrame();
+          if (!quiet) this.onFrame();
           this.pump();
         });
     }
@@ -345,7 +388,8 @@ export class MotionAnimation {
     if (this.cache.size > CACHE_FRAMES) {
       let oldest = -1;
       let at = Infinity;
-      for (const [k, v] of this.cache) if (v.used < at && k !== this.latest) [oldest, at] = [k, v.used];
+      // Frames on screen somewhere, or about to be, are never evicted.
+      for (const [k, v] of this.cache) if (v.used < at && !this.wanted(k, 0)) [oldest, at] = [k, v.used];
       if (oldest >= 0) {
         this.cache.get(oldest)!.bitmap.close();
         this.cache.delete(oldest);
@@ -353,18 +397,33 @@ export class MotionAnimation {
     }
   }
 
-  /** Synchronous frame for the preview: the exact one when ready, else the nearest earlier one. */
-  frameAt(time: number): FrameImage | null {
+  /**
+   * Synchronous frame for `channel` (the preview unless said otherwise): the exact one when
+   * ready, else the one that consumer showed last, else the nearest one.
+   */
+  frameAt(time: number, channel: MotionChannel = 'preview'): FrameImage | null {
     if (!this.info || this.failed || !this.rt || !this.loaded) return null;
     const idx = this.indexAt(time);
-    this.latest = idx;
+    const ch = this.channel(channel);
+    ch.latest = idx;
     const exact = this.image(idx);
-    void this.request(idx);
+    const fg = channel === 'preview';
+    this.want(idx, fg ? PRIO.preview : PRIO.background);
     const n = this.frameCount();
-    for (let k = 1; k <= PREFETCH; k++) void this.request((idx + k) % n);
-    if (exact) return exact;
+    for (let k = 1; k <= PREFETCH; k++) this.want((idx + k) % n, fg ? PRIO.prefetch : PRIO.background);
+    if (exact) {
+      ch.shown = idx;
+      return exact;
+    }
+    // Not rendered yet: keep showing a nearby frame (the one shown last, else the nearest earlier
+    // or later one) rather than nothing, which would flash the layer off.
+    if (ch.shown >= 0 && this.cache.has(ch.shown)) return this.image(ch.shown);
     let best = -1;
-    for (const k of this.cache.keys()) if (k <= idx && k > best) best = k;
+    let gap = Infinity;
+    for (const k of this.cache.keys()) {
+      const d = k <= idx ? idx - k : (k - idx) * 1.5;
+      if (d < gap) [best, gap] = [k, d];
+    }
     return best >= 0 ? this.image(best) : null;
   }
 
@@ -372,10 +431,11 @@ export class MotionAnimation {
   async ensure(time: number): Promise<void> {
     await this.ready;
     const idx = this.indexAt(time);
-    this.latest = idx;
+    // Kept in the cache until the caller draws it (frameAt with the 'export' channel).
+    this.channel('export').latest = idx;
     this.urgent.add(idx);
     try {
-      await this.request(idx, true);
+      await this.request(idx, PRIO.urgent);
     } finally {
       this.urgent.delete(idx);
     }
@@ -394,6 +454,7 @@ export class MotionAnimation {
     for (const v of this.cache.values()) v.bitmap.close();
     this.cache.clear();
     this.queue = [];
+    this.prio.clear();
     for (const i of [...this.waiters.keys()]) this.settle(i);
   }
 }

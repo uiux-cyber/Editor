@@ -1817,7 +1817,7 @@
   "{count, plural, one {media file} other {media files}}": "{count, plural, one {मीडिया फ़ाइल} other {मीडिया फ़ाइलें}}",
   "{count, plural, other {Used by # clips: changes apply to all of them.}}": "{count, plural, other {# क्लिप इसका इस्तेमाल करती हैं: बदलाव सभी पर लागू होंगे।}}",
   "{count} commands": "{count} कमांड",
-  "{count} designs × {looks} colour and type combinations, generated endlessly as you scroll": "{count} डिज़ाइन × {looks} रंग और टाइप संयोजन, स्क्रॉल करते ही लगातार बनते रहते हैं",
+  "{count} designs, then endless new layouts as you scroll": "{count} डिज़ाइन, फिर स्क्रॉल करते ही अनगिनत नए लेआउट",
   "{count} designs, each in endless colour, font and style versions as you scroll": "{count} डिज़ाइन, स्क्रॉल करते ही हर एक रंग, फ़ॉन्ट और स्टाइल के अनगिनत रूपों में",
   "{count} exports · about {size}": "{count} एक्सपोर्ट · लगभग {size}",
   "{count} h ago": "{count} घंटे पहले",

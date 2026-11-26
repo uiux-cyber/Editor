@@ -1817,7 +1817,7 @@
   "{count, plural, one {media file} other {media files}}": "{count, plural, one {archivo multimedia} other {archivos multimedia}}",
   "{count, plural, other {Used by # clips: changes apply to all of them.}}": "{count, plural, other {Lo usan # clips: los cambios se aplican a todos.}}",
   "{count} commands": "{count} comandos",
-  "{count} designs × {looks} colour and type combinations, generated endlessly as you scroll": "{count} diseños × {looks} combinaciones de color y tipografía, generadas sin fin mientras te desplazas",
+  "{count} designs, then endless new layouts as you scroll": "{count} diseños y, al desplazarte, composiciones nuevas sin fin",
   "{count} designs, each in endless colour, font and style versions as you scroll": "{count} diseños, cada uno en versiones infinitas de color, fuente y estilo al desplazarte",
   "{count} exports · about {size}": "{count} exportaciones · unos {size}",
   "{count} h ago": "hace {count} h",

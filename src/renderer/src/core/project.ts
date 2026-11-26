@@ -642,6 +642,13 @@ export function fillSlot(p: Project, slotId: ID, asset: MediaAsset): ID | null {
   const fit = fitContain(asset.width * (1 - crop.l - crop.r), asset.height * (1 - crop.t - crop.b), cw, ch);
   const w = fit.w;
   const h = fit.h;
+  // Scale keyframes (a slow push in…) are absolute: they get the same factor as the transform.
+  let keyframes = slot.keyframes;
+  if (keyframes && (keyframes.scaleX || keyframes.scaleY)) {
+    keyframes = { ...keyframes };
+    if (keyframes.scaleX) keyframes.scaleX = keyframes.scaleX.map((f) => ({ ...f, v: f.v * (shape.width / w) }));
+    if (keyframes.scaleY) keyframes.scaleY = keyframes.scaleY.map((f) => ({ ...f, v: f.v * (shape.height / h) }));
+  }
   const base = {
     id: uid(asset.kind === 'video' ? 'vd_' : 'im_'),
     trackId: slot.trackId,
@@ -649,7 +656,7 @@ export function fillSlot(p: Project, slotId: ID, asset: MediaAsset): ID | null {
     start: slot.start,
     duration: slot.duration,
     groupId: slot.groupId,
-    keyframes: slot.keyframes,
+    keyframes,
     transform: { ...slot.transform, scaleX: (shape.width / w) * slot.transform.scaleX, scaleY: (shape.height / h) * slot.transform.scaleY },
     blendMode: slot.blendMode,
     crop,

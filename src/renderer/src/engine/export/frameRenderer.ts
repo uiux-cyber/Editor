@@ -201,7 +201,7 @@ export class FrameRenderer {
     videoFrame: (clip) => this.decoders.get(clip.id)?.frame() ?? null,
     image: (assetId, time, hint) => {
       const asset = this.project?.assets[assetId];
-      if (asset?.kind === 'animation') return animationFrame(asset, time ?? 0, hint);
+      if (asset?.kind === 'animation') return animationFrame(asset, time ?? 0, hint, 'export');
       const img = getImage(assetId);
       return img && img.bitmap ? { source: img.bitmap, width: img.width, height: img.height, version: img.version } : null;
     },

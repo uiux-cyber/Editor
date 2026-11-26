@@ -190,7 +190,7 @@ export const demoProvider: MediaProvider = {
     if (assetId === 'demo-a') return { source: (demoA ??= demoCanvas(drawDemoA)), width: DEMO_W, height: DEMO_H, version: 1 };
     if (assetId === 'demo-b') return { source: (demoB ??= demoCanvas(drawDemoB)), width: DEMO_W, height: DEMO_H, version: 2 };
     const motion = motionAssets.get(assetId);
-    if (motion) return animationFrame(motion, time ?? 0, hint);
+    if (motion) return animationFrame(motion, time ?? 0, hint, 'thumb');
     if (assetId === SAMPLE_LOGO_ID) return { source: sampleLogoPicture(), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 99 };
     const person = samplePersonIndex(assetId);
     if (person !== null) return { source: samplePersonPicture(person), width: SAMPLE_SIZE, height: SAMPLE_SIZE, version: 90 + person };

@@ -13,6 +13,7 @@ import { themeValues } from './motionVariations';
 import type { Clip, ImageClip, Keyframe, MediaAsset, ShapeClip } from '@/core/types';
 import { BRAND_FONTS_ID, BRAND_PALETTE_ID } from './brand';
 import { FONT_PAIRS, PALETTES, TEMPLATES, getFontPair, getPalette, getTemplate } from './index';
+import { generatedCategories, generatedPage } from './templates/_gen';
 import type { AspectId, FontPair, Palette, TemplateCategory, TemplateDef, TemplateEnv, TemplateMotionOptions } from './types';
 
 export interface TemplateVariation {
@@ -216,10 +217,24 @@ function brandVariation(def: TemplateDef, n: number): TemplateVariation {
   return { key: `${def.id}:brand${brand?.revision ?? 0}:${seed}`, templateId: def.id, paletteId: BRAND_PALETTE_ID, fontPairId: BRAND_FONTS_ID, seed };
 }
 
+/** Palettes and font pairs a design's variations choose from (its own taste when it has one). */
+function choices(def: TemplateDef): { palettes: Palette[]; fonts: FontPair[] } {
+  let palettes = PALETTES.length ? PALETTES : [FALLBACK_PALETTE];
+  let fonts = FONT_PAIRS.length ? FONT_PAIRS : [FALLBACK_FONTS];
+  if (def.style?.palettes) {
+    const fit = palettes.filter(def.style.palettes);
+    if (fit.length >= 3) palettes = fit;
+  }
+  if (def.style?.fonts) {
+    const fit = def.style.fonts.map((id) => getFontPair(id)).filter((f): f is FontPair => !!f);
+    if (fit.length) fonts = fit;
+  }
+  return { palettes, fonts };
+}
+
 function variation(def: TemplateDef, n: number): TemplateVariation {
   const h = hashString(def.id);
-  const palettes = PALETTES.length ? PALETTES : [FALLBACK_PALETTE];
-  const fonts = FONT_PAIRS.length ? FONT_PAIRS : [FALLBACK_FONTS];
+  const { palettes, fonts } = choices(def);
   // Co-prime strides walk through every palette × font combination before repeating.
   const palette = palettes[(h + n * 7) % palettes.length];
   const fontPair = fonts[((h >>> 5) + n * 3) % fonts.length];
@@ -287,39 +302,38 @@ function matching(q: VariationQuery): TemplateDef[] {
   return [...mine, ...interleave(list.filter((d) => !isUserTemplate(d)))];
 }
 
-/**
- * One page of the endless gallery: every matching design once, each in a new colour / type
- * combination. Page 0 shows the designs in their library order; later pages are shuffled so the
- * feed keeps feeling fresh.
- */
-/**
- * Pages shown in brand mode: with the palette and fonts fixed, later pages would only differ by
- * layout seed, so the feed stops after a few looks per design.
- */
-export const BRAND_PAGES = 3;
+/** Generated designs per page of the endless gallery. */
+const GENERATED_PER_PAGE = 24;
+
+/** Categories of generated designs a query asks for (none for "mine", thumbnails, reels…). */
+function generatedFor(q: VariationQuery): TemplateCategory[] {
+  if (q.category === 'mine') return [];
+  const all = generatedCategories();
+  if (!q.category || q.category === 'all') return all;
+  return all.includes(q.category) ? [q.category] : [];
+}
 
 /** False once the endless feed has nothing new to show for this query. */
-export const hasMorePages = (q: VariationQuery, pages: number): boolean => !(q.brand && brand && pages >= BRAND_PAGES) && q.category !== 'mine';
+export const hasMorePages = (q: VariationQuery, pages: number): boolean => pages < 1 || generatedFor(q).length > 0;
 
+/**
+ * One page of the endless gallery. Page 0 shows every library design once; later pages are new,
+ * generated layouts (different compositions, content and motion — never the same design in
+ * another colour), so the feed keeps going without repeating itself.
+ */
 export function variationPage(q: VariationQuery, page: number): TemplateVariation[] {
-  if (q.brand && brand && page >= BRAND_PAGES) return [];
-  // Fixed designs (saved user templates…) have a single look: they only appear on the first page.
-  const defs = matching(q).filter((def) => page === 0 || !def.fixed);
-  if (defs.length === 0) return [];
-  const list = defs.map((def) => variationFor(def, page, !!q.brand));
-  if (page === 0) return list;
-  const rnd = seededRandom(0x51ed + page * 977);
-  for (let i = list.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [list[i], list[j]] = [list[j], list[i]];
+  if (page === 0) {
+    const defs = matching(q);
+    return defs.map((def) => variationFor(def, 0, !!q.brand));
   }
-  return list;
+  const cats = generatedFor(q);
+  if (!cats.length) return [];
+  const defs = generatedPage({ categories: cats, page: page - 1, count: GENERATED_PER_PAGE, search: q.search }).filter((def) => supportsAspect(def, q.aspect));
+  return defs.map((def) => variationFor(def, page, !!q.brand));
 }
 
 export const templateCount = (q: VariationQuery): number => matching(q).length;
 
-/** How many distinct looks exist per design (palette × type), for the "endless" badge. */
-export const looksPerDesign = (): number => Math.max(1, PALETTES.length) * Math.max(1, FONT_PAIRS.length);
 
 /** A different colour / type treatment of the same design. */
 export function shuffleVariation(v: TemplateVariation): TemplateVariation {

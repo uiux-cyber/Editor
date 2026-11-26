@@ -1817,7 +1817,7 @@
   "{count, plural, one {media file} other {media files}}": "{count, plural, one {fichier média} other {fichiers médias}}",
   "{count, plural, other {Used by # clips: changes apply to all of them.}}": "{count, plural, other {Utilisé par # clips : les modifications s’appliquent à tous.}}",
   "{count} commands": "{count} commandes",
-  "{count} designs × {looks} colour and type combinations, generated endlessly as you scroll": "{count} designs × {looks} combinaisons de couleurs et de typographie, générées à l’infini pendant le défilement",
+  "{count} designs, then endless new layouts as you scroll": "{count} designs, puis de nouvelles mises en page à l’infini pendant le défilement",
   "{count} designs, each in endless colour, font and style versions as you scroll": "{count} designs, chacun en versions infinies de couleurs, polices et styles au fil du défilement",
   "{count} exports · about {size}": "{count} exportations · environ {size}",
   "{count} h ago": "il y a {count} h",

@@ -175,6 +175,25 @@ describe('timeline operations', () => {
   });
 });
 
+describe('placeholders with motion', () => {
+  it('scales a placeholder’s scale keyframes (a slow push in) with the media', () => {
+    const p = createProject({ width: 1920, height: 1080, fps: 30 });
+    const track = makeTrack('visual', 'V2');
+    p.tracks.unshift(track);
+    const slot = makeSlot({ width: 600, height: 400, duration: 4, keyframes: { scaleX: [kf(0, 1), kf(4, 1.1)], scaleY: [kf(0, 1), kf(4, 1.1)] } });
+    slot.trackId = track.id;
+    p.clips[slot.id] = slot;
+    const a = asset();
+    p.assets[a.id] = a;
+    const clip = p.clips[fillSlot(p, slot.id, a)!] as VideoClip;
+    // The keyframes keep their relative motion on top of the fitted size.
+    expect(clip.keyframes!.scaleX![0].v).toBeCloseTo(clip.transform.scaleX, 6);
+    expect(clip.keyframes!.scaleX![1].v).toBeCloseTo(clip.transform.scaleX * 1.1, 6);
+    expect(clip.keyframes!.scaleY![1].v).toBeCloseTo(clip.transform.scaleY * 1.1, 6);
+    expect(clip.transform.scaleX).toBeLessThan(1);
+  });
+});
+
 describe('project files', () => {
   it('round-trips through serialise / parse', () => {
     const { p } = projectWithVideos([0, 2], [2, 3]);
