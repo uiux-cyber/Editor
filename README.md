@@ -9,6 +9,17 @@ runs on your own PC, including the AI features, and no footage is uploaded anywh
 
 See [docs/PLAN.md](docs/PLAN.md) for the product scope, architecture and roadmap.
 
+## What's new in 1.8
+
+- **Endless new templates:** after the library designs, Templates keeps going with generated
+  designs in 17 styles (film title cards, Swiss posters, editorial spreads, cut-out collages,
+  product heroes, word stacks, polaroid diaries, headline bands, end screens and more), each with
+  its own layout, words and animation, in every aspect ratio and with your brand kit.
+- **Fixed:** flicker in the timeline and the preview with Motion clips, which got worse while
+  editing or extending clips.
+- **Fixed:** the preview flashed black while trimming or extending a clip.
+- **Fixed:** a photo dropped on a slowly zooming template placeholder came out too large.
+
 ## What's new in 1.7
 
 - **Reels:** Templates ▸ Reel has kinetic-typography reels and ads in the editorial style of
